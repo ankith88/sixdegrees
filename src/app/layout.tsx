@@ -1,15 +1,32 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+
+export const viewport: Viewport = {
+  themeColor: '#B8292F',
+  width: 'device-width',
+  initialScale: 1,
+};
 
 export const metadata: Metadata = {
   title: 'SixDegrees — Curated Film & Series Lineage Atlas',
   description:
     'Explore how films and television series connect through shared directors, screenwriters, cast, composers, and narrative themes—with transparent reasoning and regional streaming availability.',
+  applicationName: 'SixDegrees',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'SixDegrees',
+  },
+  formatDetection: {
+    telephone: false,
+  },
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: '48x48' },
       { url: '/favicon.svg', type: 'image/svg+xml' },
       { url: '/image_1.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
   },

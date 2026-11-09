@@ -36,6 +36,7 @@ import {
   getActiveApiKeys,
   saveRuntimeApiKeys,
 } from '@/lib/api';
+import { PwaInstallButton } from './PwaInstallButton';
 
 interface LeftSidebarProps {
   focalItem: MediaItem | null;
@@ -70,6 +71,10 @@ interface LeftSidebarProps {
   expandedCount?: number;
   onResetExpandedCatalog?: () => void;
   onFirestoreConfigUpdated?: () => void;
+  watchedCount?: number;
+  isSuggestMode?: boolean;
+  onOpenSuggestions?: () => void;
+  onSuggestByGenre?: (genre: string) => void;
 }
 
 export function LeftSidebar({
@@ -100,6 +105,10 @@ export function LeftSidebar({
   expandedCount = 0,
   onResetExpandedCatalog,
   onFirestoreConfigUpdated,
+  watchedCount = 0,
+  isSuggestMode = false,
+  onOpenSuggestions,
+  onSuggestByGenre,
 }: LeftSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [showFirestoreModal, setShowFirestoreModal] = useState(false);
@@ -451,6 +460,65 @@ export function LeftSidebar({
 
       {/* Scrollable Content */}
       <div className="px-4 py-4 space-y-5 overflow-y-auto flex-1">
+        {/* 0. What to Watch Next (Smart Suggestions Launcher) */}
+        {onOpenSuggestions && (
+          <section className="p-3 rounded-lg bg-[#FBF8F2] border border-[#C8BEAA] shadow-archival-sm space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Sparkles
+                  className="w-3.5 h-3.5 text-[#B8292F] shrink-0"
+                  aria-hidden="true"
+                />
+                <span className="text-xs font-bold text-[#171412]">
+                  What to Watch
+                </span>
+              </div>
+              <span className="px-1.5 py-0.2 rounded text-[10px] font-tabular font-semibold bg-[#E4F0EA] text-[#1E563F] border border-[#B3D4C5]">
+                {watchedCount} Watched
+              </span>
+            </div>
+
+            <p className="text-[11px] text-[#52483E] leading-snug">
+              Get tailored film &amp; series suggestions from your watched
+              titles, genres, or themes.
+            </p>
+
+            <button
+              type="button"
+              onClick={onOpenSuggestions}
+              className={`w-full py-1.5 px-2.5 rounded-md text-xs font-semibold border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                isSuggestMode
+                  ? 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
+                  : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22]'
+              }`}
+            >
+              <Sparkles className="w-3 h-3" aria-hidden="true" />
+              <span>
+                {isSuggestMode
+                  ? 'Suggestion Studio Active'
+                  : 'Open Watch Suggestions'}
+              </span>
+            </button>
+
+            {onSuggestByGenre && (
+              <div className="pt-1.5 border-t border-[#E5DEC9] flex items-center flex-wrap gap-1">
+                {(['Sci-Fi', 'Thriller', 'Mystery', 'Drama', 'Crime'] as const).map(
+                  (g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => onSuggestByGenre(g)}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#EFE8DA] hover:bg-[#234B6E] text-[#52483E] hover:text-[#FBF8F2] border border-[#D5CCB9] transition-colors cursor-pointer"
+                    >
+                      {g}
+                    </button>
+                  )
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* 1. Scope & Format */}
         <section className="space-y-2.5">
           {focalItem && (
@@ -948,6 +1016,11 @@ export function LeftSidebar({
               )}
             </div>
           </div>
+        </section>
+
+        {/* 6. Install Desktop / Mobile PWA App */}
+        <section className="pt-4 border-t border-[#D5CCB9]">
+          <PwaInstallButton variant="sidebar" />
         </section>
       </div>
     </>

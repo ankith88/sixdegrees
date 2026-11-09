@@ -13,6 +13,7 @@ const STORAGE_FIREBASE_API_KEY = 'sixdegrees_firebase_api_key';
 const STORAGE_EXPANDED_CATALOG_KEY = 'sixdegrees_expanded_catalog_v1';
 const STORAGE_QUERIED_COLLABORATORS_KEY =
   'sixdegrees_queried_collaborators_v1';
+const STORAGE_WATCHED_MEDIA_KEY = 'sixdegrees_watched_ids_v1';
 
 export interface QuotaTelemetry {
   omdbCallsToday: number;
@@ -523,3 +524,80 @@ export async function fetchMediaFromTmdbAndOmdb(
     return fallbackItem || null;
   }
 }
+
+/**
+ * Loads user-marked Watched media IDs from localStorage (defaults to ['inception'] so
+ * first-time visitors immediately see "Because you watched Inception" suggestions ready to customize).
+ */
+export function getInitialWatchedIds(): string[] {
+  if (typeof window === 'undefined') {
+    return ['inception'];
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_WATCHED_MEDIA_KEY);
+    if (!raw) return ['inception'];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : ['inception'];
+  } catch {
+    return ['inception'];
+  }
+}
+
+export function saveWatchedIdsToStorage(ids: string[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_WATCHED_MEDIA_KEY, JSON.stringify(ids));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+/**
+ * Fetches live Movie & TV Show suggestions from TMDB / public catalog based on a seed title or genre/category
+ */
+export async function fetchLiveSuggestions(options: {
+  seedTmdbId?: number;
+  seedImdbId?: string;
+  seedMediaType?: MediaType;
+  seedTitle?: string;
+  genre?: string;
+  mediaType?: 'ALL' | 'MOVIE' | 'TV';
+}): Promise<{
+  items: MediaItem[];
+  source: string;
+  quota?: QuotaTelemetry;
+  firestore?: FirestoreSyncTelemetry;
+} | null> {
+  const { tmdbKey, omdbKey, firebaseProjectId, firebaseApiKey } =
+    getActiveApiKeys();
+  const params = new URLSearchParams({
+    action: 'suggest',
+  });
+  if (options.seedTmdbId) params.set('seedTmdbId', String(options.seedTmdbId));
+  if (options.seedImdbId) params.set('seedImdbId', options.seedImdbId);
+  if (options.seedMediaType) params.set('seedMediaType', options.seedMediaType);
+  if (options.seedTitle) params.set('seedTitle', options.seedTitle);
+  if (options.genre) params.set('genre', options.genre);
+  if (options.mediaType) params.set('mediaType', options.mediaType);
+  if (tmdbKey) params.set('tmdbKey', tmdbKey);
+  if (omdbKey) params.set('omdbKey', omdbKey);
+  if (firebaseProjectId) params.set('firebaseProjectId', firebaseProjectId);
+  if (firebaseApiKey) params.set('firebaseApiKey', firebaseApiKey);
+
+  try {
+    const res = await fetch(`/api/live-media?${params.toString()}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      items: Array.isArray(data.items) ? data.items : [],
+      source: data.source || 'LIVE_SUGGEST',
+      quota: data.quota,
+      firestore: data.firestore,
+    };
+  } catch {
+    return null;
+  }
+}
+

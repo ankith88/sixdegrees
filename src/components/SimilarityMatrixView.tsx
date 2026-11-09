@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   Globe,
   X,
+  Check,
 } from 'lucide-react';
 import {
   GravityPreset,
@@ -26,6 +27,8 @@ interface SimilarityMatrixViewProps {
   onSelectMedia: (item: MediaItem) => void;
   onMakeFocal: (mediaId: string) => void;
   onClearFocal: () => void;
+  watchedIds?: string[];
+  onToggleWatched?: (mediaId: string) => void;
 }
 
 export function SimilarityMatrixView({
@@ -37,6 +40,8 @@ export function SimilarityMatrixView({
   onSelectMedia,
   onMakeFocal,
   onClearFocal,
+  watchedIds = [],
+  onToggleWatched,
 }: SimilarityMatrixViewProps) {
   const [sortBy, setSortBy] = useState<
     'CONNECTIVITY' | 'RATING' | 'YEAR' | 'TITLE'
@@ -431,6 +436,28 @@ export function SimilarityMatrixView({
                           <ArrowUpRight className="w-3 h-3 text-[#52483E]" />
                         </a>
                       ))}
+
+                      {onToggleWatched && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleWatched(item.id);
+                          }}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                            watchedIds.includes(item.id)
+                              ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                              : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#171412] border-[#C8BEAA]'
+                          }`}
+                        >
+                          <Check className="w-3 h-3" />
+                          <span>
+                            {watchedIds.includes(item.id)
+                              ? 'Watched ✓'
+                              : 'Mark Watched'}
+                          </span>
+                        </button>
+                      )}
 
                       <button
                         type="button"

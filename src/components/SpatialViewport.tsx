@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import {
   Compass,
@@ -16,6 +16,8 @@ import {
   Award,
   Music,
   Hash,
+  X,
+  Link2,
 } from 'lucide-react';
 import {
   CameraMode,
@@ -33,9 +35,10 @@ interface SpatialViewportProps {
   focalItem: MediaItem | null;
   selectedNodeId: string | null;
   onSelectNode: (node: GraphNode) => void;
+  onClearSelection?: () => void;
   onMakeFocal: (mediaId: string) => void;
   onClearFocal?: () => void;
-  viewMode: Exclude<ViewMode, 'MATRIX'>;
+  viewMode: '2D' | '3D';
   forceSettings: ForceSettings;
   cameraMode: CameraMode;
   onCameraModeChange: (mode: CameraMode) => void;
@@ -50,6 +53,28 @@ interface HoveredTooltipState {
   node: GraphNode;
   x: number;
   y: number;
+}
+
+interface LinkedMediaSummary {
+  node: GraphNode;
+  sharedReasons: string[];
+  directScore?: number;
+}
+
+interface LinkedEntitySummary {
+  node: GraphNode;
+  roleLabel: string;
+  connectedCount: number;
+}
+
+interface LinkedSubgraphResult {
+  focusNode: GraphNode | null;
+  linkedNodeIds: Set<string>;
+  directLinkIds: Set<string>;
+  bridgeLinkIds: Set<string>;
+  allIlluminatedLinkIds: Set<string>;
+  linkedMedia: LinkedMediaSummary[];
+  linkedEntities: LinkedEntitySummary[];
 }
 
 function getEntityRoleLabel(type: GraphNode['type']): string {
@@ -67,6 +92,248 @@ function getEntityRoleLabel(type: GraphNode['type']): string {
     case 'TV':
       return 'Series';
   }
+}
+
+/**
+ * Computes the complete connected subgraph (linked Media nodes, linked Collaborator/Theme nodes,
+ * direct links, and shared entity bridge links) for a clicked or hovered node.
+ */
+function computeLinkedSubgraph(
+  focusNodeId: string | null,
+  nodes: GraphNode[],
+  links: GraphLink[]
+): LinkedSubgraphResult {
+  const emptyResult: LinkedSubgraphResult = {
+    focusNode: null,
+    linkedNodeIds: new Set(),
+    directLinkIds: new Set(),
+    bridgeLinkIds: new Set(),
+    allIlluminatedLinkIds: new Set(),
+    linkedMedia: [],
+    linkedEntities: [],
+  };
+
+  if (!focusNodeId) return emptyResult;
+
+  const nodeById = new Map<string, GraphNode>();
+  for (const n of nodes) {
+    nodeById.set(n.id, n);
+  }
+
+  const focusNode = nodeById.get(focusNodeId) || null;
+  if (!focusNode) return emptyResult;
+
+  const linkedNodeIds = new Set<string>([focusNodeId]);
+  const directLinkIds = new Set<string>();
+  const bridgeLinkIds = new Set<string>();
+  const allIlluminatedLinkIds = new Set<string>();
+  const mediaReasonsMap = new Map<string, Set<string>>();
+  const mediaDirectScoreMap = new Map<string, number>();
+  const entityNodeSet = new Set<string>();
+
+  const isFocusMedia = focusNode.type === 'MOVIE' || focusNode.type === 'TV';
+
+  if (isFocusMedia) {
+    // 1. Direct links incident to the selected Media node
+    for (const link of links) {
+      if (link.source !== focusNodeId && link.target !== focusNodeId) continue;
+      directLinkIds.add(link.id);
+      allIlluminatedLinkIds.add(link.id);
+
+      const otherId = link.source === focusNodeId ? link.target : link.source;
+      const otherNode = nodeById.get(otherId);
+      if (!otherNode) continue;
+
+      linkedNodeIds.add(otherId);
+
+      if (otherNode.type === 'MOVIE' || otherNode.type === 'TV') {
+        const score = Math.round(link.weight * 100);
+        if (score > 0) {
+          mediaDirectScoreMap.set(otherId, score);
+        }
+        if (!mediaReasonsMap.has(otherId)) {
+          mediaReasonsMap.set(otherId, new Set());
+        }
+      } else {
+        entityNodeSet.add(otherId);
+      }
+    }
+
+    // 2. Second-hop links from each connected Collaborator/Theme entity node to other Media nodes sharing that entity
+    for (const entId of entityNodeSet) {
+      const entNode = nodeById.get(entId);
+      if (!entNode) continue;
+
+      for (const link of links) {
+        if (link.source !== entId && link.target !== entId) continue;
+        const peerId = link.source === entId ? link.target : link.source;
+        if (peerId === focusNodeId) continue;
+        const peerNode = nodeById.get(peerId);
+        if (
+          !peerNode ||
+          (peerNode.type !== 'MOVIE' && peerNode.type !== 'TV')
+        ) {
+          continue;
+        }
+
+        bridgeLinkIds.add(link.id);
+        allIlluminatedLinkIds.add(link.id);
+        linkedNodeIds.add(peerId);
+
+        if (!mediaReasonsMap.has(peerId)) {
+          mediaReasonsMap.set(peerId, new Set());
+        }
+        mediaReasonsMap
+          .get(peerId)!
+          .add(`${getEntityRoleLabel(entNode.type)}: ${entNode.label}`);
+      }
+    }
+
+    // 3. Also highlight any direct similarity link between focusNodeId and discovered peer media nodes
+    for (const link of links) {
+      if (
+        link.kind === 'SIMILARITY_DIRECT' &&
+        linkedNodeIds.has(link.source) &&
+        linkedNodeIds.has(link.target) &&
+        (link.source === focusNodeId || link.target === focusNodeId)
+      ) {
+        directLinkIds.add(link.id);
+        allIlluminatedLinkIds.add(link.id);
+      }
+    }
+
+    // 4. Enrich shared reasons for direct-linked media nodes if not already populated via entity nodes
+    for (const id of linkedNodeIds) {
+      if (id === focusNodeId) continue;
+      const peerNode = nodeById.get(id);
+      if (!peerNode || (peerNode.type !== 'MOVIE' && peerNode.type !== 'TV')) {
+        continue;
+      }
+      const reasons = mediaReasonsMap.get(id) || new Set<string>();
+      if (reasons.size === 0 && focusNode.mediaItem && peerNode.mediaItem) {
+        for (const d of focusNode.mediaItem.directors) {
+          if (peerNode.mediaItem.directors.includes(d)) {
+            reasons.add(`Director: ${d}`);
+          }
+        }
+        for (const c of focusNode.mediaItem.cast) {
+          if (peerNode.mediaItem.cast.some((pc) => pc.name === c.name)) {
+            reasons.add(`Cast: ${c.name}`);
+          }
+        }
+        for (const comp of focusNode.mediaItem.composers) {
+          if (peerNode.mediaItem.composers.includes(comp)) {
+            reasons.add(`Score: ${comp}`);
+          }
+        }
+        for (const t of focusNode.mediaItem.tropes) {
+          if (
+            peerNode.mediaItem.tropes.some(
+              (pt) => pt.toLowerCase() === t.toLowerCase()
+            )
+          ) {
+            reasons.add(`Theme: ${t}`);
+          }
+        }
+      }
+      mediaReasonsMap.set(id, reasons);
+    }
+  } else {
+    // Focus node is a Collaborator or Theme Entity node (DIRECTOR, ACTOR, TROPE, COMPOSER)
+    for (const link of links) {
+      if (link.source !== focusNodeId && link.target !== focusNodeId) continue;
+      directLinkIds.add(link.id);
+      allIlluminatedLinkIds.add(link.id);
+
+      const otherId = link.source === focusNodeId ? link.target : link.source;
+      const otherNode = nodeById.get(otherId);
+      if (!otherNode) continue;
+
+      linkedNodeIds.add(otherId);
+      if (otherNode.type === 'MOVIE' || otherNode.type === 'TV') {
+        mediaReasonsMap.set(
+          otherId,
+          new Set([
+            `${getEntityRoleLabel(focusNode.type)}: ${focusNode.label}`,
+          ])
+        );
+      }
+    }
+
+    for (const mId of focusNode.connectedMediaIds) {
+      if (nodeById.has(mId)) {
+        linkedNodeIds.add(mId);
+        if (!mediaReasonsMap.has(mId)) {
+          mediaReasonsMap.set(
+            mId,
+            new Set([
+              `${getEntityRoleLabel(focusNode.type)}: ${focusNode.label}`,
+            ])
+          );
+        }
+      }
+    }
+
+    // Illuminate direct similarity links among the titles connected by this entity
+    for (const link of links) {
+      if (
+        link.kind === 'SIMILARITY_DIRECT' &&
+        linkedNodeIds.has(link.source) &&
+        linkedNodeIds.has(link.target)
+      ) {
+        bridgeLinkIds.add(link.id);
+        allIlluminatedLinkIds.add(link.id);
+      }
+    }
+  }
+
+  const linkedMedia: LinkedMediaSummary[] = [];
+  const linkedEntities: LinkedEntitySummary[] = [];
+
+  for (const id of linkedNodeIds) {
+    if (id === focusNodeId) continue;
+    const n = nodeById.get(id);
+    if (!n) continue;
+
+    if (n.type === 'MOVIE' || n.type === 'TV') {
+      const reasons = Array.from(mediaReasonsMap.get(id) || []);
+      const directScore = mediaDirectScoreMap.get(id) ?? n.matchScore;
+      linkedMedia.push({
+        node: n,
+        sharedReasons: reasons,
+        directScore,
+      });
+    } else {
+      linkedEntities.push({
+        node: n,
+        roleLabel: getEntityRoleLabel(n.type),
+        connectedCount: n.connectedMediaIds.length,
+      });
+    }
+  }
+
+  linkedMedia.sort(
+    (a, b) =>
+      (b.directScore ?? 0) - (a.directScore ?? 0) ||
+      b.sharedReasons.length - a.sharedReasons.length ||
+      (b.node.mediaItem?.imdbRating ?? 0) - (a.node.mediaItem?.imdbRating ?? 0)
+  );
+
+  linkedEntities.sort(
+    (a, b) =>
+      b.connectedCount - a.connectedCount ||
+      a.node.label.localeCompare(b.node.label)
+  );
+
+  return {
+    focusNode,
+    linkedNodeIds,
+    directLinkIds,
+    bridgeLinkIds,
+    allIlluminatedLinkIds,
+    linkedMedia,
+    linkedEntities,
+  };
 }
 
 /**
@@ -452,6 +719,12 @@ interface NodeAssemblyRecord {
   phaseOffset: number;
   nodeType: GraphNode['type'];
   isFocal: boolean;
+  selectionHalo: THREE.Mesh;
+  selectionHaloMat: THREE.MeshBasicMaterial;
+  outerRingHalo: THREE.Mesh;
+  outerRingHaloMat: THREE.MeshBasicMaterial;
+  labelSprite: THREE.Sprite | null;
+  baseLabelScale: number;
 }
 
 /**
@@ -931,6 +1204,29 @@ function createCategoryNodeAssembly(
     secondaryRing = focalGimbal;
   }
 
+  // Camera-facing selection & linked-node beacon halo rings
+  const haloRingGeo = new THREE.RingGeometry(r * 1.46, r * 1.72, 48);
+  const selectionHaloMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(node.isFocal ? '#B8292F' : node.color),
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  const selectionHalo = new THREE.Mesh(haloRingGeo, selectionHaloMat);
+  group.add(selectionHalo);
+
+  const outerHaloGeo = new THREE.RingGeometry(r * 1.88, r * 2.02, 48);
+  const outerRingHaloMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color('#B8292F'),
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  const outerRingHalo = new THREE.Mesh(outerHaloGeo, outerRingHaloMat);
+  group.add(outerRingHalo);
+
   // Invisible generous raycast hit-sphere so intricate multi-part models are effortless to click & hover
   const hitGeo = new THREE.SphereGeometry(r * 1.52, 16, 16);
   const hitMat = new THREE.MeshBasicMaterial({
@@ -941,6 +1237,12 @@ function createCategoryNodeAssembly(
   const hitMesh = new THREE.Mesh(hitGeo, hitMat);
   hitMesh.userData = { nodeId: node.id };
   group.add(hitMesh);
+
+  const baseLabelScale = node.isFocal
+    ? 46
+    : node.type === 'MOVIE' || node.type === 'TV'
+      ? 36
+      : 29;
 
   return {
     record: {
@@ -953,6 +1255,12 @@ function createCategoryNodeAssembly(
       phaseOffset: index * 0.73,
       nodeType: node.type,
       isFocal: Boolean(node.isFocal),
+      selectionHalo,
+      selectionHaloMat,
+      outerRingHalo,
+      outerRingHaloMat,
+      labelSprite: null,
+      baseLabelScale,
     },
     hitMesh,
   };
@@ -1069,6 +1377,7 @@ export function SpatialViewport({
   focalItem,
   selectedNodeId,
   onSelectNode,
+  onClearSelection,
   onMakeFocal,
   onClearFocal,
   viewMode,
@@ -1096,6 +1405,12 @@ export function SpatialViewport({
   const selectedIdRef = useRef<string | null>(selectedNodeId);
   const autoRotateRef = useRef<boolean>(autoRotate);
   const cameraModeRef = useRef<CameraMode>(cameraMode);
+
+  // Memoized linked subgraph for the currently selected node (used by the persistent Linked Nodes HUD panel)
+  const selectedSubgraph = useMemo(
+    () => computeLinkedSubgraph(selectedNodeId, nodes, links),
+    [selectedNodeId, nodes, links]
+  );
 
   useEffect(() => {
     forceRef.current = forceSettings;
@@ -1129,6 +1444,86 @@ export function SpatialViewport({
     flyTimer: 0,
   });
 
+  // 2D pan & zoom state ref so clicking/selecting a node smoothly frames its linked cluster in 2D too
+  const pan2dRef = useRef({
+    panX: 0,
+    panY: 0,
+    zoom: 1.05,
+    goalPanX: 0,
+    goalPanY: 0,
+    goalZoom: 1.05,
+  });
+
+  /**
+   * Smoothly frames both the target node AND all of its linked nodes in 3D and 2D viewports
+   * so that every linked node remains clearly visible on screen when clicked.
+   */
+  const frameNodeAndLinkedCluster = useCallback((nodeId: string) => {
+    const curNodes = nodesRef.current;
+    const curLinks = linksRef.current;
+    const targetNode = curNodes.find((n) => n.id === nodeId);
+    if (!targetNode) return;
+
+    const sub = computeLinkedSubgraph(nodeId, curNodes, curLinks);
+    const clusterNodes = curNodes.filter((n) => sub.linkedNodeIds.has(n.id));
+
+    if (clusterNodes.length > 1) {
+      let avgX = 0;
+      let avgY = 0;
+      let avgZ = 0;
+      for (const cn of clusterNodes) {
+        avgX += cn.x;
+        avgY += cn.y;
+        avgZ += cn.z;
+      }
+      avgX /= clusterNodes.length;
+      avgY /= clusterNodes.length;
+      avgZ /= clusterNodes.length;
+
+      // Weight camera target 55% toward the clicked node and 45% toward the centroid of its linked nodes
+      const goalX = targetNode.x * 0.55 + avgX * 0.45;
+      const goalY = targetNode.y * 0.55 + avgY * 0.45;
+      const goalZ = targetNode.z * 0.55 + avgZ * 0.45;
+
+      let maxDist3D = 0;
+      let maxDist2D = 0;
+      for (const cn of clusterNodes) {
+        const dx = cn.x - goalX;
+        const dy = cn.y - goalY;
+        const dz = cn.z - goalZ;
+        const d3 = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const d2 = Math.sqrt(dx * dx + dy * dy);
+        if (d3 > maxDist3D) maxDist3D = d3;
+        if (d2 > maxDist2D) maxDist2D = d2;
+      }
+
+      camSphericalRef.current.goalX = goalX;
+      camSphericalRef.current.goalY = goalY;
+      camSphericalRef.current.goalZ = goalZ;
+      camSphericalRef.current.goalRadius = Math.max(
+        175,
+        Math.min(340, maxDist3D * 1.85 + 75)
+      );
+
+      const nextZoom2D = Math.max(
+        0.68,
+        Math.min(1.35, 240 / Math.max(120, maxDist2D + 60))
+      );
+      pan2dRef.current.goalZoom = nextZoom2D;
+      pan2dRef.current.goalPanX = -goalX * nextZoom2D;
+      pan2dRef.current.goalPanY = -goalY * nextZoom2D;
+    } else {
+      camSphericalRef.current.goalX = targetNode.x;
+      camSphericalRef.current.goalY = targetNode.y;
+      camSphericalRef.current.goalZ = targetNode.z;
+      camSphericalRef.current.goalRadius = targetNode.isFocal ? 235 : 165;
+
+      pan2dRef.current.goalZoom = 1.15;
+      pan2dRef.current.goalPanX = -targetNode.x * 1.15;
+      pan2dRef.current.goalPanY = -targetNode.y * 1.15;
+    }
+  }, []);
+
   // Handle Reset View trigger
   useEffect(() => {
     if (resetPitchTrigger > 0) {
@@ -1137,27 +1532,33 @@ export function SpatialViewport({
       camSphericalRef.current.goalY = 0;
       camSphericalRef.current.goalZ = 0;
       camSphericalRef.current.goalRadius = 260;
+      pan2dRef.current.goalPanX = 0;
+      pan2dRef.current.goalPanY = 0;
+      pan2dRef.current.goalZoom = 1.05;
       onFovChange?.(55);
     }
   }, [resetPitchTrigger, onFovChange]);
 
-  // Handle Focus in Map button from Right Inspector
+  // Handle Focus in Map button from Right Inspector or Node Selection
   useEffect(() => {
     if (!orbitTargetNodeId) return;
-    const targetNode = nodesRef.current.find((n) => n.id === orbitTargetNodeId);
-    if (targetNode) {
-      camSphericalRef.current.goalX = targetNode.x;
-      camSphericalRef.current.goalY = targetNode.y;
-      camSphericalRef.current.goalZ = targetNode.z;
-      camSphericalRef.current.goalRadius = targetNode.isFocal ? 235 : 135;
-    }
-  }, [orbitTargetNodeId]);
+    frameNodeAndLinkedCluster(orbitTargetNodeId);
+  }, [orbitTargetNodeId, frameNodeAndLinkedCluster]);
+
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    frameNodeAndLinkedCluster(selectedNodeId);
+  }, [selectedNodeId, frameNodeAndLinkedCluster]);
 
   const handleZoomStep = useCallback(
     (delta: number) => {
       camSphericalRef.current.goalRadius = Math.max(
         75,
         Math.min(520, camSphericalRef.current.goalRadius + delta)
+      );
+      pan2dRef.current.goalZoom = Math.max(
+        0.45,
+        Math.min(2.6, pan2dRef.current.goalZoom - delta * 0.004)
       );
       const nextFov = Math.max(
         35,
@@ -1169,41 +1570,6 @@ export function SpatialViewport({
       onFovChange?.(nextFov);
     },
     [onFovChange]
-  );
-
-  /**
-   * Determines whether a link should be highlighted when `activeHoverId` is hovered.
-   */
-  const isLinkIlluminated = useCallback(
-    (link: GraphLink, activeHoverId: string | null): boolean => {
-      if (!activeHoverId) return true;
-      if (link.source === activeHoverId || link.target === activeHoverId) {
-        return true;
-      }
-      const hoveredNode = nodesRef.current.find((n) => n.id === activeHoverId);
-      if (
-        focalItem &&
-        hoveredNode &&
-        (hoveredNode.type === 'MOVIE' || hoveredNode.type === 'TV') &&
-        !hoveredNode.isFocal
-      ) {
-        const sharedEntityIds = new Set(
-          hoveredNode.similarity?.sharedConnections
-            .map((c) => c.entityNodeId)
-            .filter(Boolean)
-        );
-        if (
-          (sharedEntityIds.has(link.source) &&
-            (link.target === activeHoverId || link.target === focalItem.id)) ||
-          (sharedEntityIds.has(link.target) &&
-            (link.source === activeHoverId || link.source === focalItem.id))
-        ) {
-          return true;
-        }
-      }
-      return false;
-    },
-    [focalItem]
   );
 
   // ==================== 3D WEBGL SCENE EFFECT ====================
@@ -1344,20 +1710,24 @@ export function SpatialViewport({
       }
 
       const labelSprite = createLabelSprite(node);
+      record.labelSprite = labelSprite;
       record.group.add(labelSprite);
 
       scene.add(record.group);
       nodeAssembliesMap.set(node.id, record);
     });
 
-    // Create 3D Links
+    // Create 3D Links + 3D Illuminated Connection Beams (for crisp visibility when a node is selected)
     interface LinkRenderEntry {
       link: GraphLink;
       line: THREE.Line;
       material: THREE.LineBasicMaterial;
       geometry: THREE.BufferGeometry;
+      beamMesh: THREE.Mesh;
+      beamMaterial: THREE.MeshBasicMaterial;
     }
 
+    const sharedBeamUnitGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
     const linkEntries: LinkRenderEntry[] = [];
     links.forEach((link) => {
       const positions = new Float32Array(6);
@@ -1372,7 +1742,25 @@ export function SpatialViewport({
       });
       const line = new THREE.Line(geo, mat);
       scene.add(line);
-      linkEntries.push({ link, line, material: mat, geometry: geo });
+
+      const beamMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(link.color),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const beamMesh = new THREE.Mesh(sharedBeamUnitGeo, beamMaterial);
+      beamMesh.visible = false;
+      scene.add(beamMesh);
+
+      linkEntries.push({
+        link,
+        line,
+        material: mat,
+        geometry: geo,
+        beamMesh,
+        beamMaterial,
+      });
     });
 
     // Pointer / Raycasting state
@@ -1461,10 +1849,10 @@ export function SpatialViewport({
         const hitNode = simNodes.find((n) => n.id === hitId);
         if (hitNode) {
           onSelectNode(hitNode);
-          camSphericalRef.current.goalX = hitNode.x * 0.45;
-          camSphericalRef.current.goalY = hitNode.y * 0.45;
-          camSphericalRef.current.goalZ = hitNode.z * 0.45;
+          frameNodeAndLinkedCluster(hitNode.id);
         }
+      } else if (selectedIdRef.current) {
+        onClearSelection?.();
       }
     };
 
@@ -1518,6 +1906,8 @@ export function SpatialViewport({
     let clock = 0;
     const nodeIndexMap = new Map<string, GraphNode>();
     simNodes.forEach((n) => nodeIndexMap.set(n.id, n));
+    const upVec = new THREE.Vector3(0, 1, 0);
+    const dirVec = new THREE.Vector3();
 
     const animate = () => {
       frameId = requestAnimationFrame(animate);
@@ -1600,145 +1990,11 @@ export function SpatialViewport({
         }
       }
 
+      const camState = camSphericalRef.current;
       const activeHover = hoveredIdRef.current;
       const activeSelected = selectedIdRef.current;
+      const hasActiveFocus = Boolean(activeSelected || activeHover);
 
-      for (const node of simNodes) {
-        if (!node.isFocal) {
-          node.vx *= 0.82;
-          node.vy *= 0.82;
-          node.vz *= 0.82;
-          node.x += node.vx;
-          node.y += node.vy;
-          node.z += node.vz;
-        }
-
-        const assembly = nodeAssembliesMap.get(node.id);
-        if (assembly) {
-          const grp = assembly.group;
-          grp.position.set(node.x, node.y, node.z);
-
-          const isHighlighted =
-            node.id === activeHover ||
-            node.id === activeSelected ||
-            node.isFocal;
-          const targetScale =
-            node.id === activeHover
-              ? 1.28
-              : node.id === activeSelected
-                ? 1.15
-                : 1.0;
-          grp.scale.lerp(
-            new THREE.Vector3(targetScale, targetScale, targetScale),
-            0.15
-          );
-
-          // Bespoke sleek per-category kinetic micro-animations for real 3D category models
-          const phase = clock + assembly.phaseOffset;
-          const speedBoost = node.id === activeHover ? 2.4 : 1.0;
-
-          if (assembly.nodeType === 'MOVIE') {
-            // Film Reel spins smoothly around its spindle axis and gently precesses
-            assembly.coreObject.rotation.z -= 0.011 * speedBoost;
-            assembly.coreObject.rotation.y =
-              -0.25 + Math.sin(phase * 0.7) * 0.28;
-          } else if (assembly.nodeType === 'TV') {
-            // Widescreen TV gently swivels on its pedestal stand
-            assembly.coreObject.rotation.y = Math.sin(phase * 0.75) * 0.35;
-            assembly.coreObject.rotation.x = Math.cos(phase * 0.5) * 0.08;
-          } else if (assembly.nodeType === 'DIRECTOR') {
-            // Clapperboard gently swivels; hinged upper clap-stick claps when hovered!
-            assembly.coreObject.rotation.y = Math.sin(phase * 0.8) * 0.32;
-            if (assembly.outerShell) {
-              assembly.outerShell.rotation.z =
-                node.id === activeHover
-                  ? Math.abs(Math.sin(clock * 7.5)) * 0.42
-                  : 0.28 + Math.sin(phase * 1.4) * 0.08;
-            }
-          } else if (assembly.nodeType === 'ACTOR') {
-            // 5-Pointed Cinema Star Trophy rotates proudly
-            assembly.coreObject.rotation.y += 0.01 * speedBoost;
-            assembly.coreObject.rotation.z = Math.sin(phase * 1.1) * 0.08;
-          } else if (assembly.nodeType === 'TROPE') {
-            // Open Story Book gently rocks and its golden bookmark floats
-            assembly.coreObject.rotation.y = Math.sin(phase * 0.85) * 0.34;
-            assembly.coreObject.rotation.x =
-              0.35 + Math.cos(phase * 0.7) * 0.08;
-          } else if (assembly.nodeType === 'COMPOSER') {
-            // Musical Eighth Note sways in rhythm while its soundwave ring orbits
-            assembly.coreObject.rotation.y = Math.sin(phase * 0.95) * 0.36;
-            assembly.coreObject.rotation.z = Math.cos(phase * 1.3) * 0.09;
-            if (assembly.outerShell) {
-              assembly.outerShell.rotation.z += 0.014 * speedBoost;
-              assembly.outerShell.rotation.x =
-                Math.PI / 3 + Math.sin(phase) * 0.16;
-            }
-          }
-
-          if (assembly.isFocal && assembly.secondaryRing) {
-            assembly.secondaryRing.rotation.z += 0.009 * speedBoost;
-          }
-
-          const connectedToHover =
-            !activeHover ||
-            isHighlighted ||
-            node.connectedMediaIds.includes(activeHover) ||
-            linksRef.current.some(
-              (l) =>
-                isLinkIlluminated(l, activeHover) &&
-                (l.source === node.id || l.target === node.id)
-            );
-
-          for (const mat of assembly.primaryMaterials) {
-            if (!activeHover) {
-              mat.opacity = 0.98;
-              mat.emissiveIntensity = node.isFocal ? 0.34 : 0.16;
-            } else {
-              mat.opacity = connectedToHover ? 1.0 : 0.22;
-              mat.emissiveIntensity = connectedToHover ? 0.38 : 0.04;
-            }
-          }
-          for (const accMat of assembly.accentMaterials) {
-            if ('opacity' in accMat) {
-              accMat.opacity = !activeHover
-                ? 0.32
-                : connectedToHover
-                  ? 0.52
-                  : 0.08;
-            }
-          }
-        }
-      }
-
-      for (const entry of linkEntries) {
-        const src = nodeIndexMap.get(entry.link.source);
-        const tgt = nodeIndexMap.get(entry.link.target);
-        if (!src || !tgt) continue;
-
-        const posAttr = entry.geometry.getAttribute(
-          'position'
-        ) as THREE.BufferAttribute;
-        posAttr.setXYZ(0, src.x, src.y, src.z);
-        posAttr.setXYZ(1, tgt.x, tgt.y, tgt.z);
-        posAttr.needsUpdate = true;
-
-        if (!activeHover) {
-          entry.material.opacity =
-            entry.link.kind === 'SIMILARITY_DIRECT' ? 0.5 : 0.26;
-        } else {
-          const lit = isLinkIlluminated(entry.link, activeHover);
-          entry.material.opacity = lit ? 0.92 : 0.06;
-        }
-      }
-
-      if (focalOuterOrbitalRing) {
-        focalOuterOrbitalRing.rotation.x -= 0.007;
-        focalOuterOrbitalRing.rotation.y += 0.005;
-      }
-
-      starField.rotation.y += 0.00025;
-
-      const camState = camSphericalRef.current;
       if (cameraModeRef.current === 'FLY_THROUGH' && !isDragging) {
         camState.flyTimer += 0.016;
         const mediaNodes = simNodes.filter(
@@ -1758,7 +2014,12 @@ export function SpatialViewport({
             camState.theta += 0.0045;
           }
         }
-      } else if (autoRotateRef.current && !isDragging && !activeHover) {
+      } else if (
+        autoRotateRef.current &&
+        !isDragging &&
+        !activeHover &&
+        !activeSelected
+      ) {
         camState.theta += 0.002;
       }
 
@@ -1779,6 +2040,240 @@ export function SpatialViewport({
       camera.position.set(camX, camY, camZ);
       camera.lookAt(camState.targetX, camState.targetY, camState.targetZ);
 
+      // Compute persistent selected subgraph + optional hover subgraph
+      const selSub = activeSelected
+        ? computeLinkedSubgraph(activeSelected, simNodes, linksRef.current)
+        : null;
+      const hovSub =
+        activeHover && activeHover !== activeSelected
+          ? computeLinkedSubgraph(activeHover, simNodes, linksRef.current)
+          : null;
+
+      const highlightedNodeSet = new Set<string>();
+      const illuminatedLinkSet = new Set<string>();
+      const directLinkSet = new Set<string>();
+
+      if (selSub) {
+        for (const id of selSub.linkedNodeIds) highlightedNodeSet.add(id);
+        for (const id of selSub.allIlluminatedLinkIds)
+          illuminatedLinkSet.add(id);
+        for (const id of selSub.directLinkIds) directLinkSet.add(id);
+      }
+      if (hovSub) {
+        // If no node is selected, or if hovering a node outside the selected cluster, also illuminate hover subgraph
+        if (!selSub || !selSub.linkedNodeIds.has(activeHover!)) {
+          for (const id of hovSub.linkedNodeIds) highlightedNodeSet.add(id);
+          for (const id of hovSub.allIlluminatedLinkIds)
+            illuminatedLinkSet.add(id);
+          for (const id of hovSub.directLinkIds) directLinkSet.add(id);
+        }
+      }
+
+      for (const node of simNodes) {
+        if (!node.isFocal) {
+          node.vx *= 0.82;
+          node.vy *= 0.82;
+          node.vz *= 0.82;
+          node.x += node.vx;
+          node.y += node.vy;
+          node.z += node.vz;
+        }
+
+        const assembly = nodeAssembliesMap.get(node.id);
+        if (assembly) {
+          const grp = assembly.group;
+          grp.position.set(node.x, node.y, node.z);
+
+          const isNodeSelected = node.id === activeSelected;
+          const isNodeHovered = node.id === activeHover;
+          const isNodeLinked =
+            !hasActiveFocus ||
+            isNodeSelected ||
+            isNodeHovered ||
+            highlightedNodeSet.has(node.id);
+
+          const targetScale = isNodeHovered
+            ? 1.3
+            : isNodeSelected
+              ? 1.24
+              : hasActiveFocus && isNodeLinked
+                ? 1.14
+                : hasActiveFocus
+                  ? 0.86
+                  : 1.0;
+          grp.scale.lerp(
+            new THREE.Vector3(targetScale, targetScale, targetScale),
+            0.15
+          );
+
+          // Orient selection & linked-node beacon rings toward camera
+          assembly.selectionHalo.lookAt(camera.position);
+          assembly.outerRingHalo.lookAt(camera.position);
+
+          if (!hasActiveFocus) {
+            assembly.selectionHaloMat.opacity = 0;
+            assembly.outerRingHaloMat.opacity = 0;
+          } else if (isNodeSelected || isNodeHovered) {
+            assembly.selectionHaloMat.opacity = 0.92;
+            assembly.outerRingHaloMat.opacity =
+              0.68 + Math.sin(clock * 4.5) * 0.24;
+            const pulse = 1.0 + Math.sin(clock * 4.5) * 0.08;
+            assembly.outerRingHalo.scale.set(pulse, pulse, 1);
+          } else if (isNodeLinked) {
+            assembly.selectionHaloMat.opacity = 0.72;
+            assembly.outerRingHaloMat.opacity = 0.28;
+            assembly.outerRingHalo.scale.set(1, 1, 1);
+          } else {
+            assembly.selectionHaloMat.opacity = 0;
+            assembly.outerRingHaloMat.opacity = 0;
+          }
+
+          // Update 3D Label Sprite opacity & scale so linked node labels stay crisp and unlinked labels fade out
+          if (assembly.labelSprite) {
+            const baseS = assembly.baseLabelScale;
+            if (!hasActiveFocus) {
+              assembly.labelSprite.material.opacity = 0.96;
+              assembly.labelSprite.scale.set(baseS, baseS * (168 / 640), 1);
+            } else if (isNodeSelected || isNodeHovered) {
+              assembly.labelSprite.material.opacity = 1.0;
+              const s = baseS * 1.16;
+              assembly.labelSprite.scale.set(s, s * (168 / 640), 1);
+            } else if (isNodeLinked) {
+              assembly.labelSprite.material.opacity = 1.0;
+              const s = baseS * 1.08;
+              assembly.labelSprite.scale.set(s, s * (168 / 640), 1);
+            } else {
+              assembly.labelSprite.material.opacity = 0.08;
+              const s = baseS * 0.85;
+              assembly.labelSprite.scale.set(s, s * (168 / 640), 1);
+            }
+          }
+
+          // Bespoke sleek per-category kinetic micro-animations for real 3D category models
+          const phase = clock + assembly.phaseOffset;
+          const speedBoost =
+            isNodeHovered || isNodeSelected
+              ? 2.2
+              : hasActiveFocus && isNodeLinked
+                ? 1.4
+                : 1.0;
+
+          if (assembly.nodeType === 'MOVIE') {
+            assembly.coreObject.rotation.z -= 0.011 * speedBoost;
+            assembly.coreObject.rotation.y =
+              -0.25 + Math.sin(phase * 0.7) * 0.28;
+          } else if (assembly.nodeType === 'TV') {
+            assembly.coreObject.rotation.y = Math.sin(phase * 0.75) * 0.35;
+            assembly.coreObject.rotation.x = Math.cos(phase * 0.5) * 0.08;
+          } else if (assembly.nodeType === 'DIRECTOR') {
+            assembly.coreObject.rotation.y = Math.sin(phase * 0.8) * 0.32;
+            if (assembly.outerShell) {
+              assembly.outerShell.rotation.z =
+                isNodeHovered || isNodeSelected
+                  ? Math.abs(Math.sin(clock * 7.5)) * 0.42
+                  : 0.28 + Math.sin(phase * 1.4) * 0.08;
+            }
+          } else if (assembly.nodeType === 'ACTOR') {
+            assembly.coreObject.rotation.y += 0.01 * speedBoost;
+            assembly.coreObject.rotation.z = Math.sin(phase * 1.1) * 0.08;
+          } else if (assembly.nodeType === 'TROPE') {
+            assembly.coreObject.rotation.y = Math.sin(phase * 0.85) * 0.34;
+            assembly.coreObject.rotation.x =
+              0.35 + Math.cos(phase * 0.7) * 0.08;
+          } else if (assembly.nodeType === 'COMPOSER') {
+            assembly.coreObject.rotation.y = Math.sin(phase * 0.95) * 0.36;
+            assembly.coreObject.rotation.z = Math.cos(phase * 1.3) * 0.09;
+            if (assembly.outerShell) {
+              assembly.outerShell.rotation.z += 0.014 * speedBoost;
+              assembly.outerShell.rotation.x =
+                Math.PI / 3 + Math.sin(phase) * 0.16;
+            }
+          }
+
+          if (assembly.isFocal && assembly.secondaryRing) {
+            assembly.secondaryRing.rotation.z += 0.009 * speedBoost;
+          }
+
+          for (const mat of assembly.primaryMaterials) {
+            if (!hasActiveFocus) {
+              mat.opacity = 0.98;
+              mat.emissiveIntensity = node.isFocal ? 0.34 : 0.16;
+            } else {
+              mat.opacity = isNodeLinked ? 1.0 : 0.14;
+              mat.emissiveIntensity =
+                isNodeSelected || isNodeHovered
+                  ? 0.48
+                  : isNodeLinked
+                    ? 0.36
+                    : 0.02;
+            }
+          }
+          for (const accMat of assembly.accentMaterials) {
+            if ('opacity' in accMat) {
+              accMat.opacity = !hasActiveFocus
+                ? 0.32
+                : isNodeLinked
+                  ? 0.58
+                  : 0.05;
+            }
+          }
+        }
+      }
+
+      for (const entry of linkEntries) {
+        const src = nodeIndexMap.get(entry.link.source);
+        const tgt = nodeIndexMap.get(entry.link.target);
+        if (!src || !tgt) continue;
+
+        const posAttr = entry.geometry.getAttribute(
+          'position'
+        ) as THREE.BufferAttribute;
+        posAttr.setXYZ(0, src.x, src.y, src.z);
+        posAttr.setXYZ(1, tgt.x, tgt.y, tgt.z);
+        posAttr.needsUpdate = true;
+
+        if (!hasActiveFocus) {
+          entry.material.opacity =
+            entry.link.kind === 'SIMILARITY_DIRECT' ? 0.5 : 0.26;
+          entry.beamMesh.visible = false;
+        } else {
+          const lit = illuminatedLinkSet.has(entry.link.id);
+          entry.material.opacity = lit ? 0.98 : 0.04;
+
+          if (lit) {
+            const dx = tgt.x - src.x;
+            const dy = tgt.y - src.y;
+            const dz = tgt.z - src.z;
+            const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (len > 0.001) {
+              entry.beamMesh.visible = true;
+              entry.beamMesh.position.set(
+                (src.x + tgt.x) * 0.5,
+                (src.y + tgt.y) * 0.5,
+                (src.z + tgt.z) * 0.5
+              );
+              dirVec.set(dx / len, dy / len, dz / len);
+              entry.beamMesh.quaternion.setFromUnitVectors(upVec, dirVec);
+              const isDirect = directLinkSet.has(entry.link.id);
+              const thickness = isDirect ? 0.56 : 0.38;
+              entry.beamMesh.scale.set(thickness, len, thickness);
+              entry.beamMaterial.opacity = isDirect ? 0.85 : 0.62;
+            } else {
+              entry.beamMesh.visible = false;
+            }
+          } else {
+            entry.beamMesh.visible = false;
+          }
+        }
+      }
+
+      if (focalOuterOrbitalRing) {
+        focalOuterOrbitalRing.rotation.x -= 0.007;
+        focalOuterOrbitalRing.rotation.y += 0.005;
+      }
+
+      starField.rotation.y += 0.00025;
+
       renderer.render(scene, camera);
     };
 
@@ -1795,7 +2290,11 @@ export function SpatialViewport({
 
       // Explicitly dispose GPU geometries, materials, and textures per Three.js best practices
       scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Points) {
+        if (
+          obj instanceof THREE.Mesh ||
+          obj instanceof THREE.Line ||
+          obj instanceof THREE.Points
+        ) {
           obj.geometry?.dispose();
           if (Array.isArray(obj.material)) {
             obj.material.forEach((m) => m.dispose());
@@ -1807,6 +2306,7 @@ export function SpatialViewport({
           obj.material.dispose();
         }
       });
+      sharedBeamUnitGeo.dispose();
       envTexture.dispose();
       renderer.dispose();
     };
@@ -1815,9 +2315,10 @@ export function SpatialViewport({
     nodes,
     links,
     onSelectNode,
+    onClearSelection,
     onMakeFocal,
     handleZoomStep,
-    isLinkIlluminated,
+    frameNodeAndLinkedCluster,
   ]);
 
   // ==================== 2D CANVAS GRAPH EFFECT ====================
@@ -1836,9 +2337,6 @@ export function SpatialViewport({
     nodesRef.current = simNodes;
     linksRef.current = links;
 
-    let panX = 0;
-    let panY = 0;
-    let zoom = 1.05;
     let isDragging = false;
     let dragMoved = false;
     let lastX = 0;
@@ -1860,6 +2358,7 @@ export function SpatialViewport({
     const screenToWorld = (sx: number, sy: number) => {
       const cw = canvas.clientWidth;
       const ch = canvas.clientHeight;
+      const { panX, panY, zoom } = pan2dRef.current;
       return {
         wx: (sx - cw / 2 - panX) / zoom,
         wy: (sy - ch / 2 - panY) / zoom,
@@ -1894,8 +2393,10 @@ export function SpatialViewport({
         const dx = e.clientX - lastX;
         const dy = e.clientY - lastY;
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragMoved = true;
-        panX += dx;
-        panY += dy;
+        pan2dRef.current.panX += dx;
+        pan2dRef.current.panY += dy;
+        pan2dRef.current.goalPanX = pan2dRef.current.panX;
+        pan2dRef.current.goalPanY = pan2dRef.current.panY;
         lastX = e.clientX;
         lastY = e.clientY;
         return;
@@ -1923,7 +2424,12 @@ export function SpatialViewport({
       if (dragMoved) return;
       const rect = canvas.getBoundingClientRect();
       const hit = findNodeAt(e.clientX - rect.left, e.clientY - rect.top);
-      if (hit) onSelectNode(hit);
+      if (hit) {
+        onSelectNode(hit);
+        frameNodeAndLinkedCluster(hit.id);
+      } else if (selectedIdRef.current) {
+        onClearSelection?.();
+      }
     };
 
     const onDblClick = (e: MouseEvent) => {
@@ -1936,7 +2442,12 @@ export function SpatialViewport({
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      zoom = Math.max(0.45, Math.min(2.6, zoom - e.deltaY * 0.0012));
+      const nextZ = Math.max(
+        0.45,
+        Math.min(2.6, pan2dRef.current.goalZoom - e.deltaY * 0.0012)
+      );
+      pan2dRef.current.zoom = nextZ;
+      pan2dRef.current.goalZoom = nextZ;
     };
 
     canvas.addEventListener('mousedown', onMouseDown);
@@ -1954,6 +2465,17 @@ export function SpatialViewport({
     const render2D = () => {
       animId = requestAnimationFrame(render2D);
       tick += 0.02;
+
+      if (!isDragging) {
+        pan2dRef.current.panX +=
+          (pan2dRef.current.goalPanX - pan2dRef.current.panX) * 0.1;
+        pan2dRef.current.panY +=
+          (pan2dRef.current.goalPanY - pan2dRef.current.panY) * 0.1;
+        pan2dRef.current.zoom +=
+          (pan2dRef.current.goalZoom - pan2dRef.current.zoom) * 0.1;
+      }
+
+      const { panX, panY, zoom } = pan2dRef.current;
       const cw = canvas.clientWidth;
       const ch = canvas.clientHeight;
       ctx.clearRect(0, 0, cw, ch);
@@ -1994,48 +2516,86 @@ export function SpatialViewport({
       }
 
       const activeHover = hoveredIdRef.current;
+      const activeSelected = selectedIdRef.current;
+      const hasActiveFocus = Boolean(activeSelected || activeHover);
+
+      const selSub = activeSelected
+        ? computeLinkedSubgraph(activeSelected, simNodes, linksRef.current)
+        : null;
+      const hovSub =
+        activeHover && activeHover !== activeSelected
+          ? computeLinkedSubgraph(activeHover, simNodes, linksRef.current)
+          : null;
+
+      const highlightedNodeSet = new Set<string>();
+      const illuminatedLinkSet = new Set<string>();
+      const directLinkSet = new Set<string>();
+
+      if (selSub) {
+        for (const id of selSub.linkedNodeIds) highlightedNodeSet.add(id);
+        for (const id of selSub.allIlluminatedLinkIds)
+          illuminatedLinkSet.add(id);
+        for (const id of selSub.directLinkIds) directLinkSet.add(id);
+      }
+      if (hovSub) {
+        if (!selSub || !selSub.linkedNodeIds.has(activeHover!)) {
+          for (const id of hovSub.linkedNodeIds) highlightedNodeSet.add(id);
+          for (const id of hovSub.allIlluminatedLinkIds)
+            illuminatedLinkSet.add(id);
+          for (const id of hovSub.directLinkIds) directLinkSet.add(id);
+        }
+      }
 
       // Draw Links
       for (const link of links) {
         const s = nodeMap.get(link.source);
         const t = nodeMap.get(link.target);
         if (!s || !t) continue;
-        const lit = isLinkIlluminated(link, activeHover);
+        const lit = !hasActiveFocus || illuminatedLinkSet.has(link.id);
+        const isDirect = directLinkSet.has(link.id);
+        ctx.save();
         ctx.beginPath();
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(t.x, t.y);
         ctx.strokeStyle = link.color;
-        ctx.globalAlpha = !activeHover
+        ctx.globalAlpha = !hasActiveFocus
           ? link.kind === 'SIMILARITY_DIRECT'
             ? 0.45
             : 0.26
           : lit
-            ? 0.92
-            : 0.08;
-        ctx.lineWidth = lit && activeHover ? 2.2 : 1.15;
+            ? 0.96
+            : 0.05;
+        ctx.lineWidth =
+          lit && hasActiveFocus ? (isDirect ? 2.8 : 2.1) : 1.15;
+        if (lit && hasActiveFocus) {
+          ctx.shadowColor = link.color;
+          ctx.shadowBlur = 6;
+        }
         ctx.stroke();
+        ctx.restore();
       }
 
       // Draw Nodes with bespoke category geometric silhouettes
       for (const node of simNodes) {
-        const isSelected = node.id === selectedIdRef.current;
+        const isSelected = node.id === activeSelected;
         const isHovered = node.id === activeHover;
-        const connectedToHover =
-          !activeHover ||
-          isHovered ||
+        const isNodeLinked =
+          !hasActiveFocus ||
           isSelected ||
-          node.isFocal ||
-          node.connectedMediaIds.includes(activeHover) ||
-          linksRef.current.some(
-            (l) =>
-              isLinkIlluminated(l, activeHover) &&
-              (l.source === node.id || l.target === node.id)
-          );
+          isHovered ||
+          highlightedNodeSet.has(node.id);
 
-        ctx.globalAlpha = connectedToHover ? 1 : 0.25;
+        ctx.globalAlpha = isNodeLinked ? 1 : 0.14;
 
         const rScaled =
-          node.radius * (isHovered ? 1.26 : isSelected ? 1.15 : 1);
+          node.radius *
+          (isHovered
+            ? 1.28
+            : isSelected
+              ? 1.22
+              : hasActiveFocus && isNodeLinked
+                ? 1.12
+                : 1);
 
         if (node.isFocal) {
           ctx.beginPath();
@@ -2057,9 +2617,27 @@ export function SpatialViewport({
           ctx.stroke();
         } else if (isHovered || isSelected) {
           ctx.beginPath();
-          ctx.arc(node.x, node.y, rScaled * 1.42, 0, Math.PI * 2);
+          ctx.arc(
+            node.x,
+            node.y,
+            rScaled * 1.58 + Math.sin(tick * 2.4) * 1.5,
+            0,
+            Math.PI * 2
+          );
+          ctx.strokeStyle = '#B8292F';
+          ctx.lineWidth = 1.8;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, rScaled * 1.32, 0, Math.PI * 2);
           ctx.strokeStyle = node.color;
           ctx.lineWidth = 1.4;
+          ctx.stroke();
+        } else if (hasActiveFocus && isNodeLinked) {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, rScaled * 1.38, 0, Math.PI * 2);
+          ctx.strokeStyle = node.color;
+          ctx.lineWidth = 1.5;
           ctx.stroke();
         }
 
@@ -2067,9 +2645,10 @@ export function SpatialViewport({
         ctx.save();
         ctx.beginPath();
         ctx.arc(node.x, node.y, rScaled * 1.12, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(251, 248, 242, 0.92)';
-        ctx.shadowColor = 'rgba(23, 20, 18, 0.2)';
-        ctx.shadowBlur = isHovered || node.isFocal ? 12 : 5;
+        ctx.fillStyle = 'rgba(251, 248, 242, 0.94)';
+        ctx.shadowColor = 'rgba(23, 20, 18, 0.22)';
+        ctx.shadowBlur =
+          isHovered || isSelected || (hasActiveFocus && isNodeLinked) ? 12 : 5;
         ctx.shadowOffsetY = 2;
         ctx.fill();
         ctx.restore();
@@ -2084,7 +2663,11 @@ export function SpatialViewport({
         );
 
         // Label
-        ctx.font = `${node.isFocal ? '700 13px' : '600 11.5px'} "Spectral", Georgia, serif`;
+        ctx.font = `${
+          node.isFocal || isSelected || (hasActiveFocus && isNodeLinked)
+            ? '700 12.5px'
+            : '600 11.5px'
+        } "Spectral", Georgia, serif`;
         ctx.fillStyle = '#171412';
         ctx.textAlign = 'center';
         ctx.fillText(node.label, node.x, node.y + rScaled + 15);
@@ -2118,7 +2701,15 @@ export function SpatialViewport({
       canvas.removeEventListener('dblclick', onDblClick);
       canvas.removeEventListener('wheel', onWheel);
     };
-  }, [viewMode, nodes, links, onSelectNode, onMakeFocal, isLinkIlluminated]);
+  }, [
+    viewMode,
+    nodes,
+    links,
+    onSelectNode,
+    onClearSelection,
+    onMakeFocal,
+    frameNodeAndLinkedCluster,
+  ]);
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none">
@@ -2170,35 +2761,245 @@ export function SpatialViewport({
         </div>
         <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[#EFE8DA]/90 border border-[#D5CCB9] text-[11px] text-[#52483E]">
           <span>
-            Click any title or collaborator to read notes · Double-click a title
-            to center the map around it
+            Click any node to lock &amp; inspect all its linked connections ·
+            Double-click a title to center the map
           </span>
         </div>
       </div>
 
-      {/* Active Hover Connection Banner */}
-      {hoveredNodeId && hoveredTooltip && (
+      {/* Persistent Linked Constellation Panel (Shown whenever ANY node is clicked/selected) */}
+      {selectedSubgraph.focusNode && (
+        <div
+          aria-label="Selected Node Linked Connections"
+          className="pointer-events-auto absolute top-[4.75rem] left-4 z-30 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-11.5rem)] rounded-lg bg-[#FBF8F2]/98 backdrop-blur-sm border border-[#B5A892] shadow-archival flex flex-col overflow-hidden"
+        >
+          {/* Header: Selected Node & Clear Button */}
+          <div className="px-3.5 py-2.5 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded flex items-center justify-center shrink-0 border border-[#C8BEAA] bg-[#FBF8F2] mt-0.5">
+                {selectedSubgraph.focusNode.type === 'MOVIE' && (
+                  <Film className="w-4 h-4 text-[#234B6E]" />
+                )}
+                {selectedSubgraph.focusNode.type === 'TV' && (
+                  <Tv className="w-4 h-4 text-[#6B3A6E]" />
+                )}
+                {selectedSubgraph.focusNode.type === 'DIRECTOR' && (
+                  <Award className="w-4 h-4 text-[#B8292F]" />
+                )}
+                {selectedSubgraph.focusNode.type === 'ACTOR' && (
+                  <UserCheck className="w-4 h-4 text-[#B86B14]" />
+                )}
+                {selectedSubgraph.focusNode.type === 'TROPE' && (
+                  <Hash className="w-4 h-4 text-[#2A6B53]" />
+                )}
+                {selectedSubgraph.focusNode.type === 'COMPOSER' && (
+                  <Music className="w-4 h-4 text-[#A63A2B]" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#B8292F]">
+                    <Link2 className="w-3 h-3" />
+                    Highlighted Node
+                  </span>
+                  <span className="text-[10px] font-semibold text-[#52483E]">
+                    · {getEntityRoleLabel(selectedSubgraph.focusNode.type)}
+                  </span>
+                </div>
+                <h3 className="font-heading text-sm font-bold text-[#171412] truncate">
+                  {selectedSubgraph.focusNode.label}
+                </h3>
+              </div>
+            </div>
+
+            {onClearSelection && (
+              <button
+                type="button"
+                onClick={onClearSelection}
+                className="p-1 rounded text-[#52483E] hover:text-[#171412] hover:bg-[#E5DEC9] transition-colors shrink-0 cursor-pointer"
+                title="Clear highlight and show all nodes"
+                aria-label="Clear highlight"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Summary Count Strip */}
+          <div className="px-3.5 py-2 bg-[#F6F1E7] border-b border-[#D5CCB9] flex items-center justify-between text-[11px]">
+            <span className="font-medium text-[#52483E]">
+              Linked in current graph:
+            </span>
+            <div className="flex items-center gap-1.5 font-tabular font-semibold">
+              <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]">
+                {selectedSubgraph.linkedMedia.length}{' '}
+                {selectedSubgraph.linkedMedia.length === 1 ? 'Title' : 'Titles'}
+              </span>
+              {selectedSubgraph.linkedEntities.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA]">
+                  {selectedSubgraph.linkedEntities.length} Shared{' '}
+                  {selectedSubgraph.linkedEntities.length === 1
+                    ? 'Credit'
+                    : 'Credits'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Scrollable Linked Nodes List */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {/* Section 1: Linked Movies & TV Series */}
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#52483E] mb-1.5">
+                Linked Films &amp; Series ({selectedSubgraph.linkedMedia.length})
+              </div>
+              {selectedSubgraph.linkedMedia.length > 0 ? (
+                <div className="space-y-1.5">
+                  {selectedSubgraph.linkedMedia.map(
+                    ({ node: mNode, sharedReasons, directScore }) => (
+                      <button
+                        key={mNode.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectNode(mNode);
+                          frameNodeAndLinkedCluster(mNode.id);
+                        }}
+                        onMouseEnter={() => {
+                          hoveredIdRef.current = mNode.id;
+                          setHoveredNodeId(mNode.id);
+                        }}
+                        onMouseLeave={() => {
+                          hoveredIdRef.current = null;
+                          setHoveredNodeId(null);
+                        }}
+                        className="w-full text-left p-2 rounded bg-[#FBF8F2] hover:bg-[#EFE8DA] border border-[#D5CCB9] hover:border-[#B8292F] transition-colors cursor-pointer group"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {mNode.type === 'MOVIE' ? (
+                              <Film className="w-3.5 h-3.5 text-[#234B6E] shrink-0" />
+                            ) : (
+                              <Tv className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" />
+                            )}
+                            <span className="font-heading text-xs font-bold text-[#171412] group-hover:text-[#B8292F] truncate">
+                              {mNode.label}
+                            </span>
+                            {mNode.mediaItem && (
+                              <span className="text-[11px] font-tabular text-[#6B5E50] shrink-0">
+                                ({mNode.mediaItem.year})
+                              </span>
+                            )}
+                          </div>
+                          {directScore !== undefined && directScore > 0 && (
+                            <span className="px-1.5 py-0.2 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[10px] font-tabular font-bold shrink-0">
+                              {directScore}%
+                            </span>
+                          )}
+                        </div>
+                        {sharedReasons.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {sharedReasons.slice(0, 3).map((reason) => (
+                              <span
+                                key={reason}
+                                className="px-1.5 py-0.2 rounded bg-[#EFE8DA] text-[#52483E] text-[10px] font-medium truncate max-w-full"
+                              >
+                                {reason}
+                              </span>
+                            ))}
+                            {sharedReasons.length > 3 && (
+                              <span className="text-[10px] text-[#6B5E50]">
+                                +{sharedReasons.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </button>
+                    )
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-[#6B5E50] italic">
+                  No directly linked titles above the current threshold.
+                </p>
+              )}
+            </div>
+
+            {/* Section 2: Linked Collaborator & Theme Nodes */}
+            {selectedSubgraph.linkedEntities.length > 0 && (
+              <div className="pt-2 border-t border-[#D5CCB9]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#52483E] mb-1.5">
+                  Shared Collaborators &amp; Themes (
+                  {selectedSubgraph.linkedEntities.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedSubgraph.linkedEntities.map(
+                    ({ node: eNode, roleLabel, connectedCount }) => (
+                      <button
+                        key={eNode.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectNode(eNode);
+                          frameNodeAndLinkedCluster(eNode.id);
+                        }}
+                        onMouseEnter={() => {
+                          hoveredIdRef.current = eNode.id;
+                          setHoveredNodeId(eNode.id);
+                        }}
+                        onMouseLeave={() => {
+                          hoveredIdRef.current = null;
+                          setHoveredNodeId(null);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-[#EFE8DA] hover:bg-[#E5DEC9] border border-[#C8BEAA] hover:border-[#B8292F] transition-colors cursor-pointer"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: eNode.color }}
+                        />
+                        <span className="font-semibold text-[#171412]">
+                          {eNode.label}
+                        </span>
+                        <span className="text-[10px] text-[#52483E]">
+                          · {roleLabel} ({connectedCount})
+                        </span>
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Active Hover or Selected Connection Banner */}
+      {(hoveredNodeId && hoveredTooltip) || selectedSubgraph.focusNode ? (
         <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex items-center gap-2 text-xs">
-          <span className="text-[#52483E]">Shared threads:</span>
-          {focalItem && (
-            <>
-              <strong className="text-[#171412] font-semibold">
-                {focalItem.title}
-              </strong>
-              <span className="text-[#8F816B]">&amp;</span>
-            </>
-          )}
+          <span className="w-2 h-2 rounded-full bg-[#B8292F] animate-pulse" />
+          <span className="text-[#52483E]">
+            {hoveredNodeId && hoveredTooltip
+              ? 'Inspecting threads:'
+              : 'Locked highlight:'}
+          </span>
           <strong className="text-[#B8292F] font-semibold">
-            {hoveredTooltip.node.label}
+            {hoveredNodeId && hoveredTooltip
+              ? hoveredTooltip.node.label
+              : selectedSubgraph.focusNode?.label}
           </strong>
-          {hoveredTooltip.node.matchScore !== undefined &&
+          {selectedSubgraph.focusNode && !hoveredTooltip && (
+            <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA] font-tabular font-semibold">
+              {selectedSubgraph.linkedMedia.length +
+                selectedSubgraph.linkedEntities.length}{' '}
+              linked nodes highlighted
+            </span>
+          )}
+          {hoveredTooltip?.node.matchScore !== undefined &&
             !hoveredTooltip.node.isFocal && (
               <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] font-tabular font-bold">
                 {hoveredTooltip.node.matchScore}% Match
               </span>
             )}
         </div>
-      )}
+      ) : null}
 
       {/* Floating Archival Vellum Cursor Hover Tooltip */}
       {hoveredTooltip && (

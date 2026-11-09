@@ -599,7 +599,7 @@ export function buildSpatialGraph({
       const peers = pairwiseMap.get(item.id) || [];
       let countForNode = 0;
       for (const peer of peers) {
-        if (countForNode >= 3) break;
+        if (countForNode >= 5) break;
         if (
           !hasConcreteSharedConnection(peer.similarity) ||
           peer.similarity.totalScore < effectiveThreshold
@@ -816,6 +816,11 @@ export function buildSpatialGraph({
       });
 
       for (const mId of connectedIds) {
+        const mNode = nodesMap.get(mId);
+        if (mNode) {
+          const merged = new Set([...mNode.connectedMediaIds, ...connectedIds]);
+          mNode.connectedMediaIds = Array.from(merged);
+        }
         links.push({
           id: `bridge:${ent.id}<->${mId}`,
           source: ent.id,
@@ -1057,6 +1062,11 @@ export function buildSpatialGraph({
     });
 
     for (const mId of connectedIds) {
+      const mNode = nodesMap.get(mId);
+      if (mNode) {
+        const merged = new Set([...mNode.connectedMediaIds, ...connectedIds]);
+        mNode.connectedMediaIds = Array.from(merged);
+      }
       links.push({
         id: `bridge:${ent.id}<->${mId}`,
         source: ent.id,

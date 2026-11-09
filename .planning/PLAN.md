@@ -66,3 +66,22 @@ Build **SixDegrees (`v2.4 Spatial 3D Engine`)** — an interactive, full-stack N
 4. **Right Floating Inspector Card (`w-[420px]`, collapsible)**:
    - Deep telemetry for selected/focal Movie or TV Show, 2:3 Poster artwork, 2x2 Ratings Grid (`IMDb ★`, `Rotten Tomatoes 🍅`, `Metascore`, `Runtime/Seasons & Rating`), Region-aware `Where to Watch` (`Stream`, `Rent`, `Buy`), interactive `Shared Connections / Why Watch Next` pills, and `Make Focal Centroid` + `Orbit Node (3D)` actions.
 
+---
+
+## Phase 2: Smart Watch Suggestions & Multi-Criteria Discovery (`02-watch-suggestions`)
+
+### Objective
+Enable users to discover tailored Movies and TV Shows to watch next based on:
+1. **What they have already watched** (one or multiple watched/loved titles, persisted in `localStorage` and extendable via live search), and/or
+2. **Genre, Narrative Theme, Mood Category, Collaborator, Era, or Streaming Service** (e.g., *Sci-Fi*, *Thriller*, *Mystery*, *Drama*, *Mind-Bending Sci-Fi*, *Critics' Darlings*, *Slow-Burn Series*, *Auteur Masterworks*, *Time & Memory Puzzles*).
+
+### Phase 2 Plans
+- **Plan `02-01` (Wave 1): Multi-Criteria Recommendation Engine, Watched History Persistence & Live Category Suggestion API**
+  - `src/lib/types.ts`: Extend `ViewMode` with `'SUGGEST'` and add `WatchSuggestion`, `SuggestionFilterState`, `CuratedCategoryId`, and `SuggestionReason` types.
+  - `src/lib/recommendations.ts`: Implement `CURATED_CATEGORIES`, `extractCatalogFacets`, and `computeWatchSuggestions` combining multi-seed watched history scoring with genre kinship, narrative tropes, curated category presets, collaborator filters, release era, minimum rating, and regional streaming filters.
+  - `src/lib/api.ts` & `src/app/api/live-media/route.ts`: Add `localStorage` watched-title persistence (`getInitialWatchedIds`, `saveWatchedIdsToStorage`) and `/api/live-media?action=suggest` for live TMDB/catalog discovery by seed title or genre.
+- **Plan `02-02` (Wave 2): Interactive "Watch Next" Suggestion Studio UI & Cross-App Integration**
+  - `src/components/WatchSuggestionsView.tsx`: Full-featured Archival Folio suggestion studio with a **"Based on What You've Watched"** interactive shelf (including live catalog search to add any watched title), **"Browse by Genre, Theme & Category"** filter deck, and ranked suggestion cards with Match %, *"Because you watched..."* attribution, craft/genre reason pills, regional streaming links, and 3D map jump actions.
+  - `src/components/TopNavBar.tsx`, `src/components/LeftSidebar.tsx`, `src/components/RightInspectorCard.tsx`, `src/components/SimilarityMatrixView.tsx`, `src/components/SixDegreesApp.tsx`: Integrate the `Watch Next` view mode switcher, watched-status toggles across all views, and one-click `"Suggest Similar"` triggers.
+
+

@@ -19,8 +19,11 @@ import {
   TableProperties,
   Plus,
   SlidersHorizontal,
+  Sparkles,
+  Check,
 } from 'lucide-react';
 import { SixDegreesLogo } from './SixDegreesLogo';
+import { PwaInstallButton } from './PwaInstallButton';
 import {
   GraphNode,
   MediaItem,
@@ -47,6 +50,8 @@ interface TopNavBarProps {
   isBuildingCluster?: boolean;
   onToggleMobileMenu?: () => void;
   activeFilterCount?: number;
+  watchedIds?: string[];
+  onToggleWatched?: (mediaId: string) => void;
 }
 
 export function TopNavBar({
@@ -65,6 +70,8 @@ export function TopNavBar({
   isBuildingCluster = false,
   onToggleMobileMenu,
   activeFilterCount = 0,
+  watchedIds = [],
+  onToggleWatched,
 }: TopNavBarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -197,6 +204,12 @@ export function TopNavBar({
       label: 'Critical Ledger',
       shortLabel: 'Ledger',
       icon: TableProperties,
+    },
+    {
+      id: 'SUGGEST',
+      label: 'Watch Next',
+      shortLabel: 'Suggest',
+      icon: Sparkles,
     },
   ];
 
@@ -429,18 +442,44 @@ export function TopNavBar({
                         </div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onMakeFocal(item.id);
-                        setSearchOpen(false);
-                      }}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA] hover:bg-[#B8292F] hover:text-[#FBF8F2] hover:border-[#8C1D22] transition-colors shrink-0 cursor-pointer"
-                    >
-                      <Crosshair className="w-2.5 h-2.5" aria-hidden="true" />
-                      Center
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onToggleWatched && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleWatched(item.id);
+                          }}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                            watchedIds.includes(item.id)
+                              ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                              : 'bg-[#FBF8F2] text-[#52483E] border-[#C8BEAA] hover:text-[#171412]'
+                          }`}
+                          title={
+                            watchedIds.includes(item.id)
+                              ? 'Marked as Watched'
+                              : 'Mark as Watched for suggestions'
+                          }
+                        >
+                          <Check className="w-2.5 h-2.5" aria-hidden="true" />
+                          <span>
+                            {watchedIds.includes(item.id) ? 'Watched' : 'Watch'}
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMakeFocal(item.id);
+                          setSearchOpen(false);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA] hover:bg-[#B8292F] hover:text-[#FBF8F2] hover:border-[#8C1D22] transition-colors shrink-0 cursor-pointer"
+                      >
+                        <Crosshair className="w-2.5 h-2.5" aria-hidden="true" />
+                        Center
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -565,6 +604,8 @@ export function TopNavBar({
           />
           <span className="hidden sm:inline">Reset</span>
         </button>
+
+        <PwaInstallButton variant="topbar" />
       </div>
     </header>
   );

@@ -10,7 +10,7 @@ export type EntityNodeType =
 
 export type RegionCode = 'AU' | 'US' | 'UK';
 
-export type ViewMode = '2D' | '3D' | 'MATRIX';
+export type ViewMode = '2D' | '3D' | 'MATRIX' | 'SUGGEST';
 
 export type GravityPreset = 'VIBE_TROPES' | 'AUTEUR_ORBIT' | 'STAR_CONSTELLATION';
 
@@ -151,4 +151,70 @@ export interface EntityVisibility {
   TROPE: boolean;
   COMPOSER: boolean;
 }
+
+export type CuratedCategoryId =
+  | 'ALL'
+  | 'MIND_BENDING'
+  | 'CRITICS_DARLINGS'
+  | 'HIGH_AUDIENCE'
+  | 'SLOW_BURN_SERIES'
+  | 'FAST_PACED_THRILLERS'
+  | 'AUTEUR_MASTERWORKS'
+  | 'CYBERPUNK_AI'
+  | 'TIME_AND_MEMORY';
+
+export type DecadeFilter = 'ALL' | '2020s' | '2010s' | '2000s' | 'CLASSIC';
+
+export interface SuggestionFilterState {
+  seedMediaIds: string[];
+  selectedGenres: string[];
+  selectedTropes: string[];
+  selectedCollaborator: string | null;
+  curatedCategory: CuratedCategoryId;
+  mediaFilter: 'ALL' | 'MOVIE' | 'TV';
+  decadeFilter: DecadeFilter;
+  minImdbRating: number;
+  streamingOnlyInRegion: boolean;
+  selectedProvider: string | null;
+  hideWatched: boolean;
+  preset: GravityPreset;
+}
+
+export interface SuggestionReason {
+  id: string;
+  label: string;
+  prefix: string;
+  value: string;
+  type:
+    | 'BECAUSE_WATCHED'
+    | 'GENRE'
+    | 'TROPE'
+    | 'AUTEUR'
+    | 'CAST'
+    | 'SCORE'
+    | 'CATEGORY'
+    | 'ACCLAIM';
+  color: string;
+  points: number;
+  entityNodeId?: string;
+}
+
+export interface BecauseYouWatchedEntry {
+  id: string;
+  title: string;
+  year: number;
+  mediaType: MediaType;
+  pairScore: number;
+  topShared: string[];
+}
+
+export interface WatchSuggestion {
+  item: MediaItem;
+  matchScore: number; // 0 - 99
+  becauseYouWatched: BecauseYouWatchedEntry[];
+  reasons: SuggestionReason[];
+  matchedGenres: string[];
+  matchedTropes: string[];
+}
+
 

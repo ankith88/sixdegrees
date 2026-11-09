@@ -13,6 +13,8 @@ import {
   Search,
   Globe,
   X,
+  Check,
+  Sparkles,
 } from 'lucide-react';
 import {
   MediaItem,
@@ -39,6 +41,9 @@ interface RightInspectorCardProps {
     similarity: SimilarityBreakdown;
   }>;
   onSelectMedia: (item: MediaItem) => void;
+  watchedIds?: string[];
+  onToggleWatched?: (mediaId: string) => void;
+  onSuggestFromMedia?: (mediaId: string) => void;
 }
 
 export function RightInspectorCard({
@@ -54,6 +59,9 @@ export function RightInspectorCard({
   onSelectEntityNode,
   topRecommendations,
   onSelectMedia,
+  watchedIds = [],
+  onToggleWatched,
+  onSuggestFromMedia,
 }: RightInspectorCardProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [catalogTypeFilter, setCatalogTypeFilter] = useState<
@@ -361,22 +369,48 @@ export function RightInspectorCard({
                       )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onMakeFocal(item.id);
-                      }}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors shrink-0 cursor-pointer ${
-                        isItemFocal
-                          ? 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
-                          : 'bg-[#F6F1E7] hover:bg-[#B8292F] text-[#52483E] hover:text-[#FBF8F2] border-[#C8BEAA] hover:border-[#8C1D22]'
-                      }`}
-                      title="Center graph around this title"
-                    >
-                      <Crosshair className="w-2.5 h-2.5" />
-                      <span>{isItemFocal ? 'Centered' : 'Center'}</span>
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onToggleWatched && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleWatched(item.id);
+                          }}
+                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
+                            watchedIds.includes(item.id)
+                              ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                              : 'bg-[#F6F1E7] hover:bg-[#EFE8DA] text-[#52483E] border-[#C8BEAA]'
+                          }`}
+                          title={
+                            watchedIds.includes(item.id)
+                              ? 'Watched (click to unmark)'
+                              : 'Mark as Watched for suggestions'
+                          }
+                        >
+                          <Check className="w-2.5 h-2.5" />
+                          <span>
+                            {watchedIds.includes(item.id) ? 'Watched' : 'Watch'}
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMakeFocal(item.id);
+                        }}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors shrink-0 cursor-pointer ${
+                          isItemFocal
+                            ? 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
+                            : 'bg-[#F6F1E7] hover:bg-[#B8292F] text-[#52483E] hover:text-[#FBF8F2] border-[#C8BEAA] hover:border-[#8C1D22]'
+                        }`}
+                        title="Center graph around this title"
+                      >
+                        <Crosshair className="w-2.5 h-2.5" />
+                        <span>{isItemFocal ? 'Centered' : 'Center'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -888,35 +922,71 @@ export function RightInspectorCard({
       </div>
 
       {/* ACTION BUTTONS FOOTER */}
-      <div className="p-3.5 bg-[#EFE8DA] border-t border-[#D5CCB9] grid grid-cols-2 gap-2.5">
-        {isFocal ? (
-          <button
-            type="button"
-            onClick={onClearFocal}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-semibold bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#8C1D22] border border-[#D8B4B6] transition-colors cursor-pointer"
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>Show Full Graph</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onMakeFocal(inspectedItem.id)}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-semibold bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm transition-colors cursor-pointer"
-          >
-            <Crosshair className="w-3.5 h-3.5" />
-            <span>Center Map Here</span>
-          </button>
+      <div className="p-3.5 bg-[#EFE8DA] border-t border-[#D5CCB9] space-y-2">
+        {(onToggleWatched || onSuggestFromMedia) && (
+          <div className="grid grid-cols-2 gap-2">
+            {onToggleWatched && (
+              <button
+                type="button"
+                onClick={() => onToggleWatched(inspectedItem.id)}
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded text-xs font-semibold border transition-colors cursor-pointer ${
+                  watchedIds.includes(inspectedItem.id)
+                    ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                    : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border border-[#B5A892]'
+                }`}
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>
+                  {watchedIds.includes(inspectedItem.id)
+                    ? 'Watched ✓'
+                    : 'Mark Watched'}
+                </span>
+              </button>
+            )}
+
+            {onSuggestFromMedia && (
+              <button
+                type="button"
+                onClick={() => onSuggestFromMedia(inspectedItem.id)}
+                className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded text-xs font-semibold bg-[#F5E4E4] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#D8B4B6] hover:border-[#8C1D22] transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Suggest Similar</span>
+              </button>
+            )}
+          </div>
         )}
 
-        <button
-          type="button"
-          onClick={() => onOrbitNode(inspectedItem.id)}
-          className="flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-semibold bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border border-[#B5A892] transition-colors cursor-pointer"
-        >
-          <Compass className="w-3.5 h-3.5 text-[#234B6E]" />
-          <span>Focus in Map</span>
-        </button>
+        <div className="grid grid-cols-2 gap-2.5">
+          {isFocal ? (
+            <button
+              type="button"
+              onClick={onClearFocal}
+              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-semibold bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#8C1D22] border border-[#D8B4B6] transition-colors cursor-pointer"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Show Full Graph</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onMakeFocal(inspectedItem.id)}
+              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-semibold bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm transition-colors cursor-pointer"
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              <span>Center Map Here</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => onOrbitNode(inspectedItem.id)}
+            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-semibold bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border border-[#B5A892] transition-colors cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5 text-[#234B6E]" />
+            <span>Focus in Map</span>
+          </button>
+        </div>
       </div>
     </aside>
   );

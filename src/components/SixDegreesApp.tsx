@@ -5,9 +5,13 @@ import { TopNavBar } from './TopNavBar';
 import { LeftSidebar } from './LeftSidebar';
 import { SpatialViewport } from './SpatialViewport';
 import { SimilarityMatrixView } from './SimilarityMatrixView';
+import { WatchSuggestionsView } from './WatchSuggestionsView';
 import { RightInspectorCard } from './RightInspectorCard';
 import {
   getInitialMediaLibrary,
+  getInitialWatchedIds,
+  saveWatchedIdsToStorage,
+  fetchLiveSuggestions,
   fetchMediaFromTmdbAndOmdb,
   fetchSingleLiveMedia,
   fetchLiveCluster,
@@ -40,14 +44,11 @@ import {
   MediaItem,
   RegionCode,
   SimilarityBreakdown,
+  SuggestionFilterState,
   ViewMode,
 } from '@/lib/types';
+import { DEFAULT_SUGGESTION_FILTERS } from '@/lib/recommendations';
 import {
-  Award,
-  UserCheck,
-  Hash,
-  Music,
-  X,
   Loader2,
   CheckCircle2,
 } from 'lucide-react';
@@ -112,6 +113,27 @@ export function SixDegreesApp() {
   const [lastCollaboratorCrawled, setLastCollaboratorCrawled] = useState<
     string | null
   >(null);
+
+  // Watched Titles & Smart Suggestion Studio State
+  const [watchedIds, setWatchedIds] = useState<string[]>(() =>
+    getInitialWatchedIds()
+  );
+  const [suggestionFilters, setSuggestionFilters] =
+    useState<SuggestionFilterState>(DEFAULT_SUGGESTION_FILTERS);
+  const [isFetchingLiveSuggestions, setIsFetchingLiveSuggestions] =
+    useState<boolean>(false);
+
+  useEffect(() => {
+    saveWatchedIdsToStorage(watchedIds);
+  }, [watchedIds]);
+
+  useEffect(() => {
+    setSuggestionFilters((prev) => ({
+      ...prev,
+      preset,
+      mediaFilter,
+    }));
+  }, [preset, mediaFilter]);
 
   const mediaLibraryRef = useRef<MediaItem[]>(mediaLibrary);
   useEffect(() => {
@@ -669,10 +691,17 @@ export function SixDegreesApp() {
     if (node.type === 'MOVIE' || node.type === 'TV') {
       setInspectedMediaId(node.id);
       setActiveEntityNode(null);
+      setOrbitTargetNodeId(node.id);
     } else {
       setActiveEntityNode(node);
       setOrbitTargetNodeId(node.id);
     }
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setActiveEntityNode(null);
+    setInspectedMediaId(null);
+    setOrbitTargetNodeId(null);
   }, []);
 
   const handleSelectNodeById = useCallback(
@@ -685,6 +714,7 @@ export function SixDegreesApp() {
         const media = mediaLibrary.find((m) => m.id === nodeId);
         if (media) {
           setInspectedMediaId(media.id);
+          setActiveEntityNode(null);
           setOrbitTargetNodeId(media.id);
         }
       }
@@ -694,7 +724,7 @@ export function SixDegreesApp() {
 
   const handleOrbitNode = useCallback(
     (nodeId: string) => {
-      if (viewMode === 'MATRIX') {
+      if (viewMode === 'MATRIX' || viewMode === 'SUGGEST') {
         setViewMode('3D');
       }
       setOrbitTargetNodeId(null);
@@ -703,27 +733,146 @@ export function SixDegreesApp() {
     [viewMode]
   );
 
-  const connectedEntityTitles = useMemo(() => {
-    if (!activeEntityNode) return [];
-    return mediaLibrary.filter((m) =>
-      activeEntityNode.connectedMediaIds.includes(m.id)
+  const handleToggleWatched = useCallback((mediaId: string) => {
+    setWatchedIds((prev) =>
+      prev.includes(mediaId)
+        ? prev.filter((id) => id !== mediaId)
+        : [...prev, mediaId]
     );
-  }, [activeEntityNode, mediaLibrary]);
+  }, []);
 
-  const entityRoleLabel = (type: EntityNodeType) => {
-    switch (type) {
-      case 'DIRECTOR':
-        return 'Director / Screenwriter';
-      case 'ACTOR':
-        return 'Shared Cast';
-      case 'TROPE':
-        return 'Narrative Theme';
-      case 'COMPOSER':
-        return 'Score & Cinematography';
-      default:
-        return type;
-    }
-  };
+  const handleAddLiveMediaAndWatch = useCallback(
+    async (target: LiveSearchResult) => {
+      setIsBuildingCluster(true);
+      setLiveStatusToast(
+        `Importing "${target.title}" (${target.year}) & marking as Watched…`
+      );
+
+      const singleData = await fetchSingleLiveMedia({
+        tmdbId: target.tmdbId,
+        imdbId: target.imdbId,
+        mediaType: target.mediaType,
+        title: target.title,
+        year: target.year,
+        posterUrl: target.posterUrl,
+      });
+
+      setIsBuildingCluster(false);
+
+      if (singleData?.item) {
+        const resolvedId = mergeMediaItemsIntoLibrary(singleData.item, []);
+        setWatchedIds((prev) =>
+          prev.includes(resolvedId) ? prev : [...prev, resolvedId]
+        );
+        setLiveStatusToast(
+          `Added "${singleData.item.title}" to your Watched list`
+        );
+        setTimeout(() => setLiveStatusToast(null), 4000);
+      } else {
+        setLiveStatusToast(`Could not import "${target.title}".`);
+        setTimeout(() => setLiveStatusToast(null), 3500);
+      }
+    },
+    [mergeMediaItemsIntoLibrary]
+  );
+
+  const handleFetchLiveSuggestions = useCallback(
+    async (options: {
+      seedItem?: MediaItem | null;
+      genre?: string;
+      mediaType?: 'ALL' | 'MOVIE' | 'TV';
+    }) => {
+      if (isFetchingLiveSuggestions) return;
+      setIsFetchingLiveSuggestions(true);
+      setLiveStatusToast(
+        options.seedItem
+          ? `Discovering live suggestions inspired by "${options.seedItem.title}"…`
+          : options.genre
+            ? `Discovering live ${options.genre} suggestions…`
+            : 'Discovering live film & series suggestions…'
+      );
+
+      const res = await fetchLiveSuggestions({
+        seedTmdbId: options.seedItem?.tmdbId,
+        seedImdbId: options.seedItem?.imdbId,
+        seedMediaType: options.seedItem?.mediaType,
+        seedTitle: options.seedItem?.title,
+        genre: options.genre,
+        mediaType: options.mediaType,
+      });
+
+      setIsFetchingLiveSuggestions(false);
+
+      if (res?.quota) setQuotaTelemetry(res.quota);
+      if (res?.firestore) setFirestoreTelemetry(res.firestore);
+
+      if (res && res.items.length > 0) {
+        let added = 0;
+        setMediaLibrary((prev) => {
+          const map = new Map<string, MediaItem>();
+          for (const m of prev) map.set(m.id, m);
+          for (const candidate of res.items) {
+            const exists = Array.from(map.values()).find(
+              (m) =>
+                (candidate.imdbId && m.imdbId === candidate.imdbId) ||
+                (candidate.tmdbId > 0 &&
+                  m.tmdbId === candidate.tmdbId &&
+                  m.mediaType === candidate.mediaType) ||
+                (m.title.toLowerCase() === candidate.title.toLowerCase() &&
+                  Math.abs(m.year - candidate.year) <= 1)
+            );
+            if (!exists) {
+              map.set(candidate.id, candidate);
+              added += 1;
+            }
+          }
+          return Array.from(map.values());
+        });
+
+        setLiveStatusToast(
+          added > 0
+            ? `Discovered +${added} new ${added === 1 ? 'title' : 'titles'} for your Watch Suggestions`
+            : 'All top live matches for this criteria are already in your collection'
+        );
+        setTimeout(() => setLiveStatusToast(null), 4000);
+      } else {
+        setLiveStatusToast(
+          'Showing all matching suggestions currently in your archive.'
+        );
+        setTimeout(() => setLiveStatusToast(null), 3500);
+      }
+    },
+    [isFetchingLiveSuggestions]
+  );
+
+  const handleSuggestFromMedia = useCallback((mediaId: string) => {
+    setWatchedIds((prev) =>
+      prev.includes(mediaId) ? prev : [...prev, mediaId]
+    );
+    setSuggestionFilters((prev) => ({
+      ...prev,
+      seedMediaIds: [mediaId],
+    }));
+    setViewMode('SUGGEST');
+  }, []);
+
+  const handleSuggestByGenre = useCallback((genre: string) => {
+    setSuggestionFilters((prev) => ({
+      ...prev,
+      selectedGenres: [genre],
+      curatedCategory: 'ALL',
+    }));
+    setViewMode('SUGGEST');
+  }, []);
+
+  const handleExploreIn3D = useCallback((mediaId: string) => {
+    setFocalId(mediaId);
+    setInspectedMediaId(mediaId);
+    setActiveEntityNode(null);
+    setViewMode('3D');
+    setOrbitTargetNodeId(null);
+    setTimeout(() => setOrbitTargetNodeId(mediaId), 20);
+  }, []);
 
   return (
     <div className="archival-folio-surface relative w-screen h-screen overflow-hidden flex flex-col bg-[#F6F1E7] text-[#171412]">
@@ -744,6 +893,8 @@ export function SixDegreesApp() {
         isBuildingCluster={isBuildingCluster}
         onToggleMobileMenu={() => setMobileMenuOpen((v) => !v)}
         activeFilterCount={activeFilterCount}
+        watchedIds={watchedIds}
+        onToggleWatched={handleToggleWatched}
       />
 
       {/* Main Workspace Below Fixed Top Bar */}
@@ -777,14 +928,20 @@ export function SixDegreesApp() {
           expandedCount={expandedCount}
           onResetExpandedCatalog={handleResetExpandedCatalog}
           onFirestoreConfigUpdated={() => setApiKeyVersion((v) => v + 1)}
+          watchedCount={watchedIds.length}
+          isSuggestMode={viewMode === 'SUGGEST'}
+          onOpenSuggestions={() => setViewMode('SUGGEST')}
+          onSuggestByGenre={handleSuggestByGenre}
         />
 
-        {/* C. Central 3D/2D Constellation or Critical Ledger */}
+        {/* C. Central 3D/2D Constellation, Critical Ledger, or Watch Next Suggestion Studio */}
         <main className="flex-1 relative h-[calc(100vh-3.5rem)] overflow-hidden">
           {/* Catalog Update Status Banner */}
-          {(isBuildingCluster || liveStatusToast) && (
+          {(isBuildingCluster ||
+            isFetchingLiveSuggestions ||
+            liveStatusToast) && (
             <div className="absolute top-16 right-[424px] z-30 flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival text-xs font-medium text-[#171412]">
-              {isBuildingCluster ? (
+              {isBuildingCluster || isFetchingLiveSuggestions ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[#B8292F] shrink-0" />
               ) : (
                 <CheckCircle2 className="w-3.5 h-3.5 text-[#2A6B53] shrink-0" />
@@ -793,79 +950,40 @@ export function SixDegreesApp() {
             </div>
           )}
 
-          {/* Active Collaborator / Theme Drawer (when clicking a Director, Actor, Theme, or Composer node) */}
-          {activeEntityNode && (
-            <div className="absolute top-16 left-4 z-30 max-w-md p-3.5 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival">
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <div className="flex items-center gap-2.5">
-                  {activeEntityNode.type === 'DIRECTOR' && (
-                    <Award className="w-4 h-4 text-[#B8292F] shrink-0" />
-                  )}
-                  {activeEntityNode.type === 'ACTOR' && (
-                    <UserCheck className="w-4 h-4 text-[#B86B14] shrink-0" />
-                  )}
-                  {activeEntityNode.type === 'TROPE' && (
-                    <Hash className="w-4 h-4 text-[#2A6B53] shrink-0" />
-                  )}
-                  {activeEntityNode.type === 'COMPOSER' && (
-                    <Music className="w-4 h-4 text-[#A63A2B] shrink-0" />
-                  )}
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <h3 className="font-heading text-base font-bold text-[#171412]">
-                      {activeEntityNode.label}
-                    </h3>
-                    <span
-                      className="text-[11px] font-semibold"
-                      style={{ color: activeEntityNode.color }}
-                    >
-                      · {entityRoleLabel(activeEntityNode.type)}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveEntityNode(null)}
-                  className="p-1 rounded text-[#52483E] hover:text-[#171412] hover:bg-[#E5DEC9]"
-                  aria-label="Close collaborator panel"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <p className="text-xs text-[#52483E] mb-2">
-                Connects {connectedEntityTitles.length} titles in this view:
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {connectedEntityTitles.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setInspectedMediaId(item.id);
-                      setOrbitTargetNodeId(item.id);
-                    }}
-                    className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                      item.id === inspectedMediaId
-                        ? 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6] font-semibold'
-                        : 'bg-[#EFE8DA] text-[#171412] border-[#C8BEAA] hover:bg-[#E5DEC9]'
-                    }`}
-                  >
-                    {item.title} ({item.year})
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {viewMode === 'MATRIX' ? (
+          {viewMode === 'SUGGEST' ? (
+            <WatchSuggestionsView
+              allMediaItems={mediaLibrary}
+              watchedIds={watchedIds}
+              onToggleWatched={handleToggleWatched}
+              filters={suggestionFilters}
+              onFiltersChange={setSuggestionFilters}
+              region={region}
+              onRegionChange={setRegion}
+              selectedMediaId={inspectedItem ? inspectedItem.id : null}
+              onSelectMedia={(item) => {
+                setInspectedMediaId(item.id);
+                setActiveEntityNode(null);
+              }}
+              onExploreIn3D={handleExploreIn3D}
+              onAddLiveMediaAndWatch={handleAddLiveMediaAndWatch}
+              onFetchLiveSuggestions={handleFetchLiveSuggestions}
+              isFetchingLive={isFetchingLiveSuggestions}
+            />
+          ) : viewMode === 'MATRIX' ? (
             <SimilarityMatrixView
               focalItem={focalItem}
               rankedMatches={rankedMatches}
               region={region}
               preset={preset}
               selectedMediaId={inspectedItem ? inspectedItem.id : null}
-              onSelectMedia={(item) => setInspectedMediaId(item.id)}
+              onSelectMedia={(item) => {
+                setInspectedMediaId(item.id);
+                setActiveEntityNode(null);
+              }}
               onMakeFocal={handleMakeFocal}
               onClearFocal={handleClearFocal}
+              watchedIds={watchedIds}
+              onToggleWatched={handleToggleWatched}
             />
           ) : (
             <SpatialViewport
@@ -880,6 +998,7 @@ export function SixDegreesApp() {
                     : null
               }
               onSelectNode={handleSelectNode}
+              onClearSelection={handleClearSelection}
               onMakeFocal={handleMakeFocal}
               onClearFocal={handleClearFocal}
               viewMode={viewMode}
@@ -904,14 +1023,18 @@ export function SixDegreesApp() {
           region={region}
           onMakeFocal={handleMakeFocal}
           onClearFocal={handleClearFocal}
-          onClearInspected={() => setInspectedMediaId(null)}
+          onClearInspected={handleClearSelection}
           onOrbitNode={handleOrbitNode}
           onSelectEntityNode={handleSelectNodeById}
           topRecommendations={inspectorRecommendations}
           onSelectMedia={(item) => {
             setInspectedMediaId(item.id);
+            setActiveEntityNode(null);
             setOrbitTargetNodeId(item.id);
           }}
+          watchedIds={watchedIds}
+          onToggleWatched={handleToggleWatched}
+          onSuggestFromMedia={handleSuggestFromMedia}
         />
       </div>
     </div>

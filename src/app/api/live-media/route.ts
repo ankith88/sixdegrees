@@ -1869,5 +1869,193 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // ==================== ACTION 3: LIVE CATEGORY / SEED WATCH SUGGESTIONS ====================
+  if (action === 'suggest') {
+    const seedTmdbId = parseInt(searchParams.get('seedTmdbId') || '', 10);
+    const seedImdbId = searchParams.get('seedImdbId') || '';
+    const seedMediaType: MediaType =
+      (searchParams.get('seedMediaType') as MediaType) === 'TV' ? 'TV' : 'MOVIE';
+    const seedTitle = searchParams.get('seedTitle') || '';
+    const genre = searchParams.get('genre') || '';
+    const mediaTypeFilter =
+      (searchParams.get('mediaType') as 'ALL' | 'MOVIE' | 'TV') || 'ALL';
+
+    const TMDB_MOVIE_GENRE_MAP: Record<string, string> = {
+      'sci-fi': '878',
+      'science fiction': '878',
+      thriller: '53',
+      mystery: '9648',
+      drama: '18',
+      crime: '80',
+      action: '28',
+      adventure: '12',
+      fantasy: '14',
+      comedy: '35',
+      animation: '16',
+      horror: '27',
+      history: '36',
+    };
+
+    const TMDB_TV_GENRE_MAP: Record<string, string> = {
+      'sci-fi': '10765',
+      'science fiction': '10765',
+      thriller: '9648',
+      mystery: '9648',
+      drama: '18',
+      crime: '80',
+      action: '10759',
+      adventure: '10759',
+      fantasy: '10765',
+      comedy: '35',
+      animation: '16',
+      horror: '9648',
+      history: '18',
+    };
+
+    const discoveredItems: MediaItem[] = [];
+
+    if (hasTmdbAuth) {
+      try {
+        const candidateStubs: Array<{ id: number; mediaType: MediaType }> = [];
+
+        if (!Number.isNaN(seedTmdbId) && seedTmdbId > 0) {
+          const endpoint =
+            seedMediaType === 'TV'
+              ? `/tv/${seedTmdbId}/recommendations`
+              : `/movie/${seedTmdbId}/recommendations`;
+          const recRes = await fetchTmdb(
+            endpoint,
+            { language: 'en-US', page: '1' },
+            tmdbKey,
+            tmdbReadToken,
+            3600
+          );
+          if (recRes.ok) {
+            const recData = await recRes.json();
+            for (const r of (recData.results || []).slice(0, 6)) {
+              if (r?.id) {
+                candidateStubs.push({
+                  id: r.id,
+                  mediaType: seedMediaType,
+                });
+              }
+            }
+          }
+        }
+
+        if (candidateStubs.length < 6) {
+          const gKey = genre.trim().toLowerCase();
+          const movieGenreId = TMDB_MOVIE_GENRE_MAP[gKey] || '878,53';
+          const tvGenreId = TMDB_TV_GENRE_MAP[gKey] || '10765,9648';
+
+          if (mediaTypeFilter === 'ALL' || mediaTypeFilter === 'MOVIE') {
+            const discMovieRes = await fetchTmdb(
+              '/discover/movie',
+              {
+                with_genres: movieGenreId,
+                sort_by: 'vote_average.desc',
+                'vote_count.gte': '1200',
+                language: 'en-US',
+                page: '1',
+              },
+              tmdbKey,
+              tmdbReadToken,
+              3600
+            );
+            if (discMovieRes.ok) {
+              const dmData = await discMovieRes.json();
+              for (const m of (dmData.results || []).slice(0, 4)) {
+                if (m?.id) {
+                  candidateStubs.push({ id: m.id, mediaType: 'MOVIE' });
+                }
+              }
+            }
+          }
+
+          if (mediaTypeFilter === 'ALL' || mediaTypeFilter === 'TV') {
+            const discTvRes = await fetchTmdb(
+              '/discover/tv',
+              {
+                with_genres: tvGenreId,
+                sort_by: 'vote_average.desc',
+                'vote_count.gte': '600',
+                language: 'en-US',
+                page: '1',
+              },
+              tmdbKey,
+              tmdbReadToken,
+              3600
+            );
+            if (discTvRes.ok) {
+              const dtData = await discTvRes.json();
+              for (const t of (dtData.results || []).slice(0, 4)) {
+                if (t?.id) {
+                  candidateStubs.push({ id: t.id, mediaType: 'TV' });
+                }
+              }
+            }
+          }
+        }
+
+        const uniqueStubs = candidateStubs
+          .filter(
+            (stub, idx, arr) =>
+              arr.findIndex(
+                (s) => s.id === stub.id && s.mediaType === stub.mediaType
+              ) === idx
+          )
+          .slice(0, 6);
+
+        for (const stub of uniqueStubs) {
+          const full = await fetchFullTmdbMediaItem(
+            stub.id,
+            stub.mediaType,
+            tmdbKey,
+            undefined,
+            tmdbReadToken,
+            true
+          );
+          if (full?.item) {
+            discoveredItems.push(full.item);
+          }
+        }
+      } catch {
+        // Fallback below if TMDB fails
+      }
+    }
+
+    if (discoveredItems.length === 0 && seedImdbId.startsWith('tt')) {
+      try {
+        const cluster = await fetchWikidataClusterByImdbId(
+          seedImdbId,
+          seedTitle || 'Selected Title',
+          2022,
+          seedMediaType,
+          '',
+          omdbKey,
+          true
+        );
+        discoveredItems.push(...cluster.clusterItems.slice(0, 6));
+      } catch {
+        // Ignore fallback error
+      }
+    }
+
+    await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
+    const updatedCache = getServerCache();
+
+    return NextResponse.json({
+      items: discoveredItems,
+      source: hasTmdbAuth ? 'TMDB_DISCOVER' : 'PUBLIC_LIVE_GRAPH',
+      firestore: getFirestoreTelemetry(firebaseProjectId, firebaseApiKey),
+      quota: {
+        omdbCallsToday: updatedCache.omdbCallsToday,
+        omdbDailySafeLimit: OMDB_DAILY_SAFE_LIMIT,
+        tmdbCallsToday: updatedCache.tmdbCallsToday,
+        cachedTitlesCount: Object.keys(updatedCache.items).length,
+      },
+    });
+  }
+
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
 }
