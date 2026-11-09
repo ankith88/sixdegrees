@@ -4,55 +4,34 @@ import React from 'react';
 
 export function SixDegreesLogo({ className = '' }: { className?: string }) {
   return (
-    <div className={`flex items-center gap-3 select-none ${className}`}>
-      {/* Criterion-inspired Archival Spine Emblem */}
-      <div className="relative w-9 h-9 flex items-center justify-center rounded bg-[#B8292F] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm shrink-0">
+    <div className={`flex items-center gap-2.5 select-none group ${className}`}>
+      {/* Criterion-inspired Archival Spine Emblem ("The Criterion 6°") */}
+      <div className="relative w-8 h-8 flex items-center justify-center rounded-md bg-[#B8292F] group-hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm transition-colors shrink-0">
         <svg
-          viewBox="0 0 40 40"
-          className="w-6 h-6"
+          viewBox="0 0 256 256"
+          className="w-4 h-4"
           fill="none"
-          aria-hidden="true"
+          role="img"
+          aria-label="SixDegrees 6° Emblem"
         >
-          <circle
-            cx="20"
-            cy="20"
-            r="15.5"
-            stroke="#FBF8F2"
-            strokeOpacity="0.35"
-            strokeWidth="1"
-          />
           <path
-            d="M15 10 L24 19 M10 20 L22 32 M12 29 L24 19"
-            stroke="#FBF8F2"
-            strokeOpacity="0.45"
-            strokeWidth="1"
+            fill="currentColor"
+            fillRule="evenodd"
+            d="M 164 30 A 124 124 0 0 0 40 154 A 72 72 0 1 0 109.96 82.03 A 90 90 0 0 1 164 64 V 30 Z M 69.99 154 L 91 190.37 L 133 190.37 L 154.01 154 L 133 117.63 L 91 117.63 Z M 123 154 A 11 11 0 1 1 101 154 A 11 11 0 1 1 123 154 Z M 220 48 A 20 20 0 1 1 180 48 A 20 20 0 1 1 220 48 Z M 209 48 A 9 9 0 1 0 191 48 A 9 9 0 1 0 209 48 Z"
           />
-          <path
-            d="M26 7 L15 10 L10 20 L12 30 L22 32 L29 26 L24 19 L13 20"
-            stroke="#FBF8F2"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx="26" cy="7" r="2" fill="#FBF8F2" />
-          <circle cx="15" cy="10" r="1.8" fill="#FBF8F2" />
-          <circle cx="10" cy="20" r="2" fill="#FBF8F2" />
-          <circle cx="12" cy="30" r="1.8" fill="#FBF8F2" />
-          <circle cx="22" cy="32" r="2.2" fill="#FBF8F2" />
-          <circle cx="29" cy="26" r="1.8" fill="#FBF8F2" />
-          <circle cx="24" cy="19" r="2.5" fill="#F6F1E7" />
         </svg>
       </div>
 
-      {/* Monograph Title & Subtitle */}
-      <div className="flex items-baseline gap-2.5">
-        <span className="font-heading text-xl font-bold tracking-tight text-[#171412]">
-          SixDegrees
+      {/* Minimal Monograph Wordmark */}
+      <span className="font-heading text-lg font-bold tracking-tight text-[#171412] inline-flex items-baseline group-hover:text-[#8C1D22] transition-colors">
+        <span>SixDegrees</span>
+        <span
+          className="ml-0.5 text-[#B8292F] font-semibold text-sm leading-none translate-y-[-0.35em]"
+          aria-hidden="true"
+        >
+          °
         </span>
-        <span className="hidden xl:inline-block px-2 py-0.5 rounded text-[11px] font-medium text-[#52483E] bg-[#E5DEC9] border border-[#C8BEAA]">
-          Film &amp; Series Lineage
-        </span>
-      </div>
+      </span>
     </div>
   );
 }

@@ -56,17 +56,112 @@ export function toEntityNodeId(type: EntityNodeType, name: string): string {
   return `${type.toLowerCase()}:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 }
 
+const BROAD_GENRE_OR_GENERIC_TERMS = new Set([
+  'drama',
+  'thriller',
+  'action',
+  'sci-fi',
+  'science fiction',
+  'sci-fi & fantasy',
+  'action & adventure',
+  'comedy',
+  'crime',
+  'fantasy',
+  'mystery',
+  'romance',
+  'adventure',
+  'horror',
+  'animation',
+  'documentary',
+  'family',
+  'history',
+  'war',
+  'western',
+  'biography',
+  'musical',
+  'sport',
+  'television series',
+  'tv series',
+  'miniseries',
+  'television mini-series',
+  'film',
+  'feature film',
+  'movie',
+  'series',
+  'psychological labyrinth',
+  'based on novel or book',
+  'based on novel',
+  'based on true story',
+  'based on comic',
+  'based on play or musical',
+  'aftercreditsstinger',
+  'duringcreditsstinger',
+  'woman director',
+  'sequel',
+  'remake',
+  'spin off',
+  'reboot',
+  'anime',
+  'anthology',
+  'murder',
+  'death',
+  'revenge',
+  'violence',
+  'love',
+  'friendship',
+  'dark comedy',
+  'black comedy',
+  'suspense',
+]);
+
+const PLACEHOLDER_CREDIT_NAMES = new Set([
+  'visionary auteur',
+  'featured auteur',
+  'featured director',
+  'acclaimed filmmaker',
+  'unknown',
+  'n/a',
+]);
+
+export function isSpecificNarrativeTrope(term: string): boolean {
+  const clean = term.trim().toLowerCase();
+  if (!clean || clean.length < 3) return false;
+  return !BROAD_GENRE_OR_GENERIC_TERMS.has(clean);
+}
+
+export function isValidPersonName(name: string): boolean {
+  const clean = name.trim().toLowerCase();
+  if (!clean || clean.length < 2) return false;
+  return !PLACEHOLDER_CREDIT_NAMES.has(clean);
+}
+
+/**
+ * Returns true ONLY when two titles share at least one concrete craft or narrative connection
+ * (shared Director/Writer/Creator, Cast member, Composer/Cinematographer, or specific Narrative Theme).
+ * Sharing only a broad genre (e.g. "Drama") or generic viewer overlap is never enough to link two titles.
+ */
+export function hasConcreteSharedConnection(
+  similarity: SimilarityBreakdown
+): boolean {
+  return (
+    similarity.rawPoints.auteur > 0 ||
+    similarity.rawPoints.cast > 0 ||
+    similarity.rawPoints.sonicVisual > 0 ||
+    similarity.rawPoints.tropes > 0
+  );
+}
+
 /**
  * Computes the 100-point weighted craft similarity score between a focal title
  * and a candidate title, adjusted by the active Curatorial Lens preset.
  *
  * Base Rubric (100 Points Total):
- * 1. Themes & Motifs (Max 35 pts): +12 pts per shared narrative trope/theme
+ * 1. Themes & Motifs (Max 35 pts): +12 pts per shared specific narrative trope/theme
  * 2. Director & Screenwriter (Max 25 pts): +25 pts shared Director/Showrunner; +15 pts shared Writer/Creator
- * 3. Genre Kinship (Max 15 pts): +5 pts per shared genre; +5 pt bonus if primary genre matches
+ * 3. Genre Kinship (Max 15 pts): +5 pts per shared genre; +5 pt bonus if primary genre matches (only counted when a concrete connection exists)
  * 4. Shared Cast (Max 10 pts): +6 pts shared #1/#2 lead actor; +4 pts shared top-5 supporting actor
  * 5. Score & Cinematography (Max 10 pts): +6 pts shared Composer; +4 pts shared Cinematographer
- * 6. Viewer Overlap (Max 5 pts): +5 pts when frequently paired by audiences
+ * 6. Viewer Overlap (Max 5 pts): +5 pts when frequently paired by audiences (only counted when a concrete connection exists)
  */
 export function calculateSimilarity(
   focal: MediaItem,
@@ -91,14 +186,20 @@ export function calculateSimilarity(
 
   const sharedConnections: SharedConnection[] = [];
 
-  // 1. Themes & Motifs (+12 pts each, Max 35 pts)
+  // 1. Themes & Motifs (+12 pts each, Max 35 pts) — only specific narrative tropes, never generic genres
   let tropePts = 0;
+  const focalTropesLower = new Set(
+    focal.tropes.filter(isSpecificNarrativeTrope).map((t) => t.toLowerCase())
+  );
   for (const trope of candidate.tropes) {
-    if (focal.tropes.includes(trope)) {
+    if (
+      isSpecificNarrativeTrope(trope) &&
+      focalTropesLower.has(trope.toLowerCase())
+    ) {
       const added = Math.min(12, Math.max(0, 35 - tropePts));
       tropePts = Math.min(35, tropePts + 12);
       sharedConnections.push({
-        id: `trope-${trope}`,
+        id: `trope-${trope.toLowerCase()}`,
         label: `Theme: ${trope}`,
         prefix: 'Theme',
         value: trope,
@@ -114,6 +215,7 @@ export function calculateSimilarity(
   // 2. Director & Screenwriter (+25 pts Director/Showrunner, +15 pts Writer/Creator, Max 25 pts)
   let auteurPts = 0;
   for (const dir of candidate.directors) {
+    if (!isValidPersonName(dir)) continue;
     if (focal.directors.includes(dir)) {
       auteurPts = Math.min(25, auteurPts + 25);
       sharedConnections.push({
@@ -144,6 +246,7 @@ export function calculateSimilarity(
   }
 
   for (const writer of candidate.writers) {
+    if (!isValidPersonName(writer)) continue;
     const alreadyCounted = sharedConnections.some(
       (c) => c.category === 'AUTEUR' && c.value === writer
     );
@@ -166,37 +269,16 @@ export function calculateSimilarity(
     }
   }
 
-  // 3. Genre Kinship (+5 pts per shared genre, +5 pt bonus if primary genre matches, Max 15 pts)
-  let genrePts = 0;
-  const primaryMatches = focal.primaryGenre === candidate.primaryGenre;
-  for (const genre of candidate.genres) {
-    if (focal.genres.includes(genre)) {
-      const isPrimary = primaryMatches && genre === focal.primaryGenre;
-      const pts = isPrimary ? 10 : 5;
-      genrePts = Math.min(15, genrePts + pts);
-      sharedConnections.push({
-        id: `genre-${genre}`,
-        label: isPrimary ? `Primary Genre: ${genre}` : `Genre: ${genre}`,
-        prefix: 'Genre',
-        value: genre,
-        category: 'GENRE',
-        entityType: 'TROPE',
-        entityNodeId: toEntityNodeId('TROPE', genre),
-        points: pts,
-        color: ENTITY_COLORS.TROPE.primary,
-      });
-    }
-  }
-
-  // 4. Shared Cast (+6 pts for #1/#2 billed LEAD, +4 pts for top-5 SUPPORTING, Max 10 pts)
+  // 4. Shared Cast (+16 pts for #1/#2 billed LEAD, +6 pts for supporting cast, Max 24 pts)
   let castPts = 0;
   for (const member of candidate.cast) {
+    if (!isValidPersonName(member.name)) continue;
     const focalMatch = focal.cast.find((f) => f.name === member.name);
     if (focalMatch) {
       const isLead =
         focalMatch.billing === 'LEAD' || member.billing === 'LEAD';
-      const pts = isLead ? 6 : 4;
-      castPts = Math.min(10, castPts + pts);
+      const pts = isLead ? 16 : 6;
+      castPts = Math.min(24, castPts + pts);
       sharedConnections.push({
         id: `cast-${member.name}`,
         label: `${isLead ? 'Starring' : 'Cast'}: ${member.name}`,
@@ -214,6 +296,7 @@ export function calculateSimilarity(
   // 5. Score & Cinematography (+6 pts shared Composer, +4 pts shared Cinematographer, Max 10 pts)
   let sonicVisualPts = 0;
   for (const comp of candidate.composers) {
+    if (!isValidPersonName(comp)) continue;
     if (focal.composers.includes(comp)) {
       sonicVisualPts = Math.min(10, sonicVisualPts + 6);
       sharedConnections.push({
@@ -231,6 +314,7 @@ export function calculateSimilarity(
   }
 
   for (const dp of candidate.cinematographers) {
+    if (!isValidPersonName(dp)) continue;
     if (focal.cinematographers.includes(dp)) {
       sonicVisualPts = Math.min(10, sonicVisualPts + 4);
       sharedConnections.push({
@@ -247,56 +331,55 @@ export function calculateSimilarity(
     }
   }
 
-  // 6. Audience Overlap (+5 pts if in native co-watch recommendations list, Max 5 pts)
-  let coWatchPts = 0;
-  if (
-    focal.coWatchIds.includes(candidate.id) ||
-    candidate.coWatchIds.includes(focal.id)
-  ) {
-    coWatchPts = 5;
-    sharedConnections.push({
-      id: `cowatch-${candidate.id}`,
-      label: 'Paired by Viewers',
-      prefix: 'Paired',
-      value: 'Viewer Favourite',
-      category: 'COWATCH',
-      entityType: candidate.mediaType,
-      points: 5,
-      color: '#234B6E',
-    });
+  // Require at least one concrete craft or narrative connection.
+  // Broad genres and audience co-watch overlap never inflate scores or create links.
+  const hasConcrete =
+    tropePts > 0 || auteurPts > 0 || castPts > 0 || sonicVisualPts > 0;
+
+  if (!hasConcrete) {
+    return {
+      totalScore: 0,
+      rawPoints: {
+        tropes: 0,
+        auteur: 0,
+        genres: 0,
+        cast: 0,
+        sonicVisual: 0,
+        coWatch: 0,
+      },
+      sharedConnections: [],
+      linkDistance: 240,
+    };
   }
 
-  // Apply Curatorial Lens Presets
+  const genrePts = 0;
+  const coWatchPts = 0;
+
+  // Apply Curatorial Lens Presets strictly to concrete shared connections
   let weightedTotal =
-    tropePts + auteurPts + genrePts + castPts + sonicVisualPts + coWatchPts;
+    tropePts + auteurPts + castPts + sonicVisualPts;
 
   if (preset === 'VIBE_TROPES') {
     weightedTotal =
-      tropePts * 1.12 +
-      genrePts * 1.1 +
-      auteurPts * 0.95 +
-      castPts * 0.95 +
-      sonicVisualPts * 0.95 +
-      coWatchPts;
+      tropePts * 1.15 +
+      auteurPts * 1.0 +
+      castPts * 1.0 +
+      sonicVisualPts * 1.0;
   } else if (preset === 'AUTEUR_ORBIT') {
     weightedTotal =
-      tropePts * 0.72 +
-      genrePts * 0.75 +
+      tropePts * 0.75 +
       auteurPts * 2.0 +
       sonicVisualPts * 2.0 +
-      castPts * 0.85 +
-      coWatchPts;
+      castPts * 0.9;
   } else if (preset === 'STAR_CONSTELLATION') {
     weightedTotal =
       castPts * 3.0 +
-      tropePts * 0.78 +
-      genrePts * 0.8 +
-      auteurPts * 0.9 +
-      sonicVisualPts * 0.9 +
-      coWatchPts;
+      tropePts * 0.8 +
+      auteurPts * 0.95 +
+      sonicVisualPts * 0.95;
   }
 
-  const totalScore = Math.max(8, Math.min(99, Math.round(weightedTotal)));
+  const totalScore = Math.max(1, Math.min(99, Math.round(weightedTotal)));
 
   sharedConnections.sort((a, b) => b.points - a.points);
 
@@ -374,7 +457,9 @@ export function buildSpatialGraph({
       return true;
     });
 
-    // Compute pairwise similarities across all active media items
+    const effectiveThreshold = Math.max(15, forceSettings.matchThreshold);
+
+    // Compute pairwise similarities across all active media items (only keeping pairs with concrete shared connections)
     const pairwiseMap = new Map<
       string,
       Array<{ target: MediaItem; similarity: SimilarityBreakdown }>
@@ -388,7 +473,12 @@ export function buildSpatialGraph({
       for (const itemB of filteredMedia) {
         if (itemA.id === itemB.id) continue;
         const sim = calculateSimilarity(itemA, itemB, preset);
-        peers.push({ target: itemB, similarity: sim });
+        if (
+          hasConcreteSharedConnection(sim) &&
+          sim.totalScore >= effectiveThreshold
+        ) {
+          peers.push({ target: itemB, similarity: sim });
+        }
       }
       peers.sort((a, b) => b.similarity.totalScore - a.similarity.totalScore);
       pairwiseMap.set(itemA.id, peers);
@@ -407,9 +497,9 @@ export function buildSpatialGraph({
               topPeers.reduce((acc, p) => acc + p.similarity.totalScore, 0) /
                 topPeers.length
             )
-          : 50;
+          : 0;
 
-      // Aggregate unique highest-value shared connections across top peers
+      // Aggregate unique highest-value shared connections across top connected peers
       const connMap = new Map<string, SharedConnection>();
       for (const p of peers.slice(0, 5)) {
         for (const conn of p.similarity.sharedConnections) {
@@ -477,10 +567,10 @@ export function buildSpatialGraph({
             : 0,
       };
 
-      const linkDistance = Math.max(
-        68,
-        Math.round(185 - avgTopScore * 1.1)
-      );
+      const linkDistance =
+        topPeers.length > 0
+          ? Math.max(68, Math.round(185 - avgTopScore * 1.1))
+          : 245;
 
       return {
         item,
@@ -505,14 +595,17 @@ export function buildSpatialGraph({
       connectedMediaByNode.set(item.id, new Set([item.id]));
     }
 
-    const effectiveThreshold = Math.max(15, forceSettings.matchThreshold);
-
     for (const item of filteredMedia) {
       const peers = pairwiseMap.get(item.id) || [];
       let countForNode = 0;
       for (const peer of peers) {
         if (countForNode >= 3) break;
-        if (peer.similarity.totalScore < effectiveThreshold) continue;
+        if (
+          !hasConcreteSharedConnection(peer.similarity) ||
+          peer.similarity.totalScore < effectiveThreshold
+        ) {
+          continue;
+        }
 
         const pairKey =
           item.id < peer.target.id
@@ -549,12 +642,14 @@ export function buildSpatialGraph({
     }
 
     rankedMatches.forEach(({ item, similarity }, idx) => {
+      const isUnlinked = (connectedMediaByNode.get(item.id)?.size || 1) <= 1;
       const shellOffset = (idx % 3) * 24;
-      const baseRadius =
-        (82 +
-          (idx / Math.max(1, rankedMatches.length - 1)) * 78 +
-          shellOffset) *
-        forceSettings.linkDistanceMultiplier;
+      const baseRadius = isUnlinked
+        ? 245 * forceSettings.linkDistanceMultiplier
+        : (82 +
+            (idx / Math.max(1, rankedMatches.length - 1)) * 78 +
+            shellOffset) *
+          forceSettings.linkDistanceMultiplier;
       const pos = seededSphericalPosition(
         idx,
         rankedMatches.length,
@@ -604,6 +699,8 @@ export function buildSpatialGraph({
       mediaId: string
     ) => {
       if (!visibility[type]) return;
+      if (type === 'TROPE' && !isSpecificNarrativeTrope(name)) return;
+      if (type !== 'TROPE' && !isValidPersonName(name)) return;
       const id = toEntityNodeId(type, name);
       const existing = entityAcc.get(id);
       if (existing) {
@@ -620,6 +717,8 @@ export function buildSpatialGraph({
     };
 
     for (const media of filteredMedia) {
+      // Do not register entity bridge links for unlinked standalone titles
+      if ((connectedMediaByNode.get(media.id)?.size || 1) <= 1) continue;
       for (const dir of media.directors) {
         registerEntity('DIRECTOR', dir, 'Director / Showrunner', media.id);
       }
@@ -644,9 +743,30 @@ export function buildSpatialGraph({
       }
     }
 
-    const validEntities = Array.from(entityAcc.values()).filter(
-      (ent) => ent.mediaIds.size >= 2
-    );
+    const validEntities = Array.from(entityAcc.values())
+      .map((ent) => {
+        // Keep only mediaIds that share a threshold-verified similarity link with another member of this entity
+        const allIds = Array.from(ent.mediaIds);
+        const linkedSubset = allIds.filter((idA) =>
+          allIds.some(
+            (idB) =>
+              idA !== idB &&
+              (pairwiseMap
+                .get(idA)
+                ?.some(
+                  (p) =>
+                    p.target.id === idB &&
+                    p.similarity.totalScore >= effectiveThreshold
+                ) ??
+                false)
+          )
+        );
+        return {
+          ...ent,
+          mediaIds: new Set(linkedSubset),
+        };
+      })
+      .filter((ent) => ent.mediaIds.size >= 2);
 
     validEntities.forEach((ent, idx) => {
       const connectedIds = Array.from(ent.mediaIds);
@@ -736,7 +856,8 @@ export function buildSpatialGraph({
     .filter(
       (entry) =>
         entry.item.id === focalItem.id ||
-        entry.similarity.totalScore >= forceSettings.matchThreshold
+        (hasConcreteSharedConnection(entry.similarity) &&
+          entry.similarity.totalScore >= forceSettings.matchThreshold)
     );
 
   const rankedMatches = allScored
@@ -837,6 +958,8 @@ export function buildSpatialGraph({
     mediaId: string
   ) => {
     if (!visibility[type]) return;
+    if (type === 'TROPE' && !isSpecificNarrativeTrope(name)) return;
+    if (type !== 'TROPE' && !isValidPersonName(name)) return;
     const id = toEntityNodeId(type, name);
     const existing = entityAcc.get(id);
     if (existing) {

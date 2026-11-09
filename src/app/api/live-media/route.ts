@@ -6,6 +6,12 @@ import {
   RegionCode,
   StreamingOffer,
 } from '@/lib/types';
+import {
+  calculateSimilarity,
+  hasConcreteSharedConnection,
+  isSpecificNarrativeTrope,
+  isValidPersonName,
+} from '@/lib/similarity';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const OMDB_BASE = 'https://www.omdbapi.com/';
@@ -208,21 +214,56 @@ function titleCaseKeyword(str: string): string {
 }
 
 /**
+ * Helper to fetch from TMDB using either Bearer Read Access Token (v4) or API Key (v3)
+ */
+async function fetchTmdb(
+  path: string,
+  params: Record<string, string>,
+  tmdbKey: string,
+  tmdbReadToken?: string,
+  revalidate = 3600
+) {
+  const search = new URLSearchParams(params);
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  if (tmdbReadToken) {
+    headers.Authorization = `Bearer ${tmdbReadToken}`;
+  } else if (tmdbKey) {
+    search.set('api_key', tmdbKey);
+  }
+
+  const url = `${TMDB_BASE}${path}?${search.toString()}`;
+  return fetch(url, {
+    headers,
+    next: { revalidate },
+  });
+}
+
+/**
  * Fetches a full MediaItem from TMDB + OMDb
  */
 async function fetchFullTmdbMediaItem(
   tmdbId: number,
   mediaType: MediaType,
   tmdbKey: string,
-  omdbKey?: string
+  omdbKey?: string,
+  tmdbReadToken?: string
 ): Promise<{ item: MediaItem; rawRecs: Array<{ id: number; mediaType: MediaType }> } | null> {
   const endpoint = mediaType === 'MOVIE' ? 'movie' : 'tv';
-  const url = `${TMDB_BASE}/${endpoint}/${tmdbId}?api_key=${encodeURIComponent(
-    tmdbKey
-  )}&append_to_response=credits,keywords,recommendations,similar,external_ids,watch/providers`;
 
   try {
-    const res = await fetch(url, { next: { revalidate: 3600 } });
+    const res = await fetchTmdb(
+      `/${endpoint}/${tmdbId}`,
+      {
+        append_to_response:
+          'credits,keywords,recommendations,similar,external_ids,watch/providers',
+      },
+      tmdbKey,
+      tmdbReadToken,
+      3600
+    );
     if (!res.ok) return null;
     const data = await res.json();
 
@@ -239,40 +280,45 @@ async function fetchFullTmdbMediaItem(
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')}`;
 
-    // Directors / Showrunners
+    // Directors / Showrunners: for TV series, strictly use series creators (created_by) — never freelance episode directors
     const directors: string[] = [];
-    if (mediaType === 'TV' && Array.isArray(data.created_by)) {
-      for (const c of data.created_by) {
-        if (c?.name && !directors.includes(c.name)) directors.push(c.name);
-      }
-    }
     const crew = Array.isArray(data.credits?.crew) ? data.credits.crew : [];
-    for (const member of crew) {
-      if (
-        (member.job === 'Director' || member.job === 'Series Director') &&
-        !directors.includes(member.name)
-      ) {
-        directors.push(member.name);
+    if (mediaType === 'TV') {
+      if (Array.isArray(data.created_by)) {
+        for (const c of data.created_by) {
+          if (c?.name && isValidPersonName(c.name) && !directors.includes(c.name)) {
+            directors.push(c.name);
+          }
+        }
       }
-    }
-    if (directors.length === 0 && omdb?.director) {
-      directors.push(...omdb.director.slice(0, 2));
-    }
-    if (directors.length === 0) {
-      directors.push('Visionary Auteur');
+    } else {
+      for (const member of crew) {
+        if (
+          member.job === 'Director' &&
+          isValidPersonName(member.name) &&
+          !directors.includes(member.name) &&
+          directors.length < 2
+        ) {
+          directors.push(member.name);
+        }
+      }
+      if (directors.length === 0 && omdb?.director) {
+        directors.push(...omdb.director.filter(isValidPersonName).slice(0, 2));
+      }
     }
 
-    // Writers
+    // Writers: for Movies only (TV creators are already captured in directors; avoid staff writer overlap)
     const writers: string[] = [];
-    for (const member of crew) {
-      if (
-        (member.job === 'Screenplay' ||
-          member.job === 'Writer' ||
-          member.job === 'Story' ||
-          member.department === 'Writing') &&
-        !writers.includes(member.name)
-      ) {
-        writers.push(member.name);
+    if (mediaType === 'MOVIE') {
+      for (const member of crew) {
+        if (
+          (member.job === 'Screenplay' || member.job === 'Writer') &&
+          isValidPersonName(member.name) &&
+          !writers.includes(member.name) &&
+          writers.length < 2
+        ) {
+          writers.push(member.name);
+        }
       }
     }
 
@@ -281,34 +327,36 @@ async function fetchFullTmdbMediaItem(
     const cinematographers: string[] = [];
     for (const member of crew) {
       if (
-        (member.job === 'Original Music Composer' ||
-          member.job === 'Music' ||
-          member.department === 'Sound') &&
-        member.job?.toLowerCase().includes('music') &&
-        !composers.includes(member.name)
+        member.job === 'Original Music Composer' &&
+        isValidPersonName(member.name) &&
+        !composers.includes(member.name) &&
+        composers.length < 1
       ) {
         composers.push(member.name);
       }
       if (
-        (member.job === 'Director of Photography' ||
-          member.job === 'Cinematography') &&
-        !cinematographers.includes(member.name)
+        member.job === 'Director of Photography' &&
+        isValidPersonName(member.name) &&
+        !cinematographers.includes(member.name) &&
+        cinematographers.length < 1
       ) {
         cinematographers.push(member.name);
       }
     }
 
-    // Primary Cast
+    // Primary Cast (Top 4 billed leads only)
     const rawCast = Array.isArray(data.credits?.cast)
-      ? data.credits.cast.slice(0, 5)
+      ? data.credits.cast.slice(0, 4)
       : [];
-    const cast: CastMember[] = rawCast.map(
-      (c: { name: string; character?: string }, idx: number) => ({
-        name: c.name,
-        character: c.character,
-        billing: idx < 2 ? 'LEAD' : 'SUPPORTING',
-      })
-    );
+    const cast: CastMember[] = rawCast
+      .filter((c: { name?: string }) => Boolean(c.name && isValidPersonName(c.name)))
+      .map(
+        (c: { name: string; character?: string }, idx: number) => ({
+          name: c.name,
+          character: c.character,
+          billing: idx < 2 ? 'LEAD' : 'SUPPORTING',
+        })
+      );
 
     // Genres
     const genres: string[] = Array.isArray(data.genres)
@@ -317,17 +365,10 @@ async function fetchFullTmdbMediaItem(
             ? 'Sci-Fi'
             : g.name
         )
-      : ['Sci-Fi', 'Thriller'];
+      : ['Drama'];
 
-    // Keywords / Micro-Tropes
-    const rawKeywords =
-      data.keywords?.keywords || data.keywords?.results || [];
-    const tropes: string[] = rawKeywords
-      .slice(0, 6)
-      .map((k: { name: string }) => titleCaseKeyword(k.name));
-    if (tropes.length === 0) {
-      tropes.push(...genres.slice(0, 2));
-    }
+    // Do not assign noisy crowd-tagged TMDB keywords as narrative tropes on searched items
+    const tropes: string[] = [];
 
     // Recommendations list
     const recList = [
@@ -494,10 +535,47 @@ async function fetchWikidataClusterByImdbId(
   fallbackYear: number,
   fallbackType: MediaType,
   fallbackPoster: string,
-  omdbKey?: string
+  omdbKey?: string,
+  singleItemOnly = false
 ): Promise<{ focalItem: MediaItem; clusterItems: MediaItem[] }> {
-  // Query 1: Get credits, genres, and subjects of the focal item + related works sharing director, cast, composer, or main subject
-  const sparql = `
+  // Query 1: Get credits, genres, and subjects of the focal item (+ related works sharing director/creator, cast, composer, or main subject when building a cluster)
+  const sparql = singleItemOnly
+    ? `
+  SELECT ?item ?itemLabel ?imdb ?pubYear ?isTv
+         (GROUP_CONCAT(DISTINCT ?dirLabel; separator="|") AS ?dirs)
+         (GROUP_CONCAT(DISTINCT ?castLabel; separator="|") AS ?actors)
+         (GROUP_CONCAT(DISTINCT ?compLabel; separator="|") AS ?comps)
+         (GROUP_CONCAT(DISTINCT ?genreLabel; separator="|") AS ?genres)
+         (GROUP_CONCAT(DISTINCT ?subjectLabel; separator="|") AS ?subjects)
+  WHERE {
+    ?item wdt:P345 "${imdbId}" .
+    BIND("${imdbId}" AS ?imdb)
+    OPTIONAL { ?item wdt:P577 ?date . BIND(YEAR(?date) AS ?pubYear) }
+    OPTIONAL {
+      ?item wdt:P31 ?inst .
+      FILTER(?inst IN (wd:Q5398426, wd:Q1259759))
+      BIND(true AS ?isTv)
+    }
+    OPTIONAL {
+      ?item wdt:P170 ?creator .
+      ?creator rdfs:label ?dirLabel .
+      FILTER(LANG(?dirLabel) = "en")
+    }
+    OPTIONAL {
+      FILTER(!BOUND(?isTv))
+      ?item wdt:P57 ?dir .
+      ?dir rdfs:label ?dirLabel .
+      FILTER(LANG(?dirLabel) = "en")
+    }
+    OPTIONAL { ?item wdt:P161 ?cast . ?cast rdfs:label ?castLabel . FILTER(LANG(?castLabel) = "en") }
+    OPTIONAL { ?item wdt:P86 ?comp . ?comp rdfs:label ?compLabel . FILTER(LANG(?compLabel) = "en") }
+    OPTIONAL { ?item wdt:P136 ?genre . ?genre rdfs:label ?genreLabel . FILTER(LANG(?genreLabel) = "en") }
+    SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+  }
+  GROUP BY ?item ?itemLabel ?imdb ?pubYear ?isTv
+  LIMIT 2
+  `
+    : `
   SELECT ?item ?itemLabel ?imdb ?pubYear ?isTv
          (GROUP_CONCAT(DISTINCT ?dirLabel; separator="|") AS ?dirs)
          (GROUP_CONCAT(DISTINCT ?castLabel; separator="|") AS ?actors)
@@ -511,19 +589,10 @@ async function fetchWikidataClusterByImdbId(
         {
           BIND(?focal AS ?item)
         } UNION {
-          ?focal wdt:P57 ?sharedDir .
-          ?item wdt:P57 ?sharedDir ; wdt:P345 ?anyImdb .
-        } UNION {
-          ?focal wdt:P86 ?sharedComp .
-          ?item wdt:P86 ?sharedComp ; wdt:P345 ?anyImdb .
-        } UNION {
-          ?focal wdt:P921 ?sharedSubj .
-          ?item wdt:P921 ?sharedSubj ; wdt:P345 ?anyImdb .
-        } UNION {
-          ?focal wdt:P161 ?sharedActor .
-          ?item wdt:P161 ?sharedActor ; wdt:P345 ?anyImdb .
+          ?focal wdt:P170 ?sharedCreator .
+          ?item wdt:P170 ?sharedCreator ; wdt:P345 ?anyImdb .
         }
-      } LIMIT 22
+      } LIMIT 12
     }
     ?item wdt:P345 ?imdb .
     OPTIONAL { ?item wdt:P577 ?date . BIND(YEAR(?date) AS ?pubYear) }
@@ -532,15 +601,24 @@ async function fetchWikidataClusterByImdbId(
       FILTER(?inst IN (wd:Q5398426, wd:Q1259759))
       BIND(true AS ?isTv)
     }
-    OPTIONAL { ?item wdt:P57 ?dir . ?dir rdfs:label ?dirLabel . FILTER(LANG(?dirLabel) = "en") }
+    OPTIONAL {
+      ?item wdt:P170 ?creator .
+      ?creator rdfs:label ?dirLabel .
+      FILTER(LANG(?dirLabel) = "en")
+    }
+    OPTIONAL {
+      FILTER(!BOUND(?isTv))
+      ?item wdt:P57 ?dir .
+      ?dir rdfs:label ?dirLabel .
+      FILTER(LANG(?dirLabel) = "en")
+    }
     OPTIONAL { ?item wdt:P161 ?cast . ?cast rdfs:label ?castLabel . FILTER(LANG(?castLabel) = "en") }
     OPTIONAL { ?item wdt:P86 ?comp . ?comp rdfs:label ?compLabel . FILTER(LANG(?compLabel) = "en") }
     OPTIONAL { ?item wdt:P136 ?genre . ?genre rdfs:label ?genreLabel . FILTER(LANG(?genreLabel) = "en") }
-    OPTIONAL { ?item wdt:P921 ?subj . ?subj rdfs:label ?subjectLabel . FILTER(LANG(?subjectLabel) = "en") }
     SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
   }
   GROUP BY ?item ?itemLabel ?imdb ?pubYear ?isTv
-  LIMIT 18
+  LIMIT 12
   `;
 
   const rowsMap = new Map<string, WikidataFilmRow>();
@@ -586,27 +664,18 @@ async function fetchWikidataClusterByImdbId(
                 .replace(/^./, (c) => c.toUpperCase())
         );
 
-        const cleanSubjects = splitClean(b.subjects?.value, 5).map((s) =>
-          titleCaseKeyword(s)
-        );
-
         rowsMap.set(rowImdb, {
           imdbId: rowImdb,
           title: rowTitle,
           year: b.pubYear?.value ? parseInt(b.pubYear.value, 10) : fallbackYear,
           mediaType: b.isTv?.value === 'true' ? 'TV' : 'MOVIE',
-          directors: splitClean(b.dirs?.value, 2),
+          directors: splitClean(b.dirs?.value, 2).filter(isValidPersonName),
           writers: [],
-          cast: splitClean(b.actors?.value, 5),
-          composers: splitClean(b.comps?.value, 2),
+          cast: splitClean(b.actors?.value, 4).filter(isValidPersonName),
+          composers: splitClean(b.comps?.value, 1).filter(isValidPersonName),
           cinematographers: [],
-          genres: cleanGenres.length > 0 ? cleanGenres : ['Drama', 'Thriller'],
-          tropes:
-            cleanSubjects.length > 0
-              ? cleanSubjects
-              : cleanGenres.length > 0
-                ? cleanGenres
-                : ['Psychological Labyrinth'],
+          genres: cleanGenres.length > 0 ? cleanGenres : ['Drama'],
+          tropes: [],
         });
       }
     }
@@ -614,64 +683,64 @@ async function fetchWikidataClusterByImdbId(
     // Fallback if Wikidata times out
   }
 
-  // Ensure the focal item is in rowsMap
+  // Ensure the focal item is in rowsMap without fabricating placeholder credits or tropes
   if (!rowsMap.has(imdbId)) {
     rowsMap.set(imdbId, {
       imdbId,
       title: fallbackTitle,
       year: fallbackYear,
       mediaType: fallbackType,
-      directors: ['Featured Auteur'],
+      directors: [],
       writers: [],
       cast: [],
       composers: [],
       cinematographers: [],
-      genres: ['Sci-Fi', 'Thriller'],
-      tropes: ['Non-Linear Time', 'Subconscious Labyrinth'],
+      genres: ['Drama'],
+      tropes: [],
     });
   }
 
-  const focalRow = rowsMap.get(imdbId)!;
-
   // Enrich posters & metadata via IMDb suggestion lookup / OMDb in parallel
-  const allRows = Array.from(rowsMap.values()).slice(0, 15);
+  const allRows = Array.from(rowsMap.values()).slice(0, singleItemOnly ? 1 : 12);
   const mediaItems: MediaItem[] = await Promise.all(
     allRows.map(async (row, idx) => {
       const omdb = omdbKey ? await fetchOmdbTelemetry(row.imdbId, omdbKey) : null;
-      let posterUrl =
+      const sug = await searchImdbPublicSuggestions(row.title);
+      const match =
+        sug.find((s: { imdbId: string; posterUrl?: string; stars?: string }) => s.imdbId === row.imdbId) ||
+        sug[0];
+
+      const posterUrl =
         row.imdbId === imdbId && fallbackPoster
           ? fallbackPoster
-          : omdb?.poster || '';
+          : omdb?.poster || match?.posterUrl || '';
 
-      if (!posterUrl) {
-        const sug = await searchImdbPublicSuggestions(row.title);
-        const match =
-          sug.find((s: { imdbId: string; posterUrl?: string }) => s.imdbId === row.imdbId) ||
-          sug[0];
-        if (match?.posterUrl) posterUrl = match.posterUrl;
-      }
+      const imdbStars = match?.stars
+        ? match.stars
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(isValidPersonName)
+        : [];
 
-      const directors: string[] =
-        row.directors.length > 0
-          ? row.directors
-          : omdb?.director || focalRow.directors;
-      const actorsList: string[] =
-        row.cast.length > 0 ? row.cast : omdb?.actors || focalRow.cast;
+      const directors: string[] = (
+        row.directors.length > 0 ? row.directors : omdb?.director || []
+      ).filter(isValidPersonName);
+      const actorsList: string[] = (
+        omdb?.actors && omdb.actors.length > 0
+          ? omdb.actors
+          : imdbStars.length > 0
+            ? imdbStars
+            : row.cast
+      ).filter(isValidPersonName);
 
       const cast: CastMember[] = actorsList
-        .slice(0, 5)
+        .slice(0, 4)
         .map((name: string, i: number) => ({
           name,
           billing: i < 2 ? 'LEAD' : 'SUPPORTING',
         }));
 
-      // Share at least 1 trope/genre with focalRow if it came from the related SPARQL query
-      const tropes = Array.from(
-        new Set([
-          ...row.tropes,
-          ...(focalRow.tropes.slice(0, 2)),
-        ])
-      ).slice(0, 5);
+      const tropes: string[] = [];
 
       const deterministicScore = 7.6 + ((idx * 3) % 14) * 0.1;
 
@@ -685,11 +754,13 @@ async function fetchWikidataClusterByImdbId(
         tagline: `${row.year} · ${row.genres.slice(0, 2).join(' / ')}`,
         synopsis:
           omdb?.plot ||
-          `${row.title} (${row.year}) directed by ${
-            directors[0] || 'acclaimed filmmaker'
-          }, featuring ${actorsList.slice(0, 3).join(', ') || 'ensemble cast'}. Connected in the SixDegrees constellation via ${tropes
-            .slice(0, 2)
-            .join(' & ')}.`,
+          `${row.title} (${row.year})${
+            directors[0] ? ` directed by ${directors[0]}` : ''
+          }${
+            actorsList.length > 0
+              ? `, featuring ${actorsList.slice(0, 3).join(', ')}`
+              : ''
+          }.`,
         posterUrl,
         backdropColor: row.mediaType === 'MOVIE' ? '#234B6E' : '#6B2D46',
         imdbRating: omdb?.imdbRating || Number(deterministicScore.toFixed(1)),
@@ -701,15 +772,15 @@ async function fetchWikidataClusterByImdbId(
           omdb?.contentRating || (row.mediaType === 'TV' ? 'TV-MA' : 'PG-13'),
         runtimeOrSeasons:
           omdb?.runtime || (row.mediaType === 'TV' ? '2 Seasons' : '2h 12m'),
-        directors: directors.length > 0 ? directors : ['Featured Director'],
-        writers: omdb?.writer?.slice(0, 2) || [],
-        primaryGenre: row.genres[0] || 'Sci-Fi',
+        directors,
+        writers: (omdb?.writer?.slice(0, 2) || []).filter(isValidPersonName),
+        primaryGenre: row.genres[0] || 'Drama',
         genres: row.genres,
         tropes,
         cast,
         composers: row.composers,
         cinematographers: row.cinematographers,
-        coWatchIds: [`imdb-${imdbId}`],
+        coWatchIds: [],
         streamingByRegion: makeFallbackRegionalStreaming(row.title),
         coordinates: {
           ra: `${((idx + 4) % 24).toString().padStart(2, '0')}h 42m`,
@@ -722,8 +793,13 @@ async function fetchWikidataClusterByImdbId(
 
   const focalItem =
     mediaItems.find((m) => m.imdbId === imdbId) || mediaItems[0];
-  const clusterItems = mediaItems.filter((m) => m.id !== focalItem.id);
+  const clusterItems = mediaItems
+    .filter((m) => m.id !== focalItem.id)
+    .filter((m) => hasConcreteSharedConnection(calculateSimilarity(focalItem, m)));
   focalItem.coWatchIds = clusterItems.slice(0, 8).map((c) => c.id);
+  clusterItems.forEach((c) => {
+    c.coWatchIds = [focalItem.id];
+  });
 
   return { focalItem, clusterItems };
 }
@@ -732,9 +808,102 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action') || 'search';
   const tmdbKey =
-    searchParams.get('tmdbKey') || process.env.NEXT_PUBLIC_TMDB_API_KEY || '';
+    searchParams.get('tmdbKey') || process.env.TMDB_API_KEY || '';
+  const tmdbReadToken = process.env.TMDB_READ_ACCESS_TOKEN || '';
   const omdbKey =
-    searchParams.get('omdbKey') || process.env.NEXT_PUBLIC_OMDB_API_KEY || '';
+    searchParams.get('omdbKey') || process.env.OMDB_API_KEY || '';
+  const hasTmdbAuth = Boolean(tmdbKey || tmdbReadToken);
+
+  // ==================== ACTION 0: SERVER KEY STATUS (SAFE BOOLEANS ONLY) ====================
+  if (action === 'status') {
+    return NextResponse.json({
+      tmdb: hasTmdbAuth,
+      omdb: Boolean(omdbKey),
+    });
+  }
+
+  // ==================== ACTION 0B: SINGLE ITEM ENRICHMENT ====================
+  if (action === 'item') {
+    const tmdbId = parseInt(searchParams.get('tmdbId') || '', 10);
+    const imdbId = searchParams.get('imdbId') || '';
+    const mediaType =
+      (searchParams.get('type') as MediaType) === 'TV' ? 'TV' : 'MOVIE';
+    const title = searchParams.get('title') || 'Selected Title';
+    const year = parseInt(searchParams.get('year') || '2024', 10);
+    const posterUrl = searchParams.get('posterUrl') || '';
+
+    if (hasTmdbAuth && !Number.isNaN(tmdbId) && tmdbId > 0 && !imdbId.startsWith('tt')) {
+      const enriched = await fetchFullTmdbMediaItem(
+        tmdbId,
+        mediaType,
+        tmdbKey,
+        omdbKey,
+        tmdbReadToken
+      );
+      if (enriched?.item) {
+        return NextResponse.json({ item: enriched.item, source: 'TMDB_OMDB' });
+      }
+    }
+
+    if (hasTmdbAuth && imdbId.startsWith('tt')) {
+      try {
+        const findRes = await fetchTmdb(
+          `/find/${encodeURIComponent(imdbId)}`,
+          { external_source: 'imdb_id' },
+          tmdbKey,
+          tmdbReadToken,
+          3600
+        );
+        if (findRes.ok) {
+          const findData = await findRes.json();
+          const movieHit = findData.movie_results?.[0];
+          const tvHit = findData.tv_results?.[0];
+          const hit = movieHit || tvHit;
+          const resolvedType: MediaType = tvHit ? 'TV' : 'MOVIE';
+          if (hit?.id) {
+            const enriched = await fetchFullTmdbMediaItem(
+              hit.id,
+              resolvedType,
+              tmdbKey,
+              omdbKey,
+              tmdbReadToken
+            );
+            if (enriched?.item) {
+              return NextResponse.json({ item: enriched.item, source: 'TMDB_OMDB' });
+            }
+          }
+        }
+      } catch {
+        // Fall through to Wikidata single item lookup
+      }
+    }
+
+    let resolvedImdbId = imdbId;
+    if (!resolvedImdbId.startsWith('tt') && title) {
+      const sug = await searchImdbPublicSuggestions(title);
+      if (sug[0]?.imdbId) {
+        resolvedImdbId = sug[0].imdbId;
+      }
+    }
+
+    if (resolvedImdbId.startsWith('tt')) {
+      const singleLookup = await fetchWikidataClusterByImdbId(
+        resolvedImdbId,
+        title,
+        year,
+        mediaType,
+        posterUrl,
+        omdbKey,
+        true
+      );
+      return NextResponse.json({
+        item: singleLookup.focalItem,
+        source: 'PUBLIC_LIVE_GRAPH',
+      });
+    }
+
+    return NextResponse.json({ item: null }, { status: 404 });
+  }
 
   // ==================== ACTION 1: LIVE OMNI-SEARCH ====================
   if (action === 'search') {
@@ -743,14 +912,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ results: [], source: 'NONE' });
     }
 
-    // 1A. If TMDB API Key is available, query TMDB /search/multi
-    if (tmdbKey) {
+    // 1A. If TMDB API Key / Read Token is available, query TMDB /search/multi
+    if (hasTmdbAuth) {
       try {
-        const res = await fetch(
-          `${TMDB_BASE}/search/multi?api_key=${encodeURIComponent(
-            tmdbKey
-          )}&query=${encodeURIComponent(q)}&include_adult=false`,
-          { next: { revalidate: 1800 } }
+        const res = await fetchTmdb(
+          '/search/multi',
+          {
+            query: q,
+            include_adult: 'false',
+          },
+          tmdbKey,
+          tmdbReadToken,
+          1800
         );
         if (res.ok) {
           const data = await res.json();
@@ -820,24 +993,35 @@ export async function GET(req: NextRequest) {
     const year = parseInt(searchParams.get('year') || '2024', 10);
     const posterUrl = searchParams.get('posterUrl') || '';
 
-    // 2A. If TMDB API Key is available and we have a valid tmdbId
-    if (tmdbKey && !Number.isNaN(tmdbId) && tmdbId > 0 && !imdbId.startsWith('tt')) {
+    // 2A. If TMDB API Key / Read Token is available and we have a valid tmdbId
+    if (hasTmdbAuth && !Number.isNaN(tmdbId) && tmdbId > 0 && !imdbId.startsWith('tt')) {
       const focalData = await fetchFullTmdbMediaItem(
         tmdbId,
         mediaType,
         tmdbKey,
-        omdbKey
+        omdbKey,
+        tmdbReadToken
       );
       if (focalData) {
         const topRecs = focalData.rawRecs.slice(0, 12);
         const recResults = await Promise.all(
           topRecs.map((r) =>
-            fetchFullTmdbMediaItem(r.id, r.mediaType, tmdbKey, omdbKey)
+            fetchFullTmdbMediaItem(
+              r.id,
+              r.mediaType,
+              tmdbKey,
+              omdbKey,
+              tmdbReadToken
+            )
           )
         );
+        // Only retain recommended items that share a concrete craft or narrative connection
         const clusterItems = recResults
           .filter((r): r is NonNullable<typeof r> => r !== null)
-          .map((r) => r.item);
+          .map((r) => r.item)
+          .filter((item) =>
+            hasConcreteSharedConnection(calculateSimilarity(focalData.item, item))
+          );
 
         focalData.item.coWatchIds = clusterItems.map((c) => c.id);
 
@@ -849,13 +1033,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // If TMDB Key is available and we have an imdbId, resolve it via TMDB /find/{imdb_id}
-    if (tmdbKey && imdbId.startsWith('tt')) {
+    // If TMDB Key / Read Token is available and we have an imdbId, resolve it via TMDB /find/{imdb_id}
+    if (hasTmdbAuth && imdbId.startsWith('tt')) {
       try {
-        const findRes = await fetch(
-          `${TMDB_BASE}/find/${encodeURIComponent(
-            imdbId
-          )}?api_key=${encodeURIComponent(tmdbKey)}&external_source=imdb_id`
+        const findRes = await fetchTmdb(
+          `/find/${encodeURIComponent(imdbId)}`,
+          { external_source: 'imdb_id' },
+          tmdbKey,
+          tmdbReadToken,
+          3600
         );
         if (findRes.ok) {
           const findData = await findRes.json();
@@ -868,18 +1054,28 @@ export async function GET(req: NextRequest) {
               hit.id,
               resolvedType,
               tmdbKey,
-              omdbKey
+              omdbKey,
+              tmdbReadToken
             );
             if (focalData) {
               const topRecs = focalData.rawRecs.slice(0, 12);
               const recResults = await Promise.all(
                 topRecs.map((r) =>
-                  fetchFullTmdbMediaItem(r.id, r.mediaType, tmdbKey, omdbKey)
+                  fetchFullTmdbMediaItem(
+                    r.id,
+                    r.mediaType,
+                    tmdbKey,
+                    omdbKey,
+                    tmdbReadToken
+                  )
                 )
               );
               const clusterItems = recResults
                 .filter((r): r is NonNullable<typeof r> => r !== null)
-                .map((r) => r.item);
+                .map((r) => r.item)
+                .filter((item) =>
+                  hasConcreteSharedConnection(calculateSimilarity(focalData.item, item))
+                );
               focalData.item.coWatchIds = clusterItems.map((c) => c.id);
 
               return NextResponse.json({
@@ -911,7 +1107,8 @@ export async function GET(req: NextRequest) {
         year,
         mediaType,
         posterUrl,
-        omdbKey
+        omdbKey,
+        false
       );
       return NextResponse.json({
         ...liveCluster,

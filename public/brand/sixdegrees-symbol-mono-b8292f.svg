@@ -1,0 +1,7 @@
+<svg fill="#b8292f" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title"><title>SixDegrees — The Criterion 6° Symbol</title>
+  <title id="title">SixDegrees — The Criterion 6° Symbol</title>
+  <g id="symbol">
+    <path fill="#b8292f" fill-rule="evenodd" d="M 164 30 A 124 124 0 0 0 40 154 A 72 72 0 1 0 109.96 82.03 A 90 90 0 0 1 164 64 V 30 Z M 132 119.36 L 92 119.36 L 72 154 L 92 188.64 L 132 188.64 L 152 154 Z"/>
+    <path fill="#b8292f" fill-rule="evenodd" d="M 124 154 A 12 12 0 1 1 100 154 A 12 12 0 1 1 124 154 Z M 220 48 A 20 20 0 1 1 180 48 A 20 20 0 1 1 220 48 Z M 208 48 A 8 8 0 1 0 192 48 A 8 8 0 1 0 208 48 Z"/>
+  </g>
+</svg>

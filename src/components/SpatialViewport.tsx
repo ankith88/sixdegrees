@@ -70,31 +70,931 @@ function getEntityRoleLabel(type: GraphNode['type']): string {
 }
 
 /**
- * Creates a high-DPI 3D Sprite label texture for a GraphNode in warm archival vellum
+ * Draws a recognizable category-specific icon inside a 2D canvas context centered at (cx, cy):
+ * - MOVIE: 35mm Cinema Film Reel with 5 spool holes
+ * - TV: Widescreen Television Monitor with twin rabbit-ear antennae & stand
+ * - DIRECTOR: Director's Clapperboard with angled striped clap-stick
+ * - ACTOR: Classic 5-Pointed Cinema Star
+ * - TROPE: Open Story Book / Screenplay Tome with spine & page lines
+ * - COMPOSER: Beamed Musical Eighth Note (♫)
+ */
+function drawCategoryGlyph2D(
+  ctx: CanvasRenderingContext2D,
+  type: GraphNode['type'],
+  cx: number,
+  cy: number,
+  r: number,
+  color: string,
+  fillStyle?: string
+) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  const mainColor = fillStyle || color;
+  const vellumCutout = '#FBF8F2';
+  ctx.strokeStyle = mainColor;
+  ctx.fillStyle = mainColor;
+
+  if (type === 'MOVIE') {
+    // 35mm Cinema Film Reel: outer reel disc + 5 circular spool cutouts + center spindle
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.02, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Outer metallic rim highlight
+    ctx.strokeStyle = vellumCutout;
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.88, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 5 film spool holes
+    ctx.fillStyle = vellumCutout;
+    for (let i = 0; i < 5; i++) {
+      const angle = (i * Math.PI * 2) / 5 - Math.PI / 2;
+      const hx = Math.cos(angle) * r * 0.52;
+      const hy = Math.sin(angle) * r * 0.52;
+      ctx.beginPath();
+      ctx.arc(hx, hy, r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Center hub hole
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === 'TV') {
+    // Television Set: widescreen cabinet + screen cutout + rabbit-ear V-antennae + base stand
+    const w = r * 1.85;
+    const h = r * 1.25;
+    const yOff = r * 0.12;
+
+    // Rabbit-ear antennae
+    ctx.strokeStyle = mainColor;
+    ctx.lineWidth = Math.max(1.4, r * 0.18);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.15, yOff - h / 2);
+    ctx.lineTo(-r * 0.62, yOff - h / 2 - r * 0.52);
+    ctx.moveTo(r * 0.15, yOff - h / 2);
+    ctx.lineTo(r * 0.62, yOff - h / 2 - r * 0.52);
+    ctx.stroke();
+
+    // TV Cabinet
+    ctx.fillStyle = mainColor;
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, yOff - h / 2, w, h, Math.max(2, r * 0.25));
+    ctx.fill();
+
+    // Inner glass screen
+    ctx.fillStyle = vellumCutout;
+    ctx.beginPath();
+    ctx.roundRect(
+      -w * 0.38,
+      yOff - h * 0.34,
+      w * 0.76,
+      h * 0.68,
+      Math.max(1.5, r * 0.14)
+    );
+    ctx.fill();
+
+    // Pedestal stand
+    ctx.strokeStyle = mainColor;
+    ctx.lineWidth = Math.max(1.4, r * 0.18);
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.42, yOff + h / 2 + r * 0.18);
+    ctx.lineTo(r * 0.42, yOff + h / 2 + r * 0.18);
+    ctx.stroke();
+  } else if (type === 'DIRECTOR') {
+    // Director's Clapperboard: lower slate body + hinged open striped clap-stick
+    const w = r * 1.75;
+    const h = r * 1.15;
+    const bodyY = -r * 0.05;
+
+    // Slate body
+    ctx.fillStyle = mainColor;
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, bodyY, w, h * 0.78, Math.max(1.5, r * 0.18));
+    ctx.fill();
+
+    // Slate info lines
+    ctx.strokeStyle = vellumCutout;
+    ctx.lineWidth = Math.max(1, r * 0.13);
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.32, bodyY + h * 0.32);
+    ctx.lineTo(w * 0.32, bodyY + h * 0.32);
+    ctx.moveTo(-w * 0.32, bodyY + h * 0.55);
+    ctx.lineTo(w * 0.15, bodyY + h * 0.55);
+    ctx.stroke();
+
+    // Hinged upper clap-bar tilted open
+    ctx.save();
+    ctx.translate(-w / 2, bodyY);
+    ctx.rotate(-0.28);
+    ctx.fillStyle = mainColor;
+    ctx.beginPath();
+    ctx.roundRect(0, -h * 0.28, w, h * 0.26, Math.max(1, r * 0.12));
+    ctx.fill();
+
+    // Diagonal clapper stripes
+    ctx.strokeStyle = vellumCutout;
+    ctx.lineWidth = Math.max(1.2, r * 0.16);
+    for (let s = 1; s <= 3; s++) {
+      const sx = (w / 4) * s;
+      ctx.beginPath();
+      ctx.moveTo(sx - r * 0.12, -h * 0.26);
+      ctx.lineTo(sx + r * 0.12, -h * 0.03);
+      ctx.stroke();
+    }
+    ctx.restore();
+  } else if (type === 'ACTOR') {
+    // Classic 5-Pointed Cinema Star
+    ctx.fillStyle = mainColor;
+    ctx.beginPath();
+    const spikes = 5;
+    for (let i = 0; i < spikes * 2; i++) {
+      const rad = i % 2 === 0 ? r * 1.12 : r * 0.46;
+      const angle = (i * Math.PI) / spikes - Math.PI / 2;
+      const x = Math.cos(angle) * rad;
+      const y = Math.sin(angle) * rad;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Subtle inner star facet dot
+    ctx.fillStyle = vellumCutout;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === 'TROPE') {
+    // Open Story Book: left & right open arched pages + central binding spine
+    const w = r * 1.85;
+    const h = r * 1.32;
+    ctx.fillStyle = mainColor;
+    ctx.beginPath();
+    // Left page
+    ctx.moveTo(0, -h * 0.38);
+    ctx.quadraticCurveTo(-w * 0.26, -h * 0.54, -w * 0.5, -h * 0.36);
+    ctx.lineTo(-w * 0.5, h * 0.42);
+    ctx.quadraticCurveTo(-w * 0.26, h * 0.26, 0, h * 0.44);
+    // Right page
+    ctx.quadraticCurveTo(w * 0.26, h * 0.26, w * 0.5, h * 0.42);
+    ctx.lineTo(w * 0.5, -h * 0.36);
+    ctx.quadraticCurveTo(w * 0.26, -h * 0.54, 0, -h * 0.38);
+    ctx.closePath();
+    ctx.fill();
+
+    // Central spine & page lines in vellum
+    ctx.strokeStyle = vellumCutout;
+    ctx.lineWidth = Math.max(1.2, r * 0.15);
+    ctx.beginPath();
+    ctx.moveTo(0, -h * 0.36);
+    ctx.lineTo(0, h * 0.42);
+    ctx.stroke();
+  } else {
+    // COMPOSER: Beamed Musical Eighth Note (♫)
+    ctx.fillStyle = mainColor;
+    ctx.strokeStyle = mainColor;
+    ctx.lineWidth = Math.max(1.6, r * 0.22);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const leftX = -r * 0.46;
+    const rightX = r * 0.42;
+    const headY = r * 0.46;
+    const topLeftY = -r * 0.62;
+    const topRightY = -r * 0.82;
+
+    // Two note heads (tilted ovals)
+    ctx.beginPath();
+    ctx.ellipse(leftX, headY, r * 0.36, r * 0.26, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(
+      rightX,
+      headY - r * 0.16,
+      r * 0.36,
+      r * 0.26,
+      -0.35,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+
+    // Stems & top connecting beam
+    ctx.beginPath();
+    ctx.moveTo(leftX + r * 0.26, headY);
+    ctx.lineTo(leftX + r * 0.26, topLeftY);
+    ctx.lineTo(rightX + r * 0.26, topRightY);
+    ctx.lineTo(rightX + r * 0.26, headY - r * 0.16);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * Builds a sleek procedural studio environment map so metallic, glass, and ceramic 3D nodes
+ * catch crisp modern specular highlights without external HDR network assets.
+ */
+function createStudioEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
+  const pmremGenerator = new THREE.PMREMGenerator(renderer);
+  pmremGenerator.compileEquirectangularShader();
+
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0xf6f1e7);
+
+  // Overhead warm gallery softbox
+  const topLightGeo = new THREE.PlaneGeometry(120, 120);
+  const topLightMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+  });
+  const topLight = new THREE.Mesh(topLightGeo, topLightMat);
+  topLight.position.set(0, 75, 0);
+  topLight.rotation.x = Math.PI / 2;
+  envScene.add(topLight);
+
+  // Key warm rim panel
+  const keyPanel = new THREE.Mesh(
+    new THREE.PlaneGeometry(90, 60),
+    new THREE.MeshBasicMaterial({ color: 0xfff3de, side: THREE.DoubleSide })
+  );
+  keyPanel.position.set(65, 25, 65);
+  keyPanel.lookAt(0, 0, 0);
+  envScene.add(keyPanel);
+
+  // Cool architectural fill panel
+  const coolPanel = new THREE.Mesh(
+    new THREE.PlaneGeometry(90, 60),
+    new THREE.MeshBasicMaterial({ color: 0xdbe7f2, side: THREE.DoubleSide })
+  );
+  coolPanel.position.set(-70, -15, -60);
+  coolPanel.lookAt(0, 0, 0);
+  envScene.add(coolPanel);
+
+  const envRT = pmremGenerator.fromScene(envScene, 0.04);
+  pmremGenerator.dispose();
+  return envRT.texture;
+}
+
+/**
+ * Creates a rounded/beveled 3D rectangular prism for TV cabinets and Clapperboard slates
+ */
+function createRoundedRectPrismGeometry(
+  width: number,
+  height: number,
+  depth: number,
+  cornerRadius: number
+): THREE.BufferGeometry {
+  const r = Math.min(cornerRadius, width * 0.35, height * 0.35);
+  const shape = new THREE.Shape();
+  const hw = width / 2;
+  const hh = height / 2;
+
+  shape.moveTo(-hw + r, -hh);
+  shape.lineTo(hw - r, -hh);
+  shape.quadraticCurveTo(hw, -hh, hw, -hh + r);
+  shape.lineTo(hw, hh - r);
+  shape.quadraticCurveTo(hw, hh, hw - r, hh);
+  shape.lineTo(-hw + r, hh);
+  shape.quadraticCurveTo(-hw, hh, -hw, hh - r);
+  shape.lineTo(-hw, -hh + r);
+  shape.quadraticCurveTo(-hw, -hh, -hw + r, -hh);
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelSegments: 4,
+    steps: 1,
+    bevelSize: r * 0.35,
+    bevelThickness: r * 0.35,
+  });
+  geo.center();
+  return geo;
+}
+
+/**
+ * Creates an authentic 35mm Cinema Film Reel 3D geometry with 5 circular spool holes & center spindle hole
+ */
+function createFilmReelGeometry(radius: number): THREE.BufferGeometry {
+  const reelShape = new THREE.Shape();
+  reelShape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+
+  // Center spindle hole
+  const centerHole = new THREE.Path();
+  centerHole.absarc(0, 0, radius * 0.16, 0, Math.PI * 2, true);
+  reelShape.holes.push(centerHole);
+
+  // 5 classic circular film spool cutouts
+  const holeCount = 5;
+  for (let i = 0; i < holeCount; i++) {
+    const angle = (i * Math.PI * 2) / holeCount;
+    const hx = Math.cos(angle) * radius * 0.54;
+    const hy = Math.sin(angle) * radius * 0.54;
+    const spoolHole = new THREE.Path();
+    spoolHole.absarc(hx, hy, radius * 0.21, 0, Math.PI * 2, true);
+    reelShape.holes.push(spoolHole);
+  }
+
+  const geo = new THREE.ExtrudeGeometry(reelShape, {
+    depth: radius * 0.28,
+    bevelEnabled: true,
+    bevelSegments: 3,
+    steps: 1,
+    bevelSize: radius * 0.04,
+    bevelThickness: radius * 0.04,
+  });
+  geo.center();
+  return geo;
+}
+
+/**
+ * Creates a beveled 3D 5-Pointed Cinema Star geometry for Actor / Cast nodes
+ */
+function createFivePointStarGeometry(
+  outerRadius: number,
+  innerRadius: number,
+  depth: number
+): THREE.BufferGeometry {
+  const starShape = new THREE.Shape();
+  const points = 5;
+  for (let i = 0; i < points * 2; i++) {
+    const rad = i % 2 === 0 ? outerRadius : innerRadius;
+    const angle = (i * Math.PI) / points - Math.PI / 2;
+    const x = Math.cos(angle) * rad;
+    const y = Math.sin(angle) * rad;
+    if (i === 0) starShape.moveTo(x, y);
+    else starShape.lineTo(x, y);
+  }
+  starShape.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(starShape, {
+    depth,
+    bevelEnabled: true,
+    bevelSegments: 4,
+    steps: 1,
+    bevelSize: outerRadius * 0.06,
+    bevelThickness: outerRadius * 0.06,
+  });
+  geo.center();
+  return geo;
+}
+
+interface NodeAssemblyRecord {
+  group: THREE.Group;
+  primaryMaterials: THREE.MeshPhysicalMaterial[];
+  accentMaterials: THREE.Material[];
+  outerShell: THREE.Object3D | null;
+  secondaryRing: THREE.Object3D | null;
+  coreObject: THREE.Object3D;
+  phaseOffset: number;
+  nodeType: GraphNode['type'];
+  isFocal: boolean;
+}
+
+/**
+ * Constructs a recognizable, modern, sleek 3D model directly representing each category:
+ * - MOVIE: 35mm Cinema Film Reel with 5 spool cutouts, metallic hub & outer film rim
+ * - TV: Widescreen Television Monitor with glowing recessed screen, pedestal stand & rabbit-ear V-antennae
+ * - DIRECTOR: Director's Clapperboard with angled hinged striped clap-stick
+ * - ACTOR: 5-Pointed Cinema Star Trophy on a circular Walk-of-Fame ring
+ * - TROPE: Open Story Book with angled covers, vellum pages, bound spine & golden bookmark
+ * - COMPOSER: Beamed Musical Eighth Note (♫) with twin note heads, stems, beam & acoustic wave ring
+ */
+function createCategoryNodeAssembly(
+  node: GraphNode,
+  index: number
+): {
+  record: NodeAssemblyRecord;
+  hitMesh: THREE.Mesh;
+} {
+  const group = new THREE.Group();
+  group.position.set(node.x, node.y, node.z);
+
+  const baseColor = new THREE.Color(node.color);
+  const glowColor = new THREE.Color(node.glowColor || node.color);
+  const champagneGold = new THREE.Color(0xd4a86a);
+  const warmPlatinum = new THREE.Color(0xfbf8f2);
+
+  const primaryMaterials: THREE.MeshPhysicalMaterial[] = [];
+  const accentMaterials: THREE.Material[] = [];
+
+  // Primary sleek ceramic/anodized material with high clearcoat
+  const coreMat = new THREE.MeshPhysicalMaterial({
+    color: baseColor,
+    emissive: glowColor,
+    emissiveIntensity: node.isFocal ? 0.34 : 0.16,
+    roughness: 0.16,
+    metalness: 0.28,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.08,
+    reflectivity: 0.95,
+    transparent: true,
+    opacity: 0.98,
+  });
+  primaryMaterials.push(coreMat);
+
+  // Secondary metallic trim material
+  const metalAccentMat = new THREE.MeshPhysicalMaterial({
+    color: baseColor.clone().lerp(champagneGold, 0.45),
+    emissive: glowColor,
+    emissiveIntensity: 0.12,
+    roughness: 0.22,
+    metalness: 0.82,
+    clearcoat: 0.85,
+    transparent: true,
+    opacity: 0.95,
+  });
+  primaryMaterials.push(metalAccentMat);
+
+  // Warm archival vellum / ivory contrast material (for book pages, clapper stripes, TV screen)
+  const ivoryContrastMat = new THREE.MeshPhysicalMaterial({
+    color: warmPlatinum,
+    emissive: baseColor.clone().lerp(warmPlatinum, 0.7),
+    emissiveIntensity: 0.22,
+    roughness: 0.18,
+    metalness: 0.08,
+    clearcoat: 0.9,
+    transparent: true,
+    opacity: 0.96,
+  });
+  primaryMaterials.push(ivoryContrastMat);
+
+  // Subtle luminous halo ring material
+  const glassShellMat = new THREE.MeshPhysicalMaterial({
+    color: baseColor.clone().lerp(warmPlatinum, 0.55),
+    emissive: glowColor,
+    emissiveIntensity: 0.1,
+    roughness: 0.12,
+    metalness: 0.08,
+    clearcoat: 1.0,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+  });
+  accentMaterials.push(glassShellMat);
+
+  const r = node.radius;
+  let coreObject: THREE.Object3D;
+  let outerShell: THREE.Object3D | null = null;
+  let secondaryRing: THREE.Object3D | null = null;
+
+  if (node.type === 'MOVIE') {
+    // ==================== MOVIE: 3D 35MM CINEMA FILM REEL ====================
+    const reelGroup = new THREE.Group();
+
+    // Extruded 5-hole film reel body
+    const reelGeo = createFilmReelGeometry(r * 1.08);
+    const reelMesh = new THREE.Mesh(reelGeo, coreMat);
+    reelGroup.add(reelMesh);
+
+    // Inner dark celluloid film tape wound inside the reel
+    const tapeCore = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.86, r * 0.86, r * 0.18, 36),
+      metalAccentMat
+    );
+    tapeCore.rotation.x = Math.PI / 2;
+    reelGroup.add(tapeCore);
+
+    // Precision outer metallic reel rim
+    const rimTorus = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 1.1, r * 0.06, 16, 64),
+      metalAccentMat
+    );
+    reelGroup.add(rimTorus);
+
+    // Center spindle hub cap
+    const hubCap = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.24, r * 0.24, r * 0.42, 24),
+      ivoryContrastMat
+    );
+    hubCap.rotation.x = Math.PI / 2;
+    reelGroup.add(hubCap);
+
+    reelGroup.rotation.x = 0.22;
+    reelGroup.rotation.y = -0.25;
+    group.add(reelGroup);
+    coreObject = reelGroup;
+    outerShell = rimTorus;
+  } else if (node.type === 'TV') {
+    // ==================== TV SERIES: 3D WIDESCREEN TELEVISION SET ====================
+    const tvGroup = new THREE.Group();
+
+    // Widescreen 16:9 beveled cabinet body
+    const cabinetGeo = createRoundedRectPrismGeometry(
+      r * 1.85,
+      r * 1.22,
+      r * 0.52,
+      r * 0.22
+    );
+    const cabinetMesh = new THREE.Mesh(cabinetGeo, coreMat);
+    tvGroup.add(cabinetMesh);
+
+    // Recessed glowing glass screen on front & back so it looks great from any 3D orbit angle
+    const screenGeo = createRoundedRectPrismGeometry(
+      r * 1.48,
+      r * 0.9,
+      r * 0.62,
+      r * 0.14
+    );
+    const screenMesh = new THREE.Mesh(screenGeo, ivoryContrastMat);
+    tvGroup.add(screenMesh);
+
+    // Metallic bezel frame
+    const bezelTop = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.08, r * 0.08, r * 0.35, 16),
+      metalAccentMat
+    );
+    bezelTop.position.set(0, r * 0.64, 0);
+    tvGroup.add(bezelTop);
+
+    // Twin V-shaped rabbit-ear broadcast antennae on top
+    const antennaGroup = new THREE.Group();
+    const antStickGeo = new THREE.CylinderGeometry(
+      r * 0.032,
+      r * 0.032,
+      r * 0.78,
+      12
+    );
+    const antTipGeo = new THREE.SphereGeometry(r * 0.075, 12, 12);
+
+    const leftAnt = new THREE.Mesh(antStickGeo, metalAccentMat);
+    leftAnt.position.set(-r * 0.28, r * 0.92, 0);
+    leftAnt.rotation.z = 0.52;
+    antennaGroup.add(leftAnt);
+
+    const leftTip = new THREE.Mesh(antTipGeo, coreMat);
+    leftTip.position.set(-r * 0.48, r * 1.24, 0);
+    antennaGroup.add(leftTip);
+
+    const rightAnt = new THREE.Mesh(antStickGeo, metalAccentMat);
+    rightAnt.position.set(r * 0.28, r * 0.92, 0);
+    rightAnt.rotation.z = -0.52;
+    antennaGroup.add(rightAnt);
+
+    const rightTip = new THREE.Mesh(antTipGeo, coreMat);
+    rightTip.position.set(r * 0.48, r * 1.24, 0);
+    antennaGroup.add(rightTip);
+
+    tvGroup.add(antennaGroup);
+    secondaryRing = antennaGroup;
+
+    // Minimalist pedestal stand at base
+    const neckMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.1, r * 0.14, r * 0.26, 16),
+      metalAccentMat
+    );
+    neckMesh.position.set(0, -r * 0.72, 0);
+    tvGroup.add(neckMesh);
+
+    const basePlate = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.52, r * 0.58, r * 0.09, 24),
+      metalAccentMat
+    );
+    basePlate.position.set(0, -r * 0.86, 0);
+    tvGroup.add(basePlate);
+
+    group.add(tvGroup);
+    coreObject = tvGroup;
+  } else if (node.type === 'DIRECTOR') {
+    // ==================== DIRECTOR / WRITER: 3D DIRECTOR'S CLAPPERBOARD ====================
+    const clapperGroup = new THREE.Group();
+
+    const boardW = r * 1.85;
+    const boardH = r * 1.15;
+    const boardD = r * 0.26;
+
+    // Lower slate board
+    const slateGeo = createRoundedRectPrismGeometry(
+      boardW,
+      boardH,
+      boardD,
+      r * 0.14
+    );
+    const slateMesh = new THREE.Mesh(slateGeo, coreMat);
+    slateMesh.position.set(0, -r * 0.18, 0);
+    clapperGroup.add(slateMesh);
+
+    // Slate horizontal production metadata stripes (front & back)
+    const line1 = new THREE.Mesh(
+      new THREE.BoxGeometry(boardW * 0.74, r * 0.11, boardD * 1.38),
+      ivoryContrastMat
+    );
+    line1.position.set(0, -r * 0.02, 0);
+    clapperGroup.add(line1);
+
+    const line2 = new THREE.Mesh(
+      new THREE.BoxGeometry(boardW * 0.52, r * 0.1, boardD * 1.38),
+      metalAccentMat
+    );
+    line2.position.set(-boardW * 0.11, -r * 0.34, 0);
+    clapperGroup.add(line2);
+
+    // Lower fixed clap-bar with alternating chevron blocks
+    const lowerBar = new THREE.Mesh(
+      new THREE.BoxGeometry(boardW, r * 0.22, boardD * 1.15),
+      coreMat
+    );
+    lowerBar.position.set(0, r * 0.42, 0);
+    clapperGroup.add(lowerBar);
+
+    // Hinged upper clap-stick (pivots around left hinge)
+    const upperStickPivot = new THREE.Group();
+    upperStickPivot.position.set(-boardW / 2, r * 0.54, 0);
+    upperStickPivot.rotation.z = 0.34; // Angled open ready to clap!
+
+    const stickBar = new THREE.Mesh(
+      new THREE.BoxGeometry(boardW, r * 0.24, boardD * 1.15),
+      coreMat
+    );
+    stickBar.position.set(boardW / 2, r * 0.12, 0);
+    upperStickPivot.add(stickBar);
+
+    // 3 high-contrast ivory chevron stripes along the clap-stick
+    for (let s = 0; s < 3; s++) {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(boardW * 0.14, r * 0.25, boardD * 1.36),
+        ivoryContrastMat
+      );
+      stripe.position.set(boardW * (0.24 + s * 0.28), r * 0.12, 0);
+      stripe.rotation.z = -0.25;
+      upperStickPivot.add(stripe);
+    }
+
+    // Brass hinge bolt
+    const hingeBolt = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.12, r * 0.12, boardD * 1.5, 16),
+      metalAccentMat
+    );
+    hingeBolt.rotation.x = Math.PI / 2;
+    upperStickPivot.add(hingeBolt);
+
+    clapperGroup.add(upperStickPivot);
+    outerShell = upperStickPivot;
+
+    group.add(clapperGroup);
+    coreObject = clapperGroup;
+  } else if (node.type === 'ACTOR') {
+    // ==================== ACTOR / CAST: 3D 5-POINTED CINEMA STAR TROPHY ====================
+    const actorGroup = new THREE.Group();
+
+    // Beveled 3D 5-Pointed Star
+    const starGeo = createFivePointStarGeometry(r * 1.24, r * 0.52, r * 0.32);
+    const starMesh = new THREE.Mesh(starGeo, coreMat);
+    actorGroup.add(starMesh);
+
+    // Raised metallic center emblem on both faces
+    const centerEmblem = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.26, r * 0.26, r * 0.46, 20),
+      ivoryContrastMat
+    );
+    centerEmblem.rotation.x = Math.PI / 2;
+    actorGroup.add(centerEmblem);
+
+    // Walk-of-Fame circular marquee frame ring
+    const frameRing = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 1.32, r * 0.055, 16, 64),
+      metalAccentMat
+    );
+    actorGroup.add(frameRing);
+    outerShell = frameRing;
+
+    group.add(actorGroup);
+    coreObject = actorGroup;
+  } else if (node.type === 'TROPE') {
+    // ==================== TROPE / THEME: 3D OPEN STORY BOOK / SCREENPLAY TOME ====================
+    const bookGroup = new THREE.Group();
+
+    const pageW = r * 1.05;
+    const pageH = r * 1.42;
+    const coverT = r * 0.12;
+    const pageT = r * 0.18;
+
+    // Central bound spine cylinder
+    const spine = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.14, r * 0.14, pageH * 1.04, 16),
+      metalAccentMat
+    );
+    bookGroup.add(spine);
+
+    // Left open wing (hardcover + cream vellum page block)
+    const leftWing = new THREE.Group();
+    const leftCover = new THREE.Mesh(
+      new THREE.BoxGeometry(pageW, pageH, coverT),
+      coreMat
+    );
+    leftCover.position.set(-pageW / 2, 0, -pageT * 0.45);
+    leftWing.add(leftCover);
+
+    const leftPages = new THREE.Mesh(
+      new THREE.BoxGeometry(pageW * 0.9, pageH * 0.9, pageT),
+      ivoryContrastMat
+    );
+    leftPages.position.set(-pageW * 0.46, 0, pageT * 0.15);
+    leftWing.add(leftPages);
+    leftWing.rotation.y = 0.38;
+    bookGroup.add(leftWing);
+
+    // Right open wing (hardcover + cream vellum page block)
+    const rightWing = new THREE.Group();
+    const rightCover = new THREE.Mesh(
+      new THREE.BoxGeometry(pageW, pageH, coverT),
+      coreMat
+    );
+    rightCover.position.set(pageW / 2, 0, -pageT * 0.45);
+    rightWing.add(rightCover);
+
+    const rightPages = new THREE.Mesh(
+      new THREE.BoxGeometry(pageW * 0.9, pageH * 0.9, pageT),
+      ivoryContrastMat
+    );
+    rightPages.position.set(pageW * 0.46, 0, pageT * 0.15);
+    rightWing.add(rightPages);
+    rightWing.rotation.y = -0.38;
+    bookGroup.add(rightWing);
+
+    // Floating golden bookmark ribbon rising above the spine
+    const bookmark = new THREE.Mesh(
+      new THREE.BoxGeometry(r * 0.16, r * 0.65, r * 0.06),
+      metalAccentMat
+    );
+    bookmark.position.set(0, r * 0.72, r * 0.22);
+    bookmark.rotation.z = -0.15;
+    bookGroup.add(bookmark);
+    outerShell = bookmark;
+
+    bookGroup.rotation.x = 0.35;
+    group.add(bookGroup);
+    coreObject = bookGroup;
+  } else {
+    // ==================== COMPOSER / SCORE: 3D BEAMED MUSICAL EIGHTH NOTE (♫) ====================
+    const noteGroup = new THREE.Group();
+
+    const leftX = -r * 0.52;
+    const rightX = r * 0.48;
+    const bottomY = -r * 0.52;
+    const topLeftY = r * 0.62;
+    const topRightY = r * 0.86;
+
+    // Left & Right 3D tilted elliptical note heads
+    const headGeo = new THREE.SphereGeometry(r * 0.36, 24, 24);
+    headGeo.scale(1.25, 0.88, 0.78);
+
+    const leftHead = new THREE.Mesh(headGeo, coreMat);
+    leftHead.position.set(leftX, bottomY, 0);
+    leftHead.rotation.z = 0.35;
+    noteGroup.add(leftHead);
+
+    const rightHead = new THREE.Mesh(headGeo, coreMat);
+    rightHead.position.set(rightX, bottomY + r * 0.2, 0);
+    rightHead.rotation.z = 0.35;
+    noteGroup.add(rightHead);
+
+    // Left & Right vertical note stems
+    const stemLen = r * 1.18;
+    const stemGeo = new THREE.CylinderGeometry(
+      r * 0.085,
+      r * 0.085,
+      stemLen,
+      16
+    );
+
+    const leftStem = new THREE.Mesh(stemGeo, metalAccentMat);
+    leftStem.position.set(
+      leftX + r * 0.28,
+      (bottomY + topLeftY) / 2,
+      0
+    );
+    noteGroup.add(leftStem);
+
+    const rightStem = new THREE.Mesh(stemGeo, metalAccentMat);
+    rightStem.position.set(
+      rightX + r * 0.28,
+      (bottomY + r * 0.2 + topRightY) / 2,
+      0
+    );
+    noteGroup.add(rightStem);
+
+    // Top connecting musical beam bar
+    const beamDx = rightX - leftX;
+    const beamDy = topRightY - topLeftY;
+    const beamLen = Math.sqrt(beamDx * beamDx + beamDy * beamDy) + r * 0.16;
+    const beamGeo = new THREE.BoxGeometry(beamLen, r * 0.24, r * 0.2);
+    const topBeam = new THREE.Mesh(beamGeo, coreMat);
+    topBeam.position.set(
+      (leftX + rightX) / 2 + r * 0.28,
+      (topLeftY + topRightY) / 2 - r * 0.06,
+      0
+    );
+    topBeam.rotation.z = Math.atan2(beamDy, beamDx);
+    noteGroup.add(topBeam);
+
+    // Subtle acoustic soundwave ring around the musical note
+    const waveRing = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 1.32, r * 0.04, 16, 64),
+      glassShellMat
+    );
+    waveRing.rotation.x = Math.PI / 3;
+    group.add(waveRing);
+    outerShell = waveRing;
+
+    group.add(noteGroup);
+    coreObject = noteGroup;
+  }
+
+  // Selected Focal Title gets an additional centerpiece marquee halo ring
+  if (node.isFocal) {
+    const focalGimbal = new THREE.Group();
+    const gimbalRing = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 1.75, r * 0.042, 20, 96),
+      metalAccentMat
+    );
+    focalGimbal.add(gimbalRing);
+
+    for (let b = 0; b < 4; b++) {
+      const angle = (b * Math.PI) / 2;
+      const bead = new THREE.Mesh(
+        new THREE.SphereGeometry(r * 0.09, 14, 14),
+        coreMat
+      );
+      bead.position.set(
+        Math.cos(angle) * r * 1.75,
+        Math.sin(angle) * r * 1.75,
+        0
+      );
+      focalGimbal.add(bead);
+    }
+    focalGimbal.rotation.x = Math.PI / 2.35;
+    group.add(focalGimbal);
+    secondaryRing = focalGimbal;
+  }
+
+  // Invisible generous raycast hit-sphere so intricate multi-part models are effortless to click & hover
+  const hitGeo = new THREE.SphereGeometry(r * 1.52, 16, 16);
+  const hitMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  const hitMesh = new THREE.Mesh(hitGeo, hitMat);
+  hitMesh.userData = { nodeId: node.id };
+  group.add(hitMesh);
+
+  return {
+    record: {
+      group,
+      primaryMaterials,
+      accentMaterials,
+      outerShell,
+      secondaryRing,
+      coreObject,
+      phaseOffset: index * 0.73,
+      nodeType: node.type,
+      isFocal: Boolean(node.isFocal),
+    },
+    hitMesh,
+  };
+}
+
+/**
+ * Creates a high-DPI 3D Sprite label texture for a GraphNode with a sleek category glyph badge
  */
 function createLabelSprite(node: GraphNode): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 144;
+  canvas.width = 640;
+  canvas.height = 168;
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const isMedia = node.type === 'MOVIE' || node.type === 'TV';
     const titleText =
-      node.label.length > 25 ? node.label.slice(0, 23) + '…' : node.label;
+      node.label.length > 26 ? node.label.slice(0, 24) + '…' : node.label;
     const badgeText = node.isFocal
-      ? 'Selected Title'
+      ? 'CENTERPIECE · SELECTED'
       : isMedia && node.matchScore !== undefined
-        ? `${node.matchScore}% Match`
+        ? `${node.matchScore}% Match · ${getEntityRoleLabel(node.type)}`
         : isMedia && node.mediaItem
           ? `${node.mediaItem.year} · ★ ${node.mediaItem.imdbRating.toFixed(1)}`
-          : getEntityRoleLabel(node.type);
+          : getEntityRoleLabel(node.type).toUpperCase();
+
+    const pillW = Math.min(600, Math.max(260, titleText.length * 17 + 112));
+    const pillH = 92;
+    const pillX = (canvas.width - pillW) / 2;
+    const pillY = 34;
+
+    // Subtle elevation shadow
+    ctx.save();
+    ctx.shadowColor = 'rgba(23, 20, 18, 0.16)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 4;
 
     // Warm archival vellum card plate
     ctx.fillStyle = node.isFocal
       ? 'rgba(251, 248, 242, 0.98)'
-      : 'rgba(246, 241, 231, 0.94)';
+      : 'rgba(249, 245, 237, 0.95)';
     ctx.strokeStyle = node.isFocal
       ? '#B8292F'
       : isMedia
@@ -102,31 +1002,46 @@ function createLabelSprite(node: GraphNode): THREE.Sprite {
         : '#B5A892';
     ctx.lineWidth = node.isFocal ? 3 : 2;
 
-    const pillW = Math.min(480, Math.max(210, titleText.length * 16 + 70));
-    const pillH = 82;
-    const pillX = (canvas.width - pillW) / 2;
-    const pillY = 28;
-
     ctx.beginPath();
-    ctx.roundRect(pillX, pillY, pillW, pillH, 8);
+    ctx.roundRect(pillX, pillY, pillW, pillH, 14);
     ctx.fill();
+    ctx.restore();
     ctx.stroke();
 
+    // Left category accent bar / badge circle
+    const badgeCx = pillX + 34;
+    const badgeCy = pillY + pillH / 2;
+    ctx.beginPath();
+    ctx.arc(badgeCx, badgeCy, 18, 0, Math.PI * 2);
+    ctx.fillStyle = node.isFocal ? 'rgba(184, 41, 47, 0.12)' : 'rgba(23, 20, 18, 0.05)';
+    ctx.fill();
+
+    drawCategoryGlyph2D(
+      ctx,
+      node.type,
+      badgeCx,
+      badgeCy,
+      9.5,
+      node.isFocal ? '#B8292F' : node.color
+    );
+
+    const textCenterX = pillX + 58 + (pillW - 72) / 2;
+
     // Title in Spectral serif
-    ctx.font = `${node.isFocal ? '700 25px' : '600 22px'} "Spectral", Georgia, serif`;
+    ctx.font = `${node.isFocal ? '700 26px' : '600 23px'} "Spectral", Georgia, serif`;
     ctx.fillStyle = '#171412';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(titleText, canvas.width / 2, pillY + 30);
+    ctx.fillText(titleText, textCenterX, pillY + 33);
 
     // Subtitle in Source Sans 3
-    ctx.font = '600 15px "Source Sans 3", -apple-system, sans-serif';
+    ctx.font = '700 14.5px "Source Sans 3", -apple-system, sans-serif';
     ctx.fillStyle = node.isFocal
       ? '#B8292F'
       : isMedia && (node.matchScore || 0) >= 75
         ? '#2A6B53'
         : node.color;
-    ctx.fillText(badgeText, canvas.width / 2, pillY + 60);
+    ctx.fillText(badgeText, textCenterX, pillY + 65);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -139,12 +1054,12 @@ function createLabelSprite(node: GraphNode): THREE.Sprite {
   });
   const sprite = new THREE.Sprite(material);
   const scale = node.isFocal
-    ? 44
+    ? 46
     : node.type === 'MOVIE' || node.type === 'TV'
-      ? 34
-      : 27;
-  sprite.scale.set(scale, scale * (144 / 512), 1);
-  sprite.position.set(0, node.radius + 7.5, 0);
+      ? 36
+      : 29;
+  sprite.scale.set(scale, scale * (168 / 640), 1);
+  sprite.position.set(0, node.radius * 1.35 + 7.5, 0);
   return sprite;
 }
 
@@ -316,22 +1231,32 @@ export function SpatialViewport({
     });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
+    // Procedural Studio Environment Map for modern metallic & clearcoat reflections
+    const envTexture = createStudioEnvironment(renderer);
+    scene.environment = envTexture;
+
     // Warm Daylight Gallery Lighting
-    const ambientLight = new THREE.AmbientLight(0xfffdf9, 2.2);
+    const ambientLight = new THREE.AmbientLight(0xfffdf9, 1.9);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xfff8eb, 1.5);
-    dirLight.position.set(140, 200, 180);
+    const dirLight = new THREE.DirectionalLight(0xfff8eb, 1.85);
+    dirLight.position.set(140, 210, 180);
     scene.add(dirLight);
 
-    const pointLightWarm = new THREE.PointLight(0xd48324, 1.1, 700);
+    const rimLight = new THREE.DirectionalLight(0xe4effa, 1.15);
+    rimLight.position.set(-160, 120, -160);
+    scene.add(rimLight);
+
+    const pointLightWarm = new THREE.PointLight(0xd48324, 1.25, 750);
     pointLightWarm.position.set(120, 140, 160);
     scene.add(pointLightWarm);
 
-    const pointLightPrussian = new THREE.PointLight(0x234b6e, 0.9, 700);
+    const pointLightPrussian = new THREE.PointLight(0x234b6e, 1.05, 750);
     pointLightPrussian.position.set(-150, -110, -130);
     scene.add(pointLightPrussian);
 
@@ -377,7 +1302,7 @@ export function SpatialViewport({
     const orbitRadii = [72, 120, 168];
     const orbitRingsGroup = new THREE.Group();
     orbitRadii.forEach((rad, i) => {
-      const ringGeo = new THREE.RingGeometry(rad - 0.4, rad + 0.4, 96);
+      const ringGeo = new THREE.RingGeometry(rad - 0.35, rad + 0.35, 112);
       const ringMat = new THREE.MeshBasicMaterial({
         color: i === 0 ? 0xb8292f : i === 1 ? 0x234b6e : 0x8f816b,
         side: THREE.DoubleSide,
@@ -391,125 +1316,38 @@ export function SpatialViewport({
     });
     scene.add(orbitRingsGroup);
 
-    // Create Node Meshes & Groups
-    const nodeGroupsMap = new Map<string, THREE.Group>();
+    // Create Sleek Multi-Part Category 3D Sculptures
+    const nodeAssembliesMap = new Map<string, NodeAssemblyRecord>();
     const pickableMeshes: THREE.Object3D[] = [];
-    let focalWireframeMesh: THREE.Mesh | null = null;
-    let focalOrbitalRing1: THREE.Mesh | null = null;
-    let focalOrbitalRing2: THREE.Mesh | null = null;
+    let focalOuterOrbitalRing: THREE.Mesh | null = null;
 
-    simNodes.forEach((node) => {
-      const group = new THREE.Group();
-      group.position.set(node.x, node.y, node.z);
+    simNodes.forEach((node, idx) => {
+      const { record, hitMesh } = createCategoryNodeAssembly(node, idx);
+      pickableMeshes.push(hitMesh);
 
-      let coreGeo: THREE.BufferGeometry;
       if (node.isFocal) {
-        coreGeo = new THREE.SphereGeometry(node.radius, 36, 36);
-      } else if (node.type === 'MOVIE') {
-        coreGeo = new THREE.SphereGeometry(node.radius, 28, 28);
-      } else if (node.type === 'TV') {
-        coreGeo = new THREE.BoxGeometry(
-          node.radius * 1.35,
-          node.radius * 1.35,
-          node.radius * 1.35
-        );
-      } else if (node.type === 'DIRECTOR') {
-        coreGeo = new THREE.DodecahedronGeometry(node.radius * 1.15, 0);
-      } else if (node.type === 'ACTOR') {
-        coreGeo = new THREE.OctahedronGeometry(node.radius * 1.1, 0);
-      } else if (node.type === 'TROPE') {
-        coreGeo = new THREE.IcosahedronGeometry(node.radius * 1.1, 0);
-      } else {
-        coreGeo = new THREE.TorusGeometry(
-          node.radius * 0.85,
-          node.radius * 0.32,
-          14,
-          32
-        );
-      }
-
-      const coreMat = new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(node.color),
-        emissive: new THREE.Color(node.color),
-        emissiveIntensity: node.isFocal ? 0.28 : 0.14,
-        roughness: 0.35,
-        metalness: 0.12,
-        clearcoat: 0.45,
-        transparent: true,
-        opacity: 0.96,
-      });
-
-      const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-      coreMesh.userData = { nodeId: node.id };
-      group.add(coreMesh);
-      pickableMeshes.push(coreMesh);
-
-      // TV Series get an outer plum meridian ring
-      if (node.type === 'TV' && !node.isFocal) {
-        const tvRingGeo = new THREE.TorusGeometry(
-          node.radius * 1.45,
-          0.35,
-          12,
-          48
-        );
-        const tvRingMat = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(node.color),
-          transparent: true,
-          opacity: 0.5,
-        });
-        const tvRing = new THREE.Mesh(tvRingGeo, tvRingMat);
-        tvRing.rotation.x = Math.PI / 3;
-        group.add(tvRing);
-      }
-
-      // Selected Title gets an engraved armillary sphere & dual brass/crimson rings
-      if (node.isFocal) {
-        const wireGeo = new THREE.IcosahedronGeometry(node.radius * 1.65, 1);
-        const wireMat = new THREE.MeshBasicMaterial({
-          color: 0xb8292f,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.32,
-        });
-        focalWireframeMesh = new THREE.Mesh(wireGeo, wireMat);
-        group.add(focalWireframeMesh);
-
-        const orb1Geo = new THREE.TorusGeometry(
-          node.radius * 2.15,
-          0.38,
-          16,
-          72
-        );
-        const orb1Mat = new THREE.MeshBasicMaterial({
-          color: 0xb8292f,
-          transparent: true,
-          opacity: 0.55,
-        });
-        focalOrbitalRing1 = new THREE.Mesh(orb1Geo, orb1Mat);
-        focalOrbitalRing1.rotation.x = Math.PI / 2.4;
-        group.add(focalOrbitalRing1);
-
         const orb2Geo = new THREE.TorusGeometry(
-          node.radius * 2.55,
-          0.28,
+          node.radius * 2.48,
+          node.radius * 0.024,
           16,
-          72
+          84
         );
         const orb2Mat = new THREE.MeshBasicMaterial({
           color: 0xb86b14,
           transparent: true,
-          opacity: 0.42,
+          opacity: 0.48,
         });
-        focalOrbitalRing2 = new THREE.Mesh(orb2Geo, orb2Mat);
-        focalOrbitalRing2.rotation.y = Math.PI / 3;
-        group.add(focalOrbitalRing2);
+        focalOuterOrbitalRing = new THREE.Mesh(orb2Geo, orb2Mat);
+        focalOuterOrbitalRing.rotation.y = Math.PI / 3;
+        record.group.add(focalOuterOrbitalRing);
+        record.accentMaterials.push(orb2Mat);
       }
 
       const labelSprite = createLabelSprite(node);
-      group.add(labelSprite);
+      record.group.add(labelSprite);
 
-      scene.add(group);
-      nodeGroupsMap.set(node.id, group);
+      scene.add(record.group);
+      nodeAssembliesMap.set(node.id, record);
     });
 
     // Create 3D Links
@@ -775,8 +1613,9 @@ export function SpatialViewport({
           node.z += node.vz;
         }
 
-        const grp = nodeGroupsMap.get(node.id);
-        if (grp) {
+        const assembly = nodeAssembliesMap.get(node.id);
+        if (assembly) {
+          const grp = assembly.group;
           grp.position.set(node.x, node.y, node.z);
 
           const isHighlighted =
@@ -785,31 +1624,87 @@ export function SpatialViewport({
             node.isFocal;
           const targetScale =
             node.id === activeHover
-              ? 1.25
+              ? 1.28
               : node.id === activeSelected
-                ? 1.14
+                ? 1.15
                 : 1.0;
           grp.scale.lerp(
             new THREE.Vector3(targetScale, targetScale, targetScale),
             0.15
           );
 
-          const mesh = grp.children[0] as THREE.Mesh;
-          if (mesh && mesh.material instanceof THREE.MeshPhysicalMaterial) {
+          // Bespoke sleek per-category kinetic micro-animations for real 3D category models
+          const phase = clock + assembly.phaseOffset;
+          const speedBoost = node.id === activeHover ? 2.4 : 1.0;
+
+          if (assembly.nodeType === 'MOVIE') {
+            // Film Reel spins smoothly around its spindle axis and gently precesses
+            assembly.coreObject.rotation.z -= 0.011 * speedBoost;
+            assembly.coreObject.rotation.y =
+              -0.25 + Math.sin(phase * 0.7) * 0.28;
+          } else if (assembly.nodeType === 'TV') {
+            // Widescreen TV gently swivels on its pedestal stand
+            assembly.coreObject.rotation.y = Math.sin(phase * 0.75) * 0.35;
+            assembly.coreObject.rotation.x = Math.cos(phase * 0.5) * 0.08;
+          } else if (assembly.nodeType === 'DIRECTOR') {
+            // Clapperboard gently swivels; hinged upper clap-stick claps when hovered!
+            assembly.coreObject.rotation.y = Math.sin(phase * 0.8) * 0.32;
+            if (assembly.outerShell) {
+              assembly.outerShell.rotation.z =
+                node.id === activeHover
+                  ? Math.abs(Math.sin(clock * 7.5)) * 0.42
+                  : 0.28 + Math.sin(phase * 1.4) * 0.08;
+            }
+          } else if (assembly.nodeType === 'ACTOR') {
+            // 5-Pointed Cinema Star Trophy rotates proudly
+            assembly.coreObject.rotation.y += 0.01 * speedBoost;
+            assembly.coreObject.rotation.z = Math.sin(phase * 1.1) * 0.08;
+          } else if (assembly.nodeType === 'TROPE') {
+            // Open Story Book gently rocks and its golden bookmark floats
+            assembly.coreObject.rotation.y = Math.sin(phase * 0.85) * 0.34;
+            assembly.coreObject.rotation.x =
+              0.35 + Math.cos(phase * 0.7) * 0.08;
+          } else if (assembly.nodeType === 'COMPOSER') {
+            // Musical Eighth Note sways in rhythm while its soundwave ring orbits
+            assembly.coreObject.rotation.y = Math.sin(phase * 0.95) * 0.36;
+            assembly.coreObject.rotation.z = Math.cos(phase * 1.3) * 0.09;
+            if (assembly.outerShell) {
+              assembly.outerShell.rotation.z += 0.014 * speedBoost;
+              assembly.outerShell.rotation.x =
+                Math.PI / 3 + Math.sin(phase) * 0.16;
+            }
+          }
+
+          if (assembly.isFocal && assembly.secondaryRing) {
+            assembly.secondaryRing.rotation.z += 0.009 * speedBoost;
+          }
+
+          const connectedToHover =
+            !activeHover ||
+            isHighlighted ||
+            node.connectedMediaIds.includes(activeHover) ||
+            linksRef.current.some(
+              (l) =>
+                isLinkIlluminated(l, activeHover) &&
+                (l.source === node.id || l.target === node.id)
+            );
+
+          for (const mat of assembly.primaryMaterials) {
             if (!activeHover) {
-              mesh.material.opacity = 0.96;
-              mesh.material.emissiveIntensity = node.isFocal ? 0.28 : 0.14;
+              mat.opacity = 0.98;
+              mat.emissiveIntensity = node.isFocal ? 0.34 : 0.16;
             } else {
-              const connectedToHover =
-                isHighlighted ||
-                node.connectedMediaIds.includes(activeHover) ||
-                linksRef.current.some(
-                  (l) =>
-                    isLinkIlluminated(l, activeHover) &&
-                    (l.source === node.id || l.target === node.id)
-                );
-              mesh.material.opacity = connectedToHover ? 1.0 : 0.24;
-              mesh.material.emissiveIntensity = connectedToHover ? 0.35 : 0.05;
+              mat.opacity = connectedToHover ? 1.0 : 0.22;
+              mat.emissiveIntensity = connectedToHover ? 0.38 : 0.04;
+            }
+          }
+          for (const accMat of assembly.accentMaterials) {
+            if ('opacity' in accMat) {
+              accMat.opacity = !activeHover
+                ? 0.32
+                : connectedToHover
+                  ? 0.52
+                  : 0.08;
             }
           }
         }
@@ -836,18 +1731,9 @@ export function SpatialViewport({
         }
       }
 
-      if (focalWireframeMesh) {
-        const pulse = 1 + Math.sin(clock * 2.2) * 0.05;
-        focalWireframeMesh.scale.set(pulse, pulse, pulse);
-        focalWireframeMesh.rotation.y += 0.006;
-        focalWireframeMesh.rotation.x += 0.003;
-      }
-      if (focalOrbitalRing1) {
-        focalOrbitalRing1.rotation.z += 0.009;
-      }
-      if (focalOrbitalRing2) {
-        focalOrbitalRing2.rotation.x -= 0.007;
-        focalOrbitalRing2.rotation.y += 0.005;
+      if (focalOuterOrbitalRing) {
+        focalOuterOrbitalRing.rotation.x -= 0.007;
+        focalOuterOrbitalRing.rotation.y += 0.005;
       }
 
       starField.rotation.y += 0.00025;
@@ -906,6 +1792,22 @@ export function SpatialViewport({
       domElem.removeEventListener('dblclick', onDoubleClick);
       domElem.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', onResize);
+
+      // Explicitly dispose GPU geometries, materials, and textures per Three.js best practices
+      scene.traverse((obj) => {
+        if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Points) {
+          obj.geometry?.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => m.dispose());
+          } else if (obj.material) {
+            obj.material.dispose();
+          }
+        } else if (obj instanceof THREE.Sprite) {
+          obj.material.map?.dispose();
+          obj.material.dispose();
+        }
+      });
+      envTexture.dispose();
       renderer.dispose();
     };
   }, [
@@ -1114,47 +2016,78 @@ export function SpatialViewport({
         ctx.stroke();
       }
 
-      // Draw Nodes
+      // Draw Nodes with bespoke category geometric silhouettes
       for (const node of simNodes) {
         const isSelected = node.id === selectedIdRef.current;
         const isHovered = node.id === activeHover;
-        ctx.globalAlpha = 1;
+        const connectedToHover =
+          !activeHover ||
+          isHovered ||
+          isSelected ||
+          node.isFocal ||
+          node.connectedMediaIds.includes(activeHover) ||
+          linksRef.current.some(
+            (l) =>
+              isLinkIlluminated(l, activeHover) &&
+              (l.source === node.id || l.target === node.id)
+          );
+
+        ctx.globalAlpha = connectedToHover ? 1 : 0.25;
+
+        const rScaled =
+          node.radius * (isHovered ? 1.26 : isSelected ? 1.15 : 1);
 
         if (node.isFocal) {
           ctx.beginPath();
           ctx.arc(
             node.x,
             node.y,
-            node.radius * 1.85 + Math.sin(tick * 1.8) * 2.5,
+            node.radius * 1.9 + Math.sin(tick * 1.8) * 2.5,
             0,
             Math.PI * 2
           );
           ctx.strokeStyle = '#B8292F';
-          ctx.lineWidth = 1.5;
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, node.radius * 1.45, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(184, 107, 20, 0.55)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        } else if (isHovered || isSelected) {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, rScaled * 1.42, 0, Math.PI * 2);
+          ctx.strokeStyle = node.color;
+          ctx.lineWidth = 1.4;
           ctx.stroke();
         }
 
+        // Backing vellum halo disc for crisp contrast against links
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(
-          node.x,
-          node.y,
-          node.radius * (isHovered ? 1.22 : isSelected ? 1.12 : 1),
-          0,
-          Math.PI * 2
-        );
-        ctx.fillStyle = node.color;
-        ctx.shadowColor = 'rgba(23, 20, 18, 0.18)';
-        ctx.shadowBlur = isHovered || node.isFocal ? 10 : 4;
+        ctx.arc(node.x, node.y, rScaled * 1.12, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(251, 248, 242, 0.92)';
+        ctx.shadowColor = 'rgba(23, 20, 18, 0.2)';
+        ctx.shadowBlur = isHovered || node.isFocal ? 12 : 5;
         ctx.shadowOffsetY = 2;
         ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetY = 0;
+        ctx.restore();
+
+        drawCategoryGlyph2D(
+          ctx,
+          node.type,
+          node.x,
+          node.y,
+          rScaled,
+          node.isFocal ? '#B8292F' : node.color
+        );
 
         // Label
         ctx.font = `${node.isFocal ? '700 13px' : '600 11.5px'} "Spectral", Georgia, serif`;
         ctx.fillStyle = '#171412';
         ctx.textAlign = 'center';
-        ctx.fillText(node.label, node.x, node.y + node.radius + 14);
+        ctx.fillText(node.label, node.x, node.y + rScaled + 15);
 
         if (
           (node.type === 'MOVIE' || node.type === 'TV') &&
@@ -1166,7 +2099,7 @@ export function SpatialViewport({
           ctx.fillText(
             `${node.matchScore}% Match`,
             node.x,
-            node.y + node.radius + 25
+            node.y + rScaled + 26
           );
         }
       }
@@ -1421,6 +2354,69 @@ export function SpatialViewport({
             )}
         </div>
       )}
+
+      {/* Bottom-Left Sleek Category 3D Models Key */}
+      <div className="pointer-events-none hidden xl:flex absolute bottom-5 left-4 z-10 items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#FBF8F2]/92 backdrop-blur-sm border border-[#C8BEAA] shadow-archival-sm text-[11px] text-[#52483E]">
+        <span className="font-bold uppercase tracking-[0.06em] text-[#171412] pr-1 border-r border-[#D5CCB9]">
+          3D Models
+        </span>
+        {/* Film Reel */}
+        <span className="inline-flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5 text-[#234B6E]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.5" fill="currentColor" />
+            <circle cx="8" cy="3.8" r="1.25" fill="#FBF8F2" />
+            <circle cx="12" cy="6.7" r="1.25" fill="#FBF8F2" />
+            <circle cx="10.5" cy="11.4" r="1.25" fill="#FBF8F2" />
+            <circle cx="5.5" cy="11.4" r="1.25" fill="#FBF8F2" />
+            <circle cx="4" cy="6.7" r="1.25" fill="#FBF8F2" />
+            <circle cx="8" cy="8" r="1" fill="#FBF8F2" />
+          </svg>
+          <span>Film Reel</span>
+        </span>
+        {/* TV Set */}
+        <span className="inline-flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5 text-[#6B3A6E]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M5.2 1.8L7.3 4.2M10.8 1.8L8.7 4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <rect x="2" y="4" width="12" height="8.5" rx="2" fill="currentColor" />
+            <rect x="3.6" y="5.4" width="8.8" height="5.7" rx="1" fill="#FBF8F2" />
+            <path d="M5.5 14.2H10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+          <span>TV Set</span>
+        </span>
+        {/* Director Clapperboard */}
+        <span className="inline-flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5 text-[#B8292F]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="2" y="6.2" width="12" height="8" rx="1.5" fill="currentColor" />
+            <path d="M2.2 5.4L13.5 2.4L14.1 4.6L2.8 7.6Z" fill="currentColor" />
+            <path d="M4.5 9.5H11.5M4.5 11.8H9" stroke="#FBF8F2" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+          <span>Clapperboard</span>
+        </span>
+        {/* Cast 5-Point Star */}
+        <span className="inline-flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5 text-[#B86B14]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <polygon points="8,1.3 9.9,5.6 14.6,6.1 11.1,9.3 12.1,13.9 8,11.5 3.9,13.9 4.9,9.3 1.4,6.1 6.1,5.6" fill="currentColor" />
+          </svg>
+          <span>Cast Star</span>
+        </span>
+        {/* Story Book */}
+        <span className="inline-flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5 text-[#2A6B53]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 3.6C6.2 2.4 3.5 2.6 1.8 3.6V12.6C3.5 11.6 6.2 11.4 8 12.6C9.8 11.4 12.5 11.6 14.2 12.6V3.6C12.5 2.6 9.8 2.4 8 3.6Z" fill="currentColor" />
+            <path d="M8 3.8V12.4" stroke="#FBF8F2" strokeWidth="1.3" strokeLinecap="round" />
+          </svg>
+          <span>Story Book</span>
+        </span>
+        {/* Score Musical Note */}
+        <span className="inline-flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5 text-[#A63A2B]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="4.8" cy="12" r="2.2" fill="currentColor" />
+            <circle cx="11.5" cy="10.6" r="2.2" fill="currentColor" />
+            <path d="M6.6 12V3.8L13.3 2.4V10.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Music Note</span>
+        </span>
+      </div>
 
       {/* Bottom Center Camera Dock */}
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival">

@@ -47,5 +47,5 @@ npm install
 npm run dev
 ```
 
-Optional live API enrichment can be enabled by copying `.env.example` to `.env.local` and supplying `NEXT_PUBLIC_TMDB_API_KEY` and `NEXT_PUBLIC_OMDB_API_KEY`.
+Optional live API enrichment can be enabled by copying `.env.example` to `.env.local` and supplying server-only `TMDB_API_KEY`, `TMDB_READ_ACCESS_TOKEN`, and `OMDB_API_KEY`.
 

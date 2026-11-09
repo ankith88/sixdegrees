@@ -1,0 +1,50 @@
+{
+  "brand": "SixDegrees",
+  "tagline": "Curated Film & Series Lineage Atlas",
+  "brief": "An archival monograph identity that unites the numeral 6, orbital degree (\u00b0), and a 6-sided cinema lens aperture into a distinctive mark that works from 16 px browser tabs to high-resolution editorial headers.",
+  "adjectives": [
+    "Archival",
+    "Criterion-Grade",
+    "Geometric",
+    "Editorial",
+    "Timeless"
+  ],
+  "industry": "software",
+  "mockups": [
+    "website",
+    "app-icon",
+    "favicon-tab",
+    "readme",
+    "social",
+    "business-card"
+  ],
+  "nav": [
+    "3D Constellation",
+    "2D Map",
+    "Critical Ledger",
+    "Catalog"
+  ],
+  "brand_color": "#B8292F",
+  "greyscale": false,
+  "final": true,
+  "round": 2,
+  "concepts": [
+    {
+      "name": "The Criterion 6\u00b0",
+      "symbol": "sixdegrees-symbol.svg",
+      "lockup": "sixdegrees-horizontal.svg",
+      "stacked": "sixdegrees-stacked.svg",
+      "avatar": "sixdegrees-symbol.svg",
+      "symbol_on_tile": "sixdegrees-symbol-reversed.svg",
+      "lockup_on_dark": "sixdegrees-horizontal-dark.svg",
+      "stacked_on_tile": "sixdegrees-stacked-white.svg",
+      "idea": "An eccentric-crescent numeral 6 whose lower bowl cradles a 6-sided cinema camera aperture and focal nucleus, paired with an orbital degree ring (\u00b0).",
+      "rationale": [
+        "Unites numeral 6 + degree (\u00b0) + 6-sided cinema lens aperture + focal node in one unmistakable silhouette.",
+        "Two-tone Archival Crimson (#B8292F) and Monograph Ink (#171412) palette integrates seamlessly with the Warm Vellum (#FBF8F2) editorial UI.",
+        "Includes a dedicated 16\u201324 px small-size cut and thinned reversed master so favicons and spine stamps never plug up."
+      ]
+    }
+  ],
+  "recommendation": "Approved final identity system for SixDegrees, complete with horizontal, stacked, symbol, wordmark, small-size, and reversed masters."
+}

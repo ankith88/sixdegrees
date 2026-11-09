@@ -9,11 +9,17 @@ import { RightInspectorCard } from './RightInspectorCard';
 import {
   getInitialMediaLibrary,
   fetchMediaFromTmdbAndOmdb,
+  fetchSingleLiveMedia,
   fetchLiveCluster,
   hasLiveApiKeys,
+  fetchServerApiKeyStatus,
   LiveSearchResult,
 } from '@/lib/api';
-import { buildSpatialGraph, calculateSimilarity } from '@/lib/similarity';
+import {
+  buildSpatialGraph,
+  calculateSimilarity,
+  hasConcreteSharedConnection,
+} from '@/lib/similarity';
 import {
   CameraMode,
   EntityNodeType,
@@ -51,6 +57,7 @@ export function SixDegreesApp() {
   const [region, setRegion] = useState<RegionCode>('AU');
   const [mediaFilter, setMediaFilter] = useState<'ALL' | 'MOVIE' | 'TV'>('ALL');
   const [preset, setPreset] = useState<GravityPreset>('VIBE_TROPES');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [forceSettings, setForceSettings] = useState<ForceSettings>({
     sphericalForce: 1.0,
@@ -80,24 +87,58 @@ export function SixDegreesApp() {
   const [isBuildingCluster, setIsBuildingCluster] = useState(false);
   const [liveStatusToast, setLiveStatusToast] = useState<string | null>(null);
   const [apiKeyVersion, setApiKeyVersion] = useState(0);
+  const [serverKeyStatus, setServerKeyStatus] = useState<{
+    tmdb: boolean;
+    omdb: boolean;
+  }>({ tmdb: false, omdb: false });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchServerApiKeyStatus().then((status) => {
+      if (!cancelled) setServerKeyStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKeyVersion]);
 
   const liveDataSourceLabel = useMemo(() => {
-    const keys = hasLiveApiKeys();
-    if (keys.tmdb && keys.omdb) return 'TMDB & OMDb Active';
-    if (keys.tmdb) return 'TMDB Active';
-    if (keys.omdb) return 'OMDb Active';
+    const localKeys = hasLiveApiKeys();
+    const tmdb = serverKeyStatus.tmdb || localKeys.tmdb;
+    const omdb = serverKeyStatus.omdb || localKeys.omdb;
+    if (tmdb && omdb) return 'TMDB & OMDb Active';
+    if (tmdb) return 'TMDB Active';
+    if (omdb) return 'OMDb Active';
     return 'Catalog Keys';
-  }, [apiKeyVersion]);
+  }, [apiKeyVersion, serverKeyStatus]);
 
   // Merge newly fetched live MediaItems into the library without duplicates
   const mergeMediaItemsIntoLibrary = useCallback(
-    (focal: MediaItem, cluster: MediaItem[]) => {
+    (focal: MediaItem, cluster: MediaItem[]): string => {
+      let resolvedFocalId = focal.id;
       setMediaLibrary((prev) => {
         const map = new Map<string, MediaItem>();
         for (const item of prev) {
           map.set(item.id, item);
         }
-        map.set(focal.id, focal);
+
+        const existingFocal = Array.from(map.values()).find(
+          (m) =>
+            (focal.imdbId && m.imdbId === focal.imdbId) ||
+            (m.title.toLowerCase() === focal.title.toLowerCase() &&
+              Math.abs(m.year - focal.year) <= 1)
+        );
+        if (existingFocal) {
+          resolvedFocalId = existingFocal.id;
+          map.set(existingFocal.id, {
+            ...existingFocal,
+            ...focal,
+            id: existingFocal.id,
+          });
+        } else {
+          map.set(focal.id, focal);
+        }
+
         for (const c of cluster) {
           const existingKey = Array.from(map.values()).find(
             (m) =>
@@ -117,6 +158,7 @@ export function SixDegreesApp() {
         }
         return Array.from(map.values());
       });
+      return resolvedFocalId;
     },
     []
   );
@@ -164,7 +206,7 @@ export function SixDegreesApp() {
     );
   }, [focalItem, inspectedItem, preset, rankedMatches]);
 
-  // Recommendations for the right inspector panel
+  // Recommendations for the right inspector panel — strictly require a concrete shared connection
   const inspectorRecommendations = useMemo(() => {
     if (!focalItem && inspectedItem) {
       return mediaLibrary
@@ -173,10 +215,22 @@ export function SixDegreesApp() {
           item: m,
           similarity: calculateSimilarity(inspectedItem, m, preset),
         }))
+        .filter(
+          ({ similarity }) =>
+            hasConcreteSharedConnection(similarity) &&
+            similarity.totalScore >= forceSettings.matchThreshold
+        )
         .sort((a, b) => b.similarity.totalScore - a.similarity.totalScore);
     }
     return rankedMatches;
-  }, [focalItem, inspectedItem, mediaLibrary, preset, rankedMatches]);
+  }, [
+    focalItem,
+    inspectedItem,
+    mediaLibrary,
+    preset,
+    rankedMatches,
+    forceSettings.matchThreshold,
+  ]);
 
   // Filtered media items for the right catalogue index
   const activeMediaItems = useMemo(() => {
@@ -189,11 +243,36 @@ export function SixDegreesApp() {
     });
   }, [mediaLibrary, mediaFilter, visibility.MOVIE, visibility.TV]);
 
+  const mediaCounts = useMemo(() => {
+    const movies = mediaLibrary.filter((m) => m.mediaType === 'MOVIE').length;
+    const tv = mediaLibrary.filter((m) => m.mediaType === 'TV').length;
+    return {
+      all: mediaLibrary.length,
+      movies,
+      tv,
+    };
+  }, [mediaLibrary]);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (focalId) count += 1;
+    if (mediaFilter !== 'ALL') count += 1;
+    if (preset !== 'VIBE_TROPES') count += 1;
+    if (forceSettings.matchThreshold !== 15) count += 1;
+    if (Object.values(visibility).some((v) => !v)) count += 1;
+    return count;
+  }, [focalId, mediaFilter, preset, forceSettings.matchThreshold, visibility]);
+
   // Live TMDB + OMDb API enrichment when inspecting a node
   useEffect(() => {
     if (!inspectedItem) return;
-    const keys = hasLiveApiKeys();
-    if (!keys.tmdb && !keys.omdb) return;
+    const localKeys = hasLiveApiKeys();
+    const hasAnyKey =
+      serverKeyStatus.tmdb ||
+      serverKeyStatus.omdb ||
+      localKeys.tmdb ||
+      localKeys.omdb;
+    if (!hasAnyKey) return;
 
     let cancelled = false;
     fetchMediaFromTmdbAndOmdb(
@@ -210,13 +289,24 @@ export function SixDegreesApp() {
     return () => {
       cancelled = true;
     };
-  }, [inspectedItem?.id, apiKeyVersion]);
+  }, [inspectedItem?.id, apiKeyVersion, serverKeyStatus]);
 
   const handleToggleVisibility = useCallback((type: EntityNodeType) => {
     setVisibility((prev) => ({
       ...prev,
       [type]: !prev[type],
     }));
+  }, []);
+
+  const handleResetAllVisibility = useCallback(() => {
+    setVisibility({
+      MOVIE: true,
+      TV: true,
+      DIRECTOR: true,
+      ACTOR: true,
+      TROPE: true,
+      COMPOSER: true,
+    });
   }, []);
 
   /**
@@ -231,13 +321,82 @@ export function SixDegreesApp() {
   }, []);
 
   /**
-   * Dynamically builds a live constellation from any search result
+   * Adds ONLY the searched Movie or TV Show to the archive without forcing false links
+   * or importing unrelated recommendations. Links are formed strictly if it shares
+   * a concrete connection (director/writer, cast, composer, or specific theme) with
+   * existing titles in the graph.
+   */
+  const handleAddLiveMedia = useCallback(
+    async (target: LiveSearchResult) => {
+      setIsBuildingCluster(true);
+      setLiveStatusToast(
+        `Adding "${target.title}" (${target.year}) to the archive…`
+      );
+
+      const singleData = await fetchSingleLiveMedia({
+        tmdbId: target.tmdbId,
+        imdbId: target.imdbId,
+        mediaType: target.mediaType,
+        title: target.title,
+        year: target.year,
+        posterUrl: target.posterUrl,
+      });
+
+      setIsBuildingCluster(false);
+
+      if (singleData?.item) {
+        const addedItem = singleData.item;
+        // Count how many existing titles in the collection genuinely connect to this added title
+        const connectedCount = mediaLibrary.filter((existing) => {
+          if (existing.id === addedItem.id) return false;
+          const sim = calculateSimilarity(addedItem, existing, preset);
+          return (
+            hasConcreteSharedConnection(sim) &&
+            sim.totalScore >= forceSettings.matchThreshold
+          );
+        }).length;
+
+        const resolvedId = mergeMediaItemsIntoLibrary(addedItem, []);
+        // Ensure we stay in Full Archive mode if we were in Full Archive mode, or clear focal if needed so the added item is visible
+        if (focalId) {
+          setFocalId(null);
+        }
+        setInspectedMediaId(resolvedId);
+        setActiveEntityNode(null);
+        setOrbitTargetNodeId(resolvedId);
+        setLiveStatusToast(
+          connectedCount > 0
+            ? `Added "${addedItem.title}" (${connectedCount} verified shared ${
+                connectedCount === 1 ? 'connection' : 'connections'
+              } in graph)`
+            : `Added "${addedItem.title}" as a standalone node (no shared cast, crew, or specific themes with current titles)`
+        );
+        setTimeout(() => setLiveStatusToast(null), 5000);
+      } else {
+        setLiveStatusToast(
+          `Could not fetch metadata for "${target.title}".`
+        );
+        setTimeout(() => setLiveStatusToast(null), 3500);
+      }
+    },
+    [
+      mediaLibrary,
+      preset,
+      forceSettings.matchThreshold,
+      mergeMediaItemsIntoLibrary,
+      focalId,
+    ]
+  );
+
+  /**
+   * Dynamically builds a live constellation centered on any search result
+   * (only retaining recommended works that share a concrete connection)
    */
   const handleBuildLiveCluster = useCallback(
     async (target: LiveSearchResult) => {
       setIsBuildingCluster(true);
       setLiveStatusToast(
-        `Gathering shared credits and connections for "${target.title}" (${target.year})…`
+        `Gathering verified shared credits for "${target.title}" (${target.year})…`
       );
 
       const clusterData = await fetchLiveCluster({
@@ -252,16 +411,16 @@ export function SixDegreesApp() {
       setIsBuildingCluster(false);
 
       if (clusterData) {
-        mergeMediaItemsIntoLibrary(
+        const resolvedId = mergeMediaItemsIntoLibrary(
           clusterData.focalItem,
           clusterData.clusterItems
         );
-        setFocalId(clusterData.focalItem.id);
-        setInspectedMediaId(clusterData.focalItem.id);
+        setFocalId(resolvedId);
+        setInspectedMediaId(resolvedId);
         setActiveEntityNode(null);
-        setOrbitTargetNodeId(clusterData.focalItem.id);
+        setOrbitTargetNodeId(resolvedId);
         setLiveStatusToast(
-          `Centered on "${clusterData.focalItem.title}" with ${clusterData.clusterItems.length} connected titles`
+          `Centered on "${clusterData.focalItem.title}" with ${clusterData.clusterItems.length} verified connected titles`
         );
         setTimeout(() => setLiveStatusToast(null), 4500);
       } else {
@@ -275,45 +434,14 @@ export function SixDegreesApp() {
   );
 
   /**
-   * Re-centers the graph around a chosen Movie/TV Show AND fetches additional live recommendations
+   * Re-centers the graph around a chosen Movie/TV Show within the current collection
    */
-  const handleMakeFocal = useCallback(
-    async (newFocalId: string) => {
-      setFocalId(newFocalId);
-      setInspectedMediaId(newFocalId);
-      setActiveEntityNode(null);
-      setOrbitTargetNodeId(newFocalId);
-
-      const targetItem = mediaLibrary.find((m) => m.id === newFocalId);
-      if (!targetItem) return;
-
-      setIsBuildingCluster(true);
-      const clusterData = await fetchLiveCluster({
-        tmdbId: targetItem.tmdbId,
-        imdbId: targetItem.imdbId,
-        mediaType: targetItem.mediaType,
-        title: targetItem.title,
-        year: targetItem.year,
-        posterUrl: targetItem.posterUrl,
-      });
-      setIsBuildingCluster(false);
-
-      if (clusterData && clusterData.clusterItems.length > 0) {
-        mergeMediaItemsIntoLibrary(
-          {
-            ...clusterData.focalItem,
-            id: targetItem.id,
-          },
-          clusterData.clusterItems
-        );
-        setLiveStatusToast(
-          `Updated constellation with ${clusterData.clusterItems.length} related titles for "${targetItem.title}"`
-        );
-        setTimeout(() => setLiveStatusToast(null), 3500);
-      }
-    },
-    [mediaLibrary, mergeMediaItemsIntoLibrary]
-  );
+  const handleMakeFocal = useCallback((newFocalId: string) => {
+    setFocalId(newFocalId);
+    setInspectedMediaId(newFocalId);
+    setActiveEntityNode(null);
+    setOrbitTargetNodeId(newFocalId);
+  }, []);
 
   const handleSelectNode = useCallback((node: GraphNode) => {
     if (node.type === 'MOVIE' || node.type === 'TV') {
@@ -335,6 +463,7 @@ export function SixDegreesApp() {
         const media = mediaLibrary.find((m) => m.id === nodeId);
         if (media) {
           setInspectedMediaId(media.id);
+          setOrbitTargetNodeId(media.id);
         }
       }
     },
@@ -380,21 +509,19 @@ export function SixDegreesApp() {
       <TopNavBar
         nodes={nodes}
         linksCount={links.length}
-        fov={fov}
         focalItem={focalItem}
         onClearFocal={handleClearFocal}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        region={region}
-        onRegionChange={setRegion}
         onResetPitch={() => setResetPitchTrigger((c) => c + 1)}
         allMediaItems={mediaLibrary}
         onSelectNodeById={handleSelectNodeById}
         onMakeFocal={handleMakeFocal}
+        onAddLiveMedia={handleAddLiveMedia}
         onBuildLiveCluster={handleBuildLiveCluster}
         isBuildingCluster={isBuildingCluster}
-        liveDataSourceLabel={liveDataSourceLabel}
-        onApiKeysUpdated={() => setApiKeyVersion((v) => v + 1)}
+        onToggleMobileMenu={() => setMobileMenuOpen((v) => !v)}
+        activeFilterCount={activeFilterCount}
       />
 
       {/* Main Workspace Below Fixed Top Bar */}
@@ -403,6 +530,8 @@ export function SixDegreesApp() {
         <LeftSidebar
           focalItem={focalItem}
           totalMediaCount={activeMediaItems.length}
+          mediaCounts={mediaCounts}
+          nodes={nodes}
           onClearFocal={handleClearFocal}
           mediaFilter={mediaFilter}
           onMediaFilterChange={setMediaFilter}
@@ -412,6 +541,9 @@ export function SixDegreesApp() {
           onForceSettingsChange={setForceSettings}
           visibility={visibility}
           onToggleVisibility={handleToggleVisibility}
+          onResetAllVisibility={handleResetAllVisibility}
+          mobileOpen={mobileMenuOpen}
+          onCloseMobile={() => setMobileMenuOpen(false)}
         />
 
         {/* C. Central 3D/2D Constellation or Critical Ledger */}
@@ -420,9 +552,9 @@ export function SixDegreesApp() {
           {(isBuildingCluster || liveStatusToast) && (
             <div className="absolute top-16 right-[424px] z-30 flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival text-xs font-medium text-[#171412]">
               {isBuildingCluster ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#B8292F]" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#B8292F] shrink-0" />
               ) : (
-                <CheckCircle2 className="w-3.5 h-3.5 text-[#2A6B53]" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#2A6B53] shrink-0" />
               )}
               <span>{liveStatusToast || 'Updating catalog connections…'}</span>
             </div>

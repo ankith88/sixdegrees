@@ -6,8 +6,14 @@ export const metadata: Metadata = {
   description:
     'Explore how films and television series connect through shared directors, screenwriters, cast, composers, and narrative themes—with transparent reasoning and regional streaming availability.',
   icons: {
-    icon: '/image_1.svg',
+    icon: [
+      { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/image_1.svg', type: 'image/svg+xml' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
   },
+  manifest: '/site.webmanifest',
 };
 
 export default function RootLayout({

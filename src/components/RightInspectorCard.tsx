@@ -832,13 +832,14 @@ export function RightInspectorCard({
           </div>
 
           {/* Closest Matches in Graph */}
-          {topRecommendations.length > 0 && (
-            <div className="pt-4 mt-4 border-t border-[#D5CCB9]">
-              <h3 className="font-heading text-sm font-bold text-[#171412] mb-2">
-                {focalItem && !isFocal
-                  ? `Other Titles Connected to ${focalItem.title}`
-                  : `Closest Connected Titles to ${inspectedItem.title}`}
-              </h3>
+          <div className="pt-4 mt-4 border-t border-[#D5CCB9]">
+            <h3 className="font-heading text-sm font-bold text-[#171412] mb-2">
+              {focalItem && !isFocal
+                ? `Other Titles Connected to ${focalItem.title}`
+                : `Closest Connected Titles to ${inspectedItem.title}`}
+            </h3>
+            {topRecommendations.filter((r) => r.item.id !== inspectedItem.id)
+              .length > 0 ? (
               <div className="divide-y divide-[#D5CCB9] border-t border-b border-[#D5CCB9]">
                 {topRecommendations
                   .filter((r) => r.item.id !== inspectedItem.id)
@@ -862,8 +863,27 @@ export function RightInspectorCard({
                     </button>
                   ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="p-3 rounded-lg bg-[#EFE8DA]/70 border border-[#D5CCB9] text-xs text-[#52483E] leading-relaxed">
+                <p className="font-semibold text-[#171412] mb-0.5">
+                  Standalone Archival Node
+                </p>
+                <p>
+                  No verified shared directors, cast members, composers, or
+                  specific narrative themes connect{' '}
+                  <span className="font-medium text-[#171412]">
+                    {inspectedItem.title}
+                  </span>{' '}
+                  to other titles in the current collection above the{' '}
+                  match threshold. Click{' '}
+                  <span className="font-semibold text-[#8C1D22]">
+                    Center Graph Here
+                  </span>{' '}
+                  below to discover and import its connected constellation.
+                </p>
+              </div>
+            )}
+          </div>
         </section>
       </div>
 
