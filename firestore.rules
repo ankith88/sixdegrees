@@ -1,0 +1,127 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// Collection: sixdegrees_catalog
+// Document ID: 'telemetry' or 'bundle_0' through 'bundle_9' (^bundle_[0-9]$)
+//
+// 1. Bundle Documents (sixdegrees_catalog/bundle_{0..9}):
+//    Fields:
+//      - bundleIndex: string (required, max 10 chars) - shard index ("0".."9")
+//      - count: string (required, max 10 chars) - number of MediaItems in bundle
+//      - updatedAt: string (required, max 64 chars) - ISO-8601 sync timestamp
+//      - itemsJson: string (required, < 950,000 bytes) - JSON-serialized MediaItem[]
+//
+// 2. Telemetry Document (sixdegrees_catalog/telemetry):
+//    Fields:
+//      - dayKey: string (required, max 32 chars) - UTC date key (YYYY-MM-DD)
+//      - omdbCallsToday: string (required, max 16 chars) - daily OMDb counter
+//      - tmdbCallsToday: string (required, max 16 chars) - daily TMDB counter
+//      - bundleCount: string (required, max 16 chars) - total active bundle shards
+//      - totalCachedTitles: string (required, max 16 chars) - total cached catalog size
+//      - updatedAt: string (required, max 64 chars) - ISO-8601 sync timestamp
+//      - omdbJson: string (required, < 900,000 bytes) - JSON-serialized OMDb cache map
+//      - crawledCollaboratorsJson: string (required, < 200,000 bytes) - JSON-serialized collaborator list
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in both create and update)
+    // ===============================================================
+
+    function isValidCatalogBundle(docId) {
+      let requiredFields = ['bundleIndex', 'count', 'updatedAt', 'itemsJson'];
+      return docId.matches('^bundle_[0-9]$') &&
+        hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(requiredFields) &&
+        validStringLength('bundleIndex', 1, 10) &&
+        validStringLength('count', 1, 10) &&
+        validStringLength('updatedAt', 1, 64) &&
+        request.resource.data.itemsJson is string &&
+        request.resource.data.itemsJson.size() < 950000;
+    }
+
+    function isValidCatalogTelemetry(docId) {
+      let requiredFields = [
+        'dayKey',
+        'omdbCallsToday',
+        'tmdbCallsToday',
+        'bundleCount',
+        'totalCachedTitles',
+        'updatedAt',
+        'omdbJson',
+        'crawledCollaboratorsJson'
+      ];
+      return docId == 'telemetry' &&
+        hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(requiredFields) &&
+        validStringLength('dayKey', 1, 32) &&
+        validStringLength('omdbCallsToday', 1, 16) &&
+        validStringLength('tmdbCallsToday', 1, 16) &&
+        validStringLength('bundleCount', 1, 16) &&
+        validStringLength('totalCachedTitles', 1, 16) &&
+        validStringLength('updatedAt', 1, 64) &&
+        request.resource.data.omdbJson is string &&
+        request.resource.data.omdbJson.size() < 900000 &&
+        request.resource.data.crawledCollaboratorsJson is string &&
+        request.resource.data.crawledCollaboratorsJson.size() < 200000;
+    }
+
+    function isValidSixDegreesCatalogDoc(docId) {
+      return (docId == 'telemetry' || docId.matches('^bundle_[0-9]$')) &&
+        (isValidCatalogBundle(docId) || isValidCatalogTelemetry(docId));
+    }
+
+    // ===============================================================
+    // Collection Rules: /sixdegrees_catalog/{docId}
+    // ===============================================================
+
+    match /sixdegrees_catalog/{docId} {
+      // Public read access for server route catalog hydration (API Key or Service Account)
+      allow get, list: if true;
+
+      // Schema-validated upsert access for catalog bundles and telemetry
+      allow create, update: if isValidSixDegreesCatalogDoc(docId);
+
+      // Disallow deletion of cached catalog bundles or telemetry
+      allow delete: if false;
+    }
+
+    // ===============================================================
+    // Default Deny All Other Collections
+    // ===============================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

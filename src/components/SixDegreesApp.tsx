@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { TopNavBar } from './TopNavBar';
 import { LeftSidebar } from './LeftSidebar';
 import { SpatialViewport } from './SpatialViewport';
@@ -13,12 +13,22 @@ import {
   fetchLiveCluster,
   hasLiveApiKeys,
   fetchServerApiKeyStatus,
+  fetchServerCachedCatalog,
+  fetchAutoExpandBatch,
+  saveExpandedCatalogToStorage,
+  clearExpandedCatalogStorage,
+  getQueriedCollaborators,
+  markCollaboratorQueried,
   LiveSearchResult,
+  QuotaTelemetry,
+  FirestoreSyncTelemetry,
 } from '@/lib/api';
+import { SEED_MEDIA_ITEMS } from '@/lib/seed-data';
 import {
   buildSpatialGraph,
   calculateSimilarity,
   hasConcreteSharedConnection,
+  isValidPersonName,
 } from '@/lib/similarity';
 import {
   CameraMode,
@@ -83,7 +93,7 @@ export function SixDegreesApp() {
     null
   );
 
-  // Live API Cluster Building State
+  // Live API Cluster Building & Auto-Expansion State
   const [isBuildingCluster, setIsBuildingCluster] = useState(false);
   const [liveStatusToast, setLiveStatusToast] = useState<string | null>(null);
   const [apiKeyVersion, setApiKeyVersion] = useState(0);
@@ -91,16 +101,228 @@ export function SixDegreesApp() {
     tmdb: boolean;
     omdb: boolean;
   }>({ tmdb: false, omdb: false });
+  const [quotaTelemetry, setQuotaTelemetry] = useState<QuotaTelemetry | null>(
+    null
+  );
+  const [firestoreTelemetry, setFirestoreTelemetry] =
+    useState<FirestoreSyncTelemetry | null>(null);
+  const [autoExpandEnabled, setAutoExpandEnabled] = useState<boolean>(true);
+  const [autoExpandTarget, setAutoExpandTarget] = useState<number>(180);
+  const [isAutoExpanding, setIsAutoExpanding] = useState<boolean>(false);
+  const [lastCollaboratorCrawled, setLastCollaboratorCrawled] = useState<
+    string | null
+  >(null);
 
+  const mediaLibraryRef = useRef<MediaItem[]>(mediaLibrary);
+  useEffect(() => {
+    mediaLibraryRef.current = mediaLibrary;
+    saveExpandedCatalogToStorage(mediaLibrary);
+  }, [mediaLibrary]);
+
+  // Hydrate server-side & Cloud Firestore persistent cache on mount (0 external API calls)
   useEffect(() => {
     let cancelled = false;
     fetchServerApiKeyStatus().then((status) => {
-      if (!cancelled) setServerKeyStatus(status);
+      if (cancelled) return;
+      setServerKeyStatus({ tmdb: status.tmdb, omdb: status.omdb });
+      if (status.quota) setQuotaTelemetry(status.quota);
+      if (status.firestore) setFirestoreTelemetry(status.firestore);
     });
+
+    fetchServerCachedCatalog().then(({ items, quota, firestore }) => {
+      if (cancelled) return;
+      if (quota) setQuotaTelemetry(quota);
+      if (firestore) setFirestoreTelemetry(firestore);
+      if (items.length > 0) {
+        setMediaLibrary((prev) => {
+          const map = new Map<string, MediaItem>();
+          for (const item of prev) map.set(item.id, item);
+          for (const candidate of items) {
+            const exists = Array.from(map.values()).find(
+              (m) =>
+                (candidate.imdbId && m.imdbId === candidate.imdbId) ||
+                (candidate.tmdbId > 0 &&
+                  m.tmdbId === candidate.tmdbId &&
+                  m.mediaType === candidate.mediaType) ||
+                (m.title.toLowerCase() === candidate.title.toLowerCase() &&
+                  Math.abs(m.year - candidate.year) <= 1)
+            );
+            if (!exists) {
+              const connects = Array.from(map.values()).some((existing) =>
+                hasConcreteSharedConnection(
+                  calculateSimilarity(existing, candidate)
+                )
+              );
+              if (connects) {
+                map.set(candidate.id, candidate);
+              }
+            }
+          }
+          return Array.from(map.values());
+        });
+      }
+    });
+
     return () => {
       cancelled = true;
     };
   }, [apiKeyVersion]);
+
+  /**
+   * Selects the next collaborator (director, creator, lead actor, or composer)
+   * from the current collection that hasn't been crawled yet.
+   */
+  const pickNextCollaboratorToCrawl = useCallback((): string | null => {
+    const queried = getQueriedCollaborators();
+    const candidates: string[] = [];
+    const seen = new Set<string>();
+
+    const pushCandidate = (name: string) => {
+      if (!isValidPersonName(name)) return;
+      const lower = name.toLowerCase();
+      if (seen.has(lower) || queried.has(lower)) return;
+      seen.add(lower);
+      candidates.push(name);
+    };
+
+    // Priority 1: Directors & Series Creators
+    for (const item of mediaLibraryRef.current) {
+      for (const dir of item.directors) pushCandidate(dir);
+    }
+    // Priority 2: Lead Cast
+    for (const item of mediaLibraryRef.current) {
+      for (const c of item.cast) {
+        if (c.billing === 'LEAD') pushCandidate(c.name);
+      }
+    }
+    // Priority 3: Writers & Composers
+    for (const item of mediaLibraryRef.current) {
+      for (const w of item.writers) pushCandidate(w);
+      for (const comp of item.composers) pushCandidate(comp);
+    }
+    // Priority 4: Supporting Cast
+    for (const item of mediaLibraryRef.current) {
+      for (const c of item.cast) {
+        if (c.billing === 'SUPPORTING') pushCandidate(c.name);
+      }
+    }
+
+    return candidates[0] || null;
+  }, []);
+
+  /**
+   * Executes a single quota-safe auto-expansion batch (5 titles, 0 OMDb calls, paced TMDB calls)
+   */
+  const runAutoExpandStep = useCallback(
+    async (isManualTrigger = false) => {
+      if (isAutoExpanding || isBuildingCluster) return;
+
+      const collaborator = pickNextCollaboratorToCrawl();
+      if (!collaborator) return;
+
+      setIsAutoExpanding(true);
+      setLastCollaboratorCrawled(collaborator);
+      markCollaboratorQueried(collaborator);
+
+      if (isManualTrigger) {
+        setAutoExpandTarget((prev) =>
+          Math.max(prev, mediaLibraryRef.current.length + 10)
+        );
+      }
+
+      const res = await fetchAutoExpandBatch(
+        collaborator,
+        mediaLibraryRef.current,
+        5
+      );
+
+      setIsAutoExpanding(false);
+
+      if (res?.quota) {
+        setQuotaTelemetry(res.quota);
+      }
+      if (res?.firestore) {
+        setFirestoreTelemetry(res.firestore);
+      }
+
+      if (res && res.items.length > 0) {
+        let addedCount = 0;
+        setMediaLibrary((prev) => {
+          const map = new Map<string, MediaItem>();
+          for (const item of prev) map.set(item.id, item);
+
+          for (const candidate of res.items) {
+            const duplicate = Array.from(map.values()).find(
+              (m) =>
+                (candidate.imdbId && m.imdbId === candidate.imdbId) ||
+                (candidate.tmdbId > 0 &&
+                  m.tmdbId === candidate.tmdbId &&
+                  m.mediaType === candidate.mediaType) ||
+                (m.title.toLowerCase() === candidate.title.toLowerCase() &&
+                  Math.abs(m.year - candidate.year) <= 1)
+            );
+            if (duplicate) continue;
+
+            // Only retain titles that share a concrete craft connection with the archive
+            const hasConnection = Array.from(map.values()).some((existing) =>
+              hasConcreteSharedConnection(
+                calculateSimilarity(existing, candidate)
+              )
+            );
+            if (hasConnection) {
+              map.set(candidate.id, candidate);
+              addedCount += 1;
+            }
+          }
+          return Array.from(map.values());
+        });
+
+        if (addedCount > 0 && isManualTrigger) {
+          setLiveStatusToast(
+            `Auto-expanded +${addedCount} connected ${
+              addedCount === 1 ? 'title' : 'titles'
+            } via ${collaborator} (0 OMDb quota used)`
+          );
+          setTimeout(() => setLiveStatusToast(null), 4000);
+        }
+      }
+    },
+    [isAutoExpanding, isBuildingCluster, pickNextCollaboratorToCrawl]
+  );
+
+  // Gentle background trickle scheduler (runs every 18s while enabled and below target)
+  useEffect(() => {
+    if (!autoExpandEnabled) return;
+    if (mediaLibrary.length >= autoExpandTarget) return;
+
+    const delayMs =
+      mediaLibrary.length <= SEED_MEDIA_ITEMS.length ? 3000 : 18000;
+    const timer = setTimeout(() => {
+      runAutoExpandStep(false);
+    }, delayMs);
+
+    return () => clearTimeout(timer);
+  }, [
+    autoExpandEnabled,
+    mediaLibrary.length,
+    autoExpandTarget,
+    runAutoExpandStep,
+  ]);
+
+  const handleResetExpandedCatalog = useCallback(() => {
+    const base = clearExpandedCatalogStorage();
+    setMediaLibrary(base);
+    setFocalId(null);
+    setInspectedMediaId(null);
+    setLastCollaboratorCrawled(null);
+    setLiveStatusToast('Reset catalog to base seed titles.');
+    setTimeout(() => setLiveStatusToast(null), 3500);
+  }, []);
+
+  const expandedCount = Math.max(
+    0,
+    mediaLibrary.length - SEED_MEDIA_ITEMS.length
+  );
 
   const liveDataSourceLabel = useMemo(() => {
     const localKeys = hasLiveApiKeys();
@@ -544,6 +766,17 @@ export function SixDegreesApp() {
           onResetAllVisibility={handleResetAllVisibility}
           mobileOpen={mobileMenuOpen}
           onCloseMobile={() => setMobileMenuOpen(false)}
+          autoExpandEnabled={autoExpandEnabled}
+          onToggleAutoExpand={() => setAutoExpandEnabled((v) => !v)}
+          onTriggerExpandNow={() => runAutoExpandStep(true)}
+          isAutoExpanding={isAutoExpanding}
+          autoExpandTarget={autoExpandTarget}
+          lastCollaboratorCrawled={lastCollaboratorCrawled}
+          quotaTelemetry={quotaTelemetry}
+          firestoreTelemetry={firestoreTelemetry}
+          expandedCount={expandedCount}
+          onResetExpandedCatalog={handleResetExpandedCatalog}
+          onFirestoreConfigUpdated={() => setApiKeyVersion((v) => v + 1)}
         />
 
         {/* C. Central 3D/2D Constellation or Critical Ledger */}

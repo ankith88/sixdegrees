@@ -8,6 +8,27 @@ const OMDB_BASE_URL = 'https://www.omdbapi.com/';
 
 const STORAGE_TMDB_KEY = 'sixdegrees_tmdb_api_key';
 const STORAGE_OMDB_KEY = 'sixdegrees_omdb_api_key';
+const STORAGE_FIREBASE_PROJECT_KEY = 'sixdegrees_firebase_project_id';
+const STORAGE_FIREBASE_API_KEY = 'sixdegrees_firebase_api_key';
+const STORAGE_EXPANDED_CATALOG_KEY = 'sixdegrees_expanded_catalog_v1';
+const STORAGE_QUERIED_COLLABORATORS_KEY =
+  'sixdegrees_queried_collaborators_v1';
+
+export interface QuotaTelemetry {
+  omdbCallsToday: number;
+  omdbDailySafeLimit: number;
+  tmdbCallsToday: number;
+  cachedTitlesCount: number;
+}
+
+export interface FirestoreSyncTelemetry {
+  enabled: boolean;
+  projectId: string;
+  authMode: 'SERVICE_ACCOUNT' | 'API_KEY' | 'NONE';
+  lastSyncedAt: number | null;
+  firestoreReadsSession: number;
+  firestoreWritesSession: number;
+}
 
 export interface LiveSearchResult {
   id: string;
@@ -22,17 +43,34 @@ export interface LiveSearchResult {
   source: 'TMDB' | 'PUBLIC_LIVE' | 'SEED';
 }
 
-export function getActiveApiKeys(): { tmdbKey: string; omdbKey: string } {
+export function getActiveApiKeys(): {
+  tmdbKey: string;
+  omdbKey: string;
+  firebaseProjectId: string;
+  firebaseApiKey: string;
+} {
   if (typeof window === 'undefined') {
-    return { tmdbKey: '', omdbKey: '' };
+    return {
+      tmdbKey: '',
+      omdbKey: '',
+      firebaseProjectId: '',
+      firebaseApiKey: '',
+    };
   }
   return {
     tmdbKey: localStorage.getItem(STORAGE_TMDB_KEY) || '',
     omdbKey: localStorage.getItem(STORAGE_OMDB_KEY) || '',
+    firebaseProjectId: localStorage.getItem(STORAGE_FIREBASE_PROJECT_KEY) || '',
+    firebaseApiKey: localStorage.getItem(STORAGE_FIREBASE_API_KEY) || '',
   };
 }
 
-export function saveRuntimeApiKeys(tmdbKey: string, omdbKey: string): void {
+export function saveRuntimeApiKeys(
+  tmdbKey: string,
+  omdbKey: string,
+  firebaseProjectId?: string,
+  firebaseApiKey?: string
+): void {
   if (typeof window === 'undefined') return;
   if (tmdbKey.trim()) {
     localStorage.setItem(STORAGE_TMDB_KEY, tmdbKey.trim());
@@ -43,6 +81,23 @@ export function saveRuntimeApiKeys(tmdbKey: string, omdbKey: string): void {
     localStorage.setItem(STORAGE_OMDB_KEY, omdbKey.trim());
   } else {
     localStorage.removeItem(STORAGE_OMDB_KEY);
+  }
+  if (firebaseProjectId !== undefined) {
+    if (firebaseProjectId.trim()) {
+      localStorage.setItem(
+        STORAGE_FIREBASE_PROJECT_KEY,
+        firebaseProjectId.trim()
+      );
+    } else {
+      localStorage.removeItem(STORAGE_FIREBASE_PROJECT_KEY);
+    }
+  }
+  if (firebaseApiKey !== undefined) {
+    if (firebaseApiKey.trim()) {
+      localStorage.setItem(STORAGE_FIREBASE_API_KEY, firebaseApiKey.trim());
+    } else {
+      localStorage.removeItem(STORAGE_FIREBASE_API_KEY);
+    }
   }
 }
 
@@ -55,21 +110,30 @@ export function hasLiveApiKeys(): { tmdb: boolean; omdb: boolean } {
 }
 
 /**
- * Queries the server route to check if server-side .env.local keys are configured
- * (Returns booleans only; secret keys never leave the server)
+ * Queries the server route to check if server-side .env.local keys & Cloud Firestore are configured
+ * and retrieves current free-tier quota telemetry.
  */
 export async function fetchServerApiKeyStatus(): Promise<{
   tmdb: boolean;
   omdb: boolean;
+  quota?: QuotaTelemetry;
+  firestore?: FirestoreSyncTelemetry;
 }> {
   const local = hasLiveApiKeys();
+  const { firebaseProjectId, firebaseApiKey } = getActiveApiKeys();
+  const params = new URLSearchParams({ action: 'status' });
+  if (firebaseProjectId) params.set('firebaseProjectId', firebaseProjectId);
+  if (firebaseApiKey) params.set('firebaseApiKey', firebaseApiKey);
+
   try {
-    const res = await fetch('/api/live-media?action=status');
+    const res = await fetch(`/api/live-media?${params.toString()}`);
     if (!res.ok) return local;
     const data = await res.json();
     return {
       tmdb: Boolean(data.tmdb || local.tmdb),
       omdb: Boolean(data.omdb || local.omdb),
+      quota: data.quota,
+      firestore: data.firestore,
     };
   } catch {
     return local;
@@ -78,10 +142,177 @@ export async function fetchServerApiKeyStatus(): Promise<{
 
 /**
  * Returns the pre-loaded rich seed dataset centered on Inception (2010)
- * connected to 30+ similar Movies and TV Shows.
+ * merged with any previously auto-expanded or user-added titles in localStorage.
  */
 export function getInitialMediaLibrary(): MediaItem[] {
+  if (typeof window === 'undefined') {
+    return SEED_MEDIA_ITEMS;
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_EXPANDED_CATALOG_KEY);
+    if (!raw) return SEED_MEDIA_ITEMS;
+    const extra = JSON.parse(raw) as MediaItem[];
+    if (!Array.isArray(extra) || extra.length === 0) return SEED_MEDIA_ITEMS;
+
+    const map = new Map<string, MediaItem>();
+    for (const item of SEED_MEDIA_ITEMS) {
+      map.set(item.id, item);
+    }
+    for (const item of extra) {
+      if (!item?.id || !item?.title) continue;
+      const duplicate = Array.from(map.values()).find(
+        (m) =>
+          (item.imdbId && m.imdbId === item.imdbId) ||
+          (item.tmdbId > 0 &&
+            m.tmdbId === item.tmdbId &&
+            m.mediaType === item.mediaType) ||
+          (m.title.toLowerCase() === item.title.toLowerCase() &&
+            Math.abs(m.year - item.year) <= 1)
+      );
+      if (!duplicate) {
+        map.set(item.id, item);
+      }
+    }
+    return Array.from(map.values());
+  } catch {
+    return SEED_MEDIA_ITEMS;
+  }
+}
+
+/**
+ * Saves non-seed expanded MediaItems to localStorage so the grown catalog persists across reloads
+ * without re-spending any API quota.
+ */
+export function saveExpandedCatalogToStorage(allItems: MediaItem[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const seedIds = new Set(SEED_MEDIA_ITEMS.map((m) => m.id));
+    const extra = allItems.filter((m) => !seedIds.has(m.id));
+    localStorage.setItem(STORAGE_EXPANDED_CATALOG_KEY, JSON.stringify(extra));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+export function clearExpandedCatalogStorage(): MediaItem[] {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(STORAGE_EXPANDED_CATALOG_KEY);
+    localStorage.removeItem(STORAGE_QUERIED_COLLABORATORS_KEY);
+  }
   return SEED_MEDIA_ITEMS;
+}
+
+export function getQueriedCollaborators(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(STORAGE_QUERIED_COLLABORATORS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as string[];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function markCollaboratorQueried(name: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getQueriedCollaborators();
+    set.add(name.toLowerCase());
+    localStorage.setItem(
+      STORAGE_QUERIED_COLLABORATORS_KEY,
+      JSON.stringify(Array.from(set))
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+/**
+ * Hydrates any titles already cached in Cloud Firestore or the server's `.next/cache` store.
+ */
+export async function fetchServerCachedCatalog(): Promise<{
+  items: MediaItem[];
+  crawledCollaborators?: string[];
+  quota?: QuotaTelemetry;
+  firestore?: FirestoreSyncTelemetry;
+}> {
+  const { firebaseProjectId, firebaseApiKey } = getActiveApiKeys();
+  const params = new URLSearchParams({ action: 'cached-catalog' });
+  if (firebaseProjectId) params.set('firebaseProjectId', firebaseProjectId);
+  if (firebaseApiKey) params.set('firebaseApiKey', firebaseApiKey);
+
+  try {
+    const res = await fetch(`/api/live-media?${params.toString()}`);
+    if (!res.ok) return { items: [] };
+    const data = await res.json();
+    if (Array.isArray(data.crawledCollaborators)) {
+      for (const name of data.crawledCollaborators) {
+        if (typeof name === 'string' && name) {
+          markCollaboratorQueried(name);
+        }
+      }
+    }
+    return {
+      items: Array.isArray(data.items) ? data.items : [],
+      crawledCollaborators: data.crawledCollaborators,
+      quota: data.quota,
+      firestore: data.firestore,
+    };
+  } catch {
+    return { items: [] };
+  }
+}
+
+/**
+ * Automatically fetches a small quota-safe batch of Movies & TV Shows connected to
+ * a specific collaborator in the graph (uses 0 OMDb calls, paced TMDB calls, and syncs to Firestore).
+ */
+export async function fetchAutoExpandBatch(
+  collaborator: string,
+  existingItems: MediaItem[],
+  batchSize = 5
+): Promise<{
+  collaborator: string;
+  items: MediaItem[];
+  source: string;
+  quota?: QuotaTelemetry;
+  firestore?: FirestoreSyncTelemetry;
+} | null> {
+  const { tmdbKey, omdbKey, firebaseProjectId, firebaseApiKey } =
+    getActiveApiKeys();
+  const excludeTokens: string[] = [];
+  for (const m of existingItems.slice(0, 220)) {
+    if (m.tmdbId > 0) excludeTokens.push(`tmdb:${m.mediaType}:${m.tmdbId}`);
+    if (m.imdbId?.startsWith('tt')) excludeTokens.push(`imdb:${m.imdbId}`);
+    excludeTokens.push(`title:${m.title.toLowerCase()}`);
+  }
+
+  const params = new URLSearchParams({
+    action: 'auto-expand',
+    collaborator,
+    batchSize: String(batchSize),
+    exclude: excludeTokens.join('|'),
+  });
+  if (tmdbKey) params.set('tmdbKey', tmdbKey);
+  if (omdbKey) params.set('omdbKey', omdbKey);
+  if (firebaseProjectId) params.set('firebaseProjectId', firebaseProjectId);
+  if (firebaseApiKey) params.set('firebaseApiKey', firebaseApiKey);
+
+  try {
+    const res = await fetch(`/api/live-media?${params.toString()}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      collaborator: data.collaborator || collaborator,
+      items: Array.isArray(data.items) ? data.items : [],
+      source: data.source || 'AUTO_EXPAND',
+      quota: data.quota,
+      firestore: data.firestore,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import {
   CastMember,
   MediaItem,
@@ -12,9 +14,243 @@ import {
   isSpecificNarrativeTrope,
   isValidPersonName,
 } from '@/lib/similarity';
+import {
+  getFirestoreConfig,
+  getFirestoreTelemetry,
+  loadCatalogFromFirestore,
+  saveCatalogToFirestore,
+} from '@/lib/firestore-cache';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const OMDB_BASE = 'https://www.omdbapi.com/';
+
+// ==================== FREE-TIER QUOTA GUARD & PERSISTENT SERVER + FIRESTORE CACHE ====================
+// OMDb Free Tier is 1,000 req/day. We enforce a strict safety ceiling of 750 req/day
+// and reserve OMDb strictly for single-item inspection (0 OMDb calls during bulk/auto-expansion).
+const OMDB_DAILY_SAFE_LIMIT = 750;
+const TMDB_MIN_INTERVAL_MS = 140; // ~7 req/s max (well below TMDB's ~40 req/s free limit)
+
+interface OmdbTelemetryData {
+  imdbRating?: number;
+  rottenTomatoes?: number;
+  metascore?: number;
+  contentRating?: string;
+  runtime?: string;
+  plot?: string;
+  director?: string[];
+  writer?: string[];
+  actors?: string[];
+  genres?: string[];
+  poster?: string;
+  fetchedAt: number;
+}
+
+interface PersistentCatalogCache {
+  dayKey: string;
+  omdbCallsToday: number;
+  tmdbCallsToday: number;
+  items: Record<string, MediaItem>;
+  omdbByImdb: Record<string, OmdbTelemetryData>;
+  crawledCollaborators: string[];
+}
+
+const CACHE_FILE_PATH = path.join(
+  process.cwd(),
+  '.next',
+  'cache',
+  'sixdegrees-auto-catalog.json'
+);
+
+let memoryCache: PersistentCatalogCache | null = null;
+let lastTmdbCallTime = 0;
+let lastFirestoreHydrationTime = 0;
+
+function getTodayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getServerCache(): PersistentCatalogCache {
+  const today = getTodayKey();
+  if (memoryCache) {
+    if (memoryCache.dayKey !== today) {
+      memoryCache.dayKey = today;
+      memoryCache.omdbCallsToday = 0;
+      memoryCache.tmdbCallsToday = 0;
+    }
+    return memoryCache;
+  }
+
+  try {
+    if (fs.existsSync(CACHE_FILE_PATH)) {
+      const raw = fs.readFileSync(CACHE_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(raw) as PersistentCatalogCache;
+      memoryCache = {
+        dayKey: parsed.dayKey === today ? today : today,
+        omdbCallsToday: parsed.dayKey === today ? parsed.omdbCallsToday || 0 : 0,
+        tmdbCallsToday: parsed.dayKey === today ? parsed.tmdbCallsToday || 0 : 0,
+        items: parsed.items || {},
+        omdbByImdb: parsed.omdbByImdb || {},
+        crawledCollaborators: Array.isArray(parsed.crawledCollaborators)
+          ? parsed.crawledCollaborators
+          : [],
+      };
+      return memoryCache;
+    }
+  } catch {
+    // Ignore read error and initialize fresh in-memory cache
+  }
+
+  memoryCache = {
+    dayKey: today,
+    omdbCallsToday: 0,
+    tmdbCallsToday: 0,
+    items: {},
+    omdbByImdb: {},
+    crawledCollaborators: [],
+  };
+  return memoryCache;
+}
+
+function saveServerCache(): void {
+  if (!memoryCache) return;
+  try {
+    const dir = path.dirname(CACHE_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(memoryCache), 'utf-8');
+  } catch {
+    // Non-fatal in read-only serverless environments
+  }
+}
+
+/**
+ * Hydrates in-memory & disk cache from Cloud Firestore on cold start (or every 10 minutes).
+ * Costs only 1-2 Firestore document reads total thanks to document bundling.
+ */
+async function ensureFirestoreHydrated(
+  firebaseProjectId?: string,
+  firebaseApiKey?: string
+): Promise<void> {
+  const cfg = getFirestoreConfig(firebaseProjectId, firebaseApiKey);
+  if (!cfg.enabled) return;
+
+  const TEN_MINUTES_MS = 10 * 60 * 1000;
+  if (Date.now() - lastFirestoreHydrationTime < TEN_MINUTES_MS) {
+    return;
+  }
+  lastFirestoreHydrationTime = Date.now();
+
+  const cloudData = await loadCatalogFromFirestore(
+    firebaseProjectId,
+    firebaseApiKey
+  );
+  const cache = getServerCache();
+
+  if (!cloudData) {
+    // Firestore is empty on first connection — push existing local cache up to Firestore immediately
+    if (Object.keys(cache.items).length > 0) {
+      await saveCatalogToFirestore(cache, firebaseProjectId, firebaseApiKey);
+    }
+    return;
+  }
+
+  const localCountBefore = Object.keys(cache.items).length;
+  const cloudCount = Object.keys(cloudData.items).length;
+
+  // Merge cloud items into server cache
+  for (const [id, item] of Object.entries(cloudData.items)) {
+    if (!cache.items[id]) {
+      cache.items[id] = item;
+    }
+  }
+  // Merge cloud OMDb telemetry
+  for (const [imdb, omdb] of Object.entries(cloudData.omdbByImdb)) {
+    if (!cache.omdbByImdb[imdb]) {
+      cache.omdbByImdb[imdb] = omdb;
+    }
+  }
+  // Merge crawled collaborators
+  const collabSet = new Set([
+    ...cache.crawledCollaborators.map((c) => c.toLowerCase()),
+    ...cloudData.crawledCollaborators.map((c) => c.toLowerCase()),
+  ]);
+  cache.crawledCollaborators = Array.from(collabSet);
+
+  if (cloudData.dayKey === cache.dayKey) {
+    cache.omdbCallsToday = Math.max(
+      cache.omdbCallsToday,
+      cloudData.omdbCallsToday
+    );
+    cache.tmdbCallsToday = Math.max(
+      cache.tmdbCallsToday,
+      cloudData.tmdbCallsToday
+    );
+  }
+
+  saveServerCache();
+
+  // If local cache had more items than Firestore, sync the merged superset back to Firestore
+  if (Object.keys(cache.items).length > cloudCount || localCountBefore > cloudCount) {
+    await saveCatalogToFirestore(cache, firebaseProjectId, firebaseApiKey);
+  }
+}
+
+/**
+ * Flushes the current server cache to Cloud Firestore in bundled documents.
+ */
+async function syncServerCacheToFirestore(
+  firebaseProjectId?: string,
+  firebaseApiKey?: string
+): Promise<void> {
+  const cfg = getFirestoreConfig(firebaseProjectId, firebaseApiKey);
+  if (!cfg.enabled) return;
+  const cache = getServerCache();
+  await saveCatalogToFirestore(cache, firebaseProjectId, firebaseApiKey);
+}
+
+function cacheMediaItem(item: MediaItem): void {
+  const cache = getServerCache();
+  cache.items[item.id] = item;
+  saveServerCache();
+}
+
+function findCachedMediaByTmdb(
+  tmdbId: number,
+  mediaType: MediaType
+): MediaItem | null {
+  const cache = getServerCache();
+  for (const item of Object.values(cache.items)) {
+    if (item.tmdbId === tmdbId && item.mediaType === mediaType) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function findCachedMediaByImdb(imdbId: string): MediaItem | null {
+  if (!imdbId) return null;
+  const cache = getServerCache();
+  for (const item of Object.values(cache.items)) {
+    if (item.imdbId === imdbId) {
+      return item;
+    }
+  }
+  return null;
+}
+
+async function paceTmdbRequest(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - lastTmdbCallTime;
+  if (elapsed < TMDB_MIN_INTERVAL_MS) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, TMDB_MIN_INTERVAL_MS - elapsed)
+    );
+  }
+  lastTmdbCallTime = Date.now();
+  const cache = getServerCache();
+  cache.tmdbCallsToday += 1;
+}
 
 const PROVIDER_BRANDS: Record<string, { short: string; color: string }> = {
   Netflix: { short: 'N', color: '#B81D24' },
@@ -80,16 +316,34 @@ function makeFallbackRegionalStreaming(
   return { AU: offers, US: offers, UK: offers };
 }
 
-async function fetchOmdbTelemetry(imdbId: string, omdbKey?: string) {
-  if (!imdbId || !omdbKey) return null;
+async function fetchOmdbTelemetry(
+  imdbId: string,
+  omdbKey?: string,
+  skipQuotaCheck = false
+): Promise<OmdbTelemetryData | null> {
+  if (!imdbId || !omdbKey || !imdbId.startsWith('tt')) return null;
+
+  const cache = getServerCache();
+  const cached = cache.omdbByImdb[imdbId];
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  if (cached && Date.now() - cached.fetchedAt < SEVEN_DAYS_MS) {
+    return cached;
+  }
+
+  // Enforce strict daily free-tier safety ceiling (750 / 1,000 max daily requests)
+  if (!skipQuotaCheck && cache.omdbCallsToday >= OMDB_DAILY_SAFE_LIMIT) {
+    return cached || null;
+  }
+
   try {
+    cache.omdbCallsToday += 1;
     const res = await fetch(
       `${OMDB_BASE}?i=${encodeURIComponent(imdbId)}&apikey=${encodeURIComponent(omdbKey)}`,
-      { next: { revalidate: 3600 } }
+      { next: { revalidate: 604800 } } // 7-day Next.js data cache
     );
-    if (!res.ok) return null;
+    if (!res.ok) return cached || null;
     const data = await res.json();
-    if (data.Response === 'False') return null;
+    if (data.Response === 'False') return cached || null;
 
     let rt: number | undefined;
     if (Array.isArray(data.Ratings)) {
@@ -106,7 +360,7 @@ async function fetchOmdbTelemetry(imdbId: string, omdbKey?: string) {
     const imdbRating = data.imdbRating ? parseFloat(data.imdbRating) : undefined;
     const metascore = data.Metascore ? parseInt(data.Metascore, 10) : undefined;
 
-    return {
+    const result: OmdbTelemetryData = {
       imdbRating: !Number.isNaN(imdbRating ?? NaN) ? imdbRating : undefined,
       rottenTomatoes: rt,
       metascore: !Number.isNaN(metascore ?? NaN) ? metascore : undefined,
@@ -137,9 +391,14 @@ async function fetchOmdbTelemetry(imdbId: string, omdbKey?: string) {
           : undefined,
       poster:
         data.Poster && data.Poster !== 'N/A' ? data.Poster : undefined,
+      fetchedAt: Date.now(),
     };
+
+    cache.omdbByImdb[imdbId] = result;
+    saveServerCache();
+    return result;
   } catch {
-    return null;
+    return cached || null;
   }
 }
 
@@ -215,14 +474,16 @@ function titleCaseKeyword(str: string): string {
 
 /**
  * Helper to fetch from TMDB using either Bearer Read Access Token (v4) or API Key (v3)
+ * with automatic token-bucket pacing so we never cross TMDB's rate limits.
  */
 async function fetchTmdb(
   path: string,
   params: Record<string, string>,
   tmdbKey: string,
   tmdbReadToken?: string,
-  revalidate = 3600
+  revalidate = 86400
 ) {
+  await paceTmdbRequest();
   const search = new URLSearchParams(params);
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -242,15 +503,22 @@ async function fetchTmdb(
 }
 
 /**
- * Fetches a full MediaItem from TMDB + OMDb
+ * Fetches a full MediaItem from TMDB (+ optional OMDb when skipOmdb is false).
+ * Uses persistent disk/memory cache so previously discovered titles cost 0 API calls.
  */
 async function fetchFullTmdbMediaItem(
   tmdbId: number,
   mediaType: MediaType,
   tmdbKey: string,
   omdbKey?: string,
-  tmdbReadToken?: string
+  tmdbReadToken?: string,
+  skipOmdb = false
 ): Promise<{ item: MediaItem; rawRecs: Array<{ id: number; mediaType: MediaType }> } | null> {
+  const cachedItem = findCachedMediaByTmdb(tmdbId, mediaType);
+  if (cachedItem && skipOmdb) {
+    return { item: cachedItem, rawRecs: [] };
+  }
+
   const endpoint = mediaType === 'MOVIE' ? 'movie' : 'tv';
 
   try {
@@ -262,15 +530,18 @@ async function fetchFullTmdbMediaItem(
       },
       tmdbKey,
       tmdbReadToken,
-      3600
+      86400
     );
-    if (!res.ok) return null;
+    if (!res.ok) return cachedItem ? { item: cachedItem, rawRecs: [] } : null;
     const data = await res.json();
 
     const imdbId = data.imdb_id || data.external_ids?.imdb_id || `tmdb-${tmdbId}`;
-    const omdb = omdbKey && imdbId.startsWith('tt')
-      ? await fetchOmdbTelemetry(imdbId, omdbKey)
-      : null;
+    const omdb =
+      !skipOmdb && omdbKey && imdbId.startsWith('tt')
+        ? await fetchOmdbTelemetry(imdbId, omdbKey)
+        : imdbId.startsWith('tt')
+          ? getServerCache().omdbByImdb[imdbId] || null
+          : null;
 
     const title = data.title || data.name || 'Untitled';
     const dateStr = data.release_date || data.first_air_date || '';
@@ -444,9 +715,10 @@ async function fetchFullTmdbMediaItem(
       },
     };
 
+    cacheMediaItem(item);
     return { item, rawRecs };
   } catch {
-    return null;
+    return cachedItem ? { item: cachedItem, rawRecs: [] } : null;
   }
 }
 
@@ -700,11 +972,19 @@ async function fetchWikidataClusterByImdbId(
     });
   }
 
-  // Enrich posters & metadata via IMDb suggestion lookup / OMDb in parallel
+  // Enrich posters & metadata via IMDb suggestion lookup (reserve OMDb strictly for single-item inspection)
   const allRows = Array.from(rowsMap.values()).slice(0, singleItemOnly ? 1 : 12);
   const mediaItems: MediaItem[] = await Promise.all(
     allRows.map(async (row, idx) => {
-      const omdb = omdbKey ? await fetchOmdbTelemetry(row.imdbId, omdbKey) : null;
+      const cached = findCachedMediaByImdb(row.imdbId);
+      if (cached && (!singleItemOnly || !omdbKey)) {
+        return cached;
+      }
+
+      const omdb =
+        singleItemOnly && idx === 0 && omdbKey
+          ? await fetchOmdbTelemetry(row.imdbId, omdbKey)
+          : getServerCache().omdbByImdb[row.imdbId] || null;
       const sug = await searchImdbPublicSuggestions(row.title);
       const match =
         sug.find((s: { imdbId: string; posterUrl?: string; stars?: string }) => s.imdbId === row.imdbId) ||
@@ -744,7 +1024,7 @@ async function fetchWikidataClusterByImdbId(
 
       const deterministicScore = 7.6 + ((idx * 3) % 14) * 0.1;
 
-      return {
+      const built: MediaItem = {
         id: `imdb-${row.imdbId}`,
         tmdbId: parseInt(row.imdbId.replace(/\D/g, ''), 10) || 10000 + idx,
         imdbId: row.imdbId,
@@ -788,6 +1068,9 @@ async function fetchWikidataClusterByImdbId(
           sector: `LIVE-${row.imdbId.slice(2, 6)}`,
         },
       };
+
+      cacheMediaItem(built);
+      return built;
     })
   );
 
@@ -804,6 +1087,361 @@ async function fetchWikidataClusterByImdbId(
   return { focalItem, clusterItems };
 }
 
+/**
+ * Collaborator-Driven TMDB Auto-Discovery (0 OMDb calls, paced TMDB calls).
+ * Queries /search/person -> /person/{id}/combined_credits to find top Movies & TV Shows
+ * connected to an existing director, creator, actor, or composer in the graph.
+ */
+async function discoverByCollaboratorTmdb(
+  collaboratorName: string,
+  excludeKeys: Set<string>,
+  batchSize: number,
+  tmdbKey: string,
+  tmdbReadToken?: string
+): Promise<MediaItem[]> {
+  try {
+    const searchRes = await fetchTmdb(
+      '/search/person',
+      { query: collaboratorName, include_adult: 'false' },
+      tmdbKey,
+      tmdbReadToken,
+      86400
+    );
+    if (!searchRes.ok) return [];
+    const searchData = await searchRes.json();
+    const person = searchData.results?.[0];
+    if (!person?.id) return [];
+
+    const creditsRes = await fetchTmdb(
+      `/person/${person.id}/combined_credits`,
+      {},
+      tmdbKey,
+      tmdbReadToken,
+      86400
+    );
+    if (!creditsRes.ok) return [];
+    const creditsData = await creditsRes.json();
+
+    interface CandidateCredit {
+      id: number;
+      mediaType: MediaType;
+      title: string;
+      voteCount: number;
+      voteAverage: number;
+      popularity: number;
+    }
+
+    const candidatesMap = new Map<string, CandidateCredit>();
+
+    const addCandidate = (
+      raw: {
+        id?: number;
+        media_type?: string;
+        title?: string;
+        name?: string;
+        vote_count?: number;
+        vote_average?: number;
+        popularity?: number;
+        genre_ids?: number[];
+      },
+      priorityBoost = 1
+    ) => {
+      if (!raw?.id || (raw.media_type !== 'movie' && raw.media_type !== 'tv')) {
+        return;
+      }
+      // Exclude talk shows (10767), news (10763), reality (10764)
+      if (
+        Array.isArray(raw.genre_ids) &&
+        raw.genre_ids.some((g) => g === 10767 || g === 10763 || g === 10764)
+      ) {
+        return;
+      }
+      const mediaType: MediaType = raw.media_type === 'tv' ? 'TV' : 'MOVIE';
+      const title = (raw.title || raw.name || '').trim();
+      if (!title) return;
+
+      const tmdbKeyStr = `tmdb:${mediaType}:${raw.id}`;
+      const titleKeyStr = `title:${title.toLowerCase()}`;
+      if (excludeKeys.has(tmdbKeyStr) || excludeKeys.has(titleKeyStr)) {
+        return;
+      }
+
+      const voteCount = raw.vote_count || 0;
+      const voteAverage = raw.vote_average || 0;
+      if (voteCount < 45 || voteAverage < 6.2) return;
+
+      const existing = candidatesMap.get(tmdbKeyStr);
+      const score = (voteCount * 0.4 + (raw.popularity || 10) * 15) * priorityBoost;
+      if (!existing || score > existing.popularity) {
+        candidatesMap.set(tmdbKeyStr, {
+          id: raw.id,
+          mediaType,
+          title,
+          voteCount,
+          voteAverage,
+          popularity: score,
+        });
+      }
+    };
+
+    const crewList = Array.isArray(creditsData.crew) ? creditsData.crew : [];
+    for (const c of crewList) {
+      if (
+        c.job === 'Director' ||
+        c.job === 'Creator' ||
+        c.job === 'Executive Producer' ||
+        c.job === 'Screenplay' ||
+        c.job === 'Writer' ||
+        c.job === 'Original Music Composer' ||
+        c.job === 'Director of Photography'
+      ) {
+        addCandidate(c, c.job === 'Director' || c.job === 'Creator' ? 2.2 : 1.5);
+      }
+    }
+
+    const castList = Array.isArray(creditsData.cast) ? creditsData.cast : [];
+    for (const c of castList) {
+      if (typeof c.order === 'number' && c.order > 4) continue;
+      if (c.character && /himself|herself|self|guest|host/i.test(c.character)) {
+        continue;
+      }
+      addCandidate(c, typeof c.order === 'number' && c.order < 2 ? 1.8 : 1.1);
+    }
+
+    const sorted = Array.from(candidatesMap.values()).sort(
+      (a, b) => b.popularity - a.popularity
+    );
+
+    // Balance Movies and TV Shows when both exist for this collaborator
+    const movies = sorted.filter((c) => c.mediaType === 'MOVIE');
+    const tvShows = sorted.filter((c) => c.mediaType === 'TV');
+    const picked: CandidateCredit[] = [];
+    let mIdx = 0;
+    let tIdx = 0;
+    while (
+      picked.length < batchSize &&
+      (mIdx < movies.length || tIdx < tvShows.length)
+    ) {
+      if (mIdx < movies.length) picked.push(movies[mIdx++]);
+      if (picked.length < batchSize && tIdx < tvShows.length) {
+        picked.push(tvShows[tIdx++]);
+      }
+    }
+
+    const items: MediaItem[] = [];
+    for (const cand of picked) {
+      // skipOmdb = true so automatic background expansion uses 0 OMDb calls
+      const enriched = await fetchFullTmdbMediaItem(
+        cand.id,
+        cand.mediaType,
+        tmdbKey,
+        undefined,
+        tmdbReadToken,
+        true
+      );
+      if (enriched?.item) {
+        items.push(enriched.item);
+      }
+    }
+
+    return items;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Zero-Key Public Collaborator Discovery via Wikidata SPARQL + IMDb Suggestions (0 API keys required)
+ */
+async function discoverByCollaboratorWikidata(
+  collaboratorName: string,
+  excludeKeys: Set<string>,
+  batchSize: number
+): Promise<MediaItem[]> {
+  const safeName = collaboratorName.replace(/"/g, '');
+  const sparql = `
+  SELECT ?item ?itemLabel ?imdb ?pubYear ?isTv
+         (GROUP_CONCAT(DISTINCT ?dirLabel; separator="|") AS ?dirs)
+         (GROUP_CONCAT(DISTINCT ?castLabel; separator="|") AS ?actors)
+         (GROUP_CONCAT(DISTINCT ?compLabel; separator="|") AS ?comps)
+         (GROUP_CONCAT(DISTINCT ?genreLabel; separator="|") AS ?genres)
+  WHERE {
+    {
+      SELECT DISTINCT ?item WHERE {
+        ?person rdfs:label "${safeName}"@en .
+        { ?item wdt:P57 ?person . }
+        UNION { ?item wdt:P170 ?person . }
+        UNION { ?item wdt:P161 ?person . }
+        UNION { ?item wdt:P86 ?person . }
+        ?item wdt:P345 ?anyImdb .
+      } LIMIT 16
+    }
+    ?item wdt:P345 ?imdb .
+    OPTIONAL { ?item wdt:P577 ?date . BIND(YEAR(?date) AS ?pubYear) }
+    OPTIONAL {
+      ?item wdt:P31 ?inst .
+      FILTER(?inst IN (wd:Q5398426, wd:Q1259759))
+      BIND(true AS ?isTv)
+    }
+    OPTIONAL {
+      ?item wdt:P170 ?creator .
+      ?creator rdfs:label ?dirLabel .
+      FILTER(LANG(?dirLabel) = "en")
+    }
+    OPTIONAL {
+      FILTER(!BOUND(?isTv))
+      ?item wdt:P57 ?dir .
+      ?dir rdfs:label ?dirLabel .
+      FILTER(LANG(?dirLabel) = "en")
+    }
+    OPTIONAL { ?item wdt:P161 ?cast . ?cast rdfs:label ?castLabel . FILTER(LANG(?castLabel) = "en") }
+    OPTIONAL { ?item wdt:P86 ?comp . ?comp rdfs:label ?compLabel . FILTER(LANG(?compLabel) = "en") }
+    OPTIONAL { ?item wdt:P136 ?genre . ?genre rdfs:label ?genreLabel . FILTER(LANG(?genreLabel) = "en") }
+    SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+  }
+  GROUP BY ?item ?itemLabel ?imdb ?pubYear ?isTv
+  LIMIT 14
+  `;
+
+  try {
+    const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(
+      sparql
+    )}`;
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/sparql-results+json',
+        'User-Agent': 'SixDegreesSpatialEngine/2.4',
+      },
+      next: { revalidate: 86400 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const bindings = data?.results?.bindings || [];
+
+    const candidateRows: WikidataFilmRow[] = [];
+    for (const b of bindings) {
+      const rowImdb = b.imdb?.value;
+      const rowTitle = b.itemLabel?.value;
+      if (!rowImdb || !rowTitle || /^Q\d+$/.test(rowTitle)) continue;
+      if (
+        excludeKeys.has(`imdb:${rowImdb}`) ||
+        excludeKeys.has(`title:${rowTitle.toLowerCase()}`)
+      ) {
+        continue;
+      }
+
+      const splitClean = (val?: string, max = 5) =>
+        val
+          ? Array.from(
+              new Set(
+                val
+                  .split('|')
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              )
+            ).slice(0, max)
+          : [];
+
+      const cleanGenres = splitClean(b.genres?.value, 4).map((g) =>
+        g.toLowerCase().includes('science fiction')
+          ? 'Sci-Fi'
+          : g
+              .replace(/\s+film$/i, '')
+              .replace(/\s+television series$/i, '')
+              .replace(/^./, (c) => c.toUpperCase())
+      );
+
+      candidateRows.push({
+        imdbId: rowImdb,
+        title: rowTitle,
+        year: b.pubYear?.value ? parseInt(b.pubYear.value, 10) : 2020,
+        mediaType: b.isTv?.value === 'true' ? 'TV' : 'MOVIE',
+        directors: splitClean(b.dirs?.value, 2).filter(isValidPersonName),
+        writers: [],
+        cast: splitClean(b.actors?.value, 4).filter(isValidPersonName),
+        composers: splitClean(b.comps?.value, 1).filter(isValidPersonName),
+        cinematographers: [],
+        genres: cleanGenres.length > 0 ? cleanGenres : ['Drama'],
+        tropes: [],
+      });
+      if (candidateRows.length >= batchSize) break;
+    }
+
+    const builtItems: MediaItem[] = [];
+    for (let idx = 0; idx < candidateRows.length; idx++) {
+      const row = candidateRows[idx];
+      const cached = findCachedMediaByImdb(row.imdbId);
+      if (cached) {
+        builtItems.push(cached);
+        continue;
+      }
+
+      const sug = await searchImdbPublicSuggestions(row.title);
+      const match =
+        sug.find((s: { imdbId: string }) => s.imdbId === row.imdbId) || sug[0];
+      const imdbStars = match?.stars
+        ? match.stars
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(isValidPersonName)
+        : [];
+      const actorsList = Array.from(
+        new Set([...row.cast, ...imdbStars])
+      ).slice(0, 4);
+
+      const deterministicScore = 7.7 + ((idx * 3) % 12) * 0.1;
+      const item: MediaItem = {
+        id: `imdb-${row.imdbId}`,
+        tmdbId: parseInt(row.imdbId.replace(/\D/g, ''), 10) || 20000 + idx,
+        imdbId: row.imdbId,
+        title: row.title,
+        year: row.year || 2021,
+        mediaType: row.mediaType,
+        tagline: `${row.year} · ${row.genres.slice(0, 2).join(' / ')}`,
+        synopsis: `${row.title} (${row.year})${
+          row.directors[0] ? ` directed by ${row.directors[0]}` : ''
+        }${
+          actorsList.length > 0
+            ? `, starring ${actorsList.slice(0, 3).join(', ')}`
+            : ''
+        }.`,
+        posterUrl: match?.posterUrl || '',
+        backdropColor: row.mediaType === 'MOVIE' ? '#234B6E' : '#6B2D46',
+        imdbRating: Number(deterministicScore.toFixed(1)),
+        rottenTomatoes: Math.min(97, Math.round(deterministicScore * 10.6)),
+        metascore: Math.min(94, Math.round(deterministicScore * 9.8)),
+        contentRating: row.mediaType === 'TV' ? 'TV-MA' : 'PG-13',
+        runtimeOrSeasons: row.mediaType === 'TV' ? '2 Seasons' : '2h 10m',
+        directors: row.directors,
+        writers: [],
+        primaryGenre: row.genres[0] || 'Drama',
+        genres: row.genres,
+        tropes: [],
+        cast: actorsList.map((name, i) => ({
+          name,
+          billing: i < 2 ? 'LEAD' : 'SUPPORTING',
+        })),
+        composers: row.composers,
+        cinematographers: [],
+        coWatchIds: [],
+        streamingByRegion: makeFallbackRegionalStreaming(row.title),
+        coordinates: {
+          ra: `${((idx + 6) % 24).toString().padStart(2, '0')}h 24m`,
+          dec: `+${((idx * 9 + 15) % 80).toString().padStart(2, '0')}° 12′`,
+          sector: `AUTO-${row.imdbId.slice(2, 6)}`,
+        },
+      };
+
+      cacheMediaItem(item);
+      builtItems.push(item);
+    }
+
+    return builtItems;
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action') || 'search';
@@ -812,13 +1450,112 @@ export async function GET(req: NextRequest) {
   const tmdbReadToken = process.env.TMDB_READ_ACCESS_TOKEN || '';
   const omdbKey =
     searchParams.get('omdbKey') || process.env.OMDB_API_KEY || '';
+  const firebaseProjectId =
+    searchParams.get('firebaseProjectId') ||
+    process.env.FIREBASE_PROJECT_ID ||
+    '';
+  const firebaseApiKey =
+    searchParams.get('firebaseApiKey') || process.env.FIREBASE_API_KEY || '';
   const hasTmdbAuth = Boolean(tmdbKey || tmdbReadToken);
 
-  // ==================== ACTION 0: SERVER KEY STATUS (SAFE BOOLEANS ONLY) ====================
+  // Hydrate server cache from Cloud Firestore on cold start (or every 10m)
+  await ensureFirestoreHydrated(firebaseProjectId, firebaseApiKey);
+  const serverCache = getServerCache();
+  const firestoreState = getFirestoreTelemetry(
+    firebaseProjectId,
+    firebaseApiKey
+  );
+
+  // ==================== ACTION 0: SERVER KEY STATUS & QUOTA + FIRESTORE TELEMETRY ====================
   if (action === 'status') {
     return NextResponse.json({
       tmdb: hasTmdbAuth,
       omdb: Boolean(omdbKey),
+      firestore: firestoreState,
+      quota: {
+        omdbCallsToday: serverCache.omdbCallsToday,
+        omdbDailySafeLimit: OMDB_DAILY_SAFE_LIMIT,
+        tmdbCallsToday: serverCache.tmdbCallsToday,
+        cachedTitlesCount: Object.keys(serverCache.items).length,
+      },
+    });
+  }
+
+  // ==================== ACTION 0A: HYDRATE PERSISTENT SERVER & FIRESTORE CACHE ====================
+  if (action === 'cached-catalog') {
+    return NextResponse.json({
+      items: Object.values(serverCache.items),
+      crawledCollaborators: serverCache.crawledCollaborators,
+      firestore: firestoreState,
+      quota: {
+        omdbCallsToday: serverCache.omdbCallsToday,
+        omdbDailySafeLimit: OMDB_DAILY_SAFE_LIMIT,
+        tmdbCallsToday: serverCache.tmdbCallsToday,
+        cachedTitlesCount: Object.keys(serverCache.items).length,
+      },
+    });
+  }
+
+  // ==================== ACTION 0C: AUTOMATIC QUOTA-SAFE CATALOG EXPANSION ====================
+  if (action === 'auto-expand') {
+    const collaborator =
+      searchParams.get('collaborator')?.trim() || 'Christopher Nolan';
+    const batchSize = Math.min(
+      8,
+      Math.max(1, parseInt(searchParams.get('batchSize') || '5', 10))
+    );
+    const excludeRaw = searchParams.get('exclude') || '';
+    const excludeKeys = new Set(
+      excludeRaw
+        .split('|')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+
+    let discovered: MediaItem[] = [];
+    let source = 'PUBLIC_LIVE_GRAPH';
+
+    if (hasTmdbAuth) {
+      discovered = await discoverByCollaboratorTmdb(
+        collaborator,
+        excludeKeys,
+        batchSize,
+        tmdbKey,
+        tmdbReadToken
+      );
+      source = 'TMDB_AUTO_EXPAND';
+    }
+
+    if (discovered.length === 0) {
+      discovered = await discoverByCollaboratorWikidata(
+        collaborator,
+        excludeKeys,
+        batchSize
+      );
+      source = 'WIKIDATA_AUTO_EXPAND';
+    }
+
+    const updatedCache = getServerCache();
+    const collabLower = collaborator.toLowerCase();
+    if (!updatedCache.crawledCollaborators.includes(collabLower)) {
+      updatedCache.crawledCollaborators.push(collabLower);
+      saveServerCache();
+    }
+
+    // Persist the newly discovered batch + collaborator state to Cloud Firestore (1-2 writes total)
+    await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
+
+    return NextResponse.json({
+      collaborator,
+      items: discovered,
+      source,
+      firestore: getFirestoreTelemetry(firebaseProjectId, firebaseApiKey),
+      quota: {
+        omdbCallsToday: updatedCache.omdbCallsToday,
+        omdbDailySafeLimit: OMDB_DAILY_SAFE_LIMIT,
+        tmdbCallsToday: updatedCache.tmdbCallsToday,
+        cachedTitlesCount: Object.keys(updatedCache.items).length,
+      },
     });
   }
 
@@ -841,6 +1578,7 @@ export async function GET(req: NextRequest) {
         tmdbReadToken
       );
       if (enriched?.item) {
+        await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
         return NextResponse.json({ item: enriched.item, source: 'TMDB_OMDB' });
       }
     }
@@ -869,6 +1607,7 @@ export async function GET(req: NextRequest) {
               tmdbReadToken
             );
             if (enriched?.item) {
+              await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
               return NextResponse.json({ item: enriched.item, source: 'TMDB_OMDB' });
             }
           }
@@ -896,6 +1635,7 @@ export async function GET(req: NextRequest) {
         omdbKey,
         true
       );
+      await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
       return NextResponse.json({
         item: singleLookup.focalItem,
         source: 'PUBLIC_LIVE_GRAPH',
@@ -1004,17 +1744,19 @@ export async function GET(req: NextRequest) {
       );
       if (focalData) {
         const topRecs = focalData.rawRecs.slice(0, 12);
-        const recResults = await Promise.all(
-          topRecs.map((r) =>
-            fetchFullTmdbMediaItem(
+        const recResults: Array<{ item: MediaItem; rawRecs: Array<{ id: number; mediaType: MediaType }> } | null> = [];
+        for (const r of topRecs) {
+          recResults.push(
+            await fetchFullTmdbMediaItem(
               r.id,
               r.mediaType,
               tmdbKey,
-              omdbKey,
-              tmdbReadToken
+              undefined,
+              tmdbReadToken,
+              true
             )
-          )
-        );
+          );
+        }
         // Only retain recommended items that share a concrete craft or narrative connection
         const clusterItems = recResults
           .filter((r): r is NonNullable<typeof r> => r !== null)
@@ -1024,6 +1766,7 @@ export async function GET(req: NextRequest) {
           );
 
         focalData.item.coWatchIds = clusterItems.map((c) => c.id);
+        await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
 
         return NextResponse.json({
           focalItem: focalData.item,
@@ -1059,17 +1802,19 @@ export async function GET(req: NextRequest) {
             );
             if (focalData) {
               const topRecs = focalData.rawRecs.slice(0, 12);
-              const recResults = await Promise.all(
-                topRecs.map((r) =>
-                  fetchFullTmdbMediaItem(
+              const recResults: Array<{ item: MediaItem; rawRecs: Array<{ id: number; mediaType: MediaType }> } | null> = [];
+              for (const r of topRecs) {
+                recResults.push(
+                  await fetchFullTmdbMediaItem(
                     r.id,
                     r.mediaType,
                     tmdbKey,
-                    omdbKey,
-                    tmdbReadToken
+                    undefined,
+                    tmdbReadToken,
+                    true
                   )
-                )
-              );
+                );
+              }
               const clusterItems = recResults
                 .filter((r): r is NonNullable<typeof r> => r !== null)
                 .map((r) => r.item)
@@ -1077,6 +1822,7 @@ export async function GET(req: NextRequest) {
                   hasConcreteSharedConnection(calculateSimilarity(focalData.item, item))
                 );
               focalData.item.coWatchIds = clusterItems.map((c) => c.id);
+              await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
 
               return NextResponse.json({
                 focalItem: focalData.item,
@@ -1110,6 +1856,7 @@ export async function GET(req: NextRequest) {
         omdbKey,
         false
       );
+      await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
       return NextResponse.json({
         ...liveCluster,
         source: 'PUBLIC_LIVE_GRAPH',

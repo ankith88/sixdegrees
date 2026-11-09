@@ -15,6 +15,12 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   X,
+  Loader2,
+  Play,
+  Pause,
+  Plus,
+  ShieldCheck,
+  Database,
 } from 'lucide-react';
 import {
   EntityNodeType,
@@ -24,6 +30,12 @@ import {
   GravityPreset,
   MediaItem,
 } from '@/lib/types';
+import {
+  FirestoreSyncTelemetry,
+  QuotaTelemetry,
+  getActiveApiKeys,
+  saveRuntimeApiKeys,
+} from '@/lib/api';
 
 interface LeftSidebarProps {
   focalItem: MediaItem | null;
@@ -46,6 +58,18 @@ interface LeftSidebarProps {
   onResetAllVisibility?: () => void;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
+  // Auto-Catalog Expansion & Cloud Firestore Props
+  autoExpandEnabled?: boolean;
+  onToggleAutoExpand?: () => void;
+  onTriggerExpandNow?: () => void;
+  isAutoExpanding?: boolean;
+  autoExpandTarget?: number;
+  lastCollaboratorCrawled?: string | null;
+  quotaTelemetry?: QuotaTelemetry | null;
+  firestoreTelemetry?: FirestoreSyncTelemetry | null;
+  expandedCount?: number;
+  onResetExpandedCatalog?: () => void;
+  onFirestoreConfigUpdated?: () => void;
 }
 
 export function LeftSidebar({
@@ -65,8 +89,22 @@ export function LeftSidebar({
   onResetAllVisibility,
   mobileOpen = false,
   onCloseMobile,
+  autoExpandEnabled = true,
+  onToggleAutoExpand,
+  onTriggerExpandNow,
+  isAutoExpanding = false,
+  autoExpandTarget = 180,
+  lastCollaboratorCrawled = null,
+  quotaTelemetry = null,
+  firestoreTelemetry = null,
+  expandedCount = 0,
+  onResetExpandedCatalog,
+  onFirestoreConfigUpdated,
 }: LeftSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showFirestoreModal, setShowFirestoreModal] = useState(false);
+  const [projectIdInput, setProjectIdInput] = useState('');
+  const [apiKeyInput, setApiKeyInput] = useState('');
 
   const presets: Array<{
     id: GravityPreset;
@@ -659,6 +697,256 @@ export function LeftSidebar({
                 </button>
               );
             })}
+          </div>
+        </section>
+
+        {/* 5. Quota-Safe Auto-Catalog Expansion */}
+        <section className="pt-4 border-t border-[#D5CCB9] space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck
+                className="w-3.5 h-3.5 text-[#2A6B53] shrink-0"
+                aria-hidden="true"
+              />
+              <span className="text-xs font-bold text-[#171412]">
+                Auto-Expand Archive
+              </span>
+            </div>
+
+            {onToggleAutoExpand && (
+              <button
+                type="button"
+                onClick={onToggleAutoExpand}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
+                  autoExpandEnabled
+                    ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                    : 'bg-[#E5DEC9] text-[#52483E] border-[#C8BEAA]'
+                }`}
+                title={
+                  autoExpandEnabled
+                    ? 'Pause automatic background trickle'
+                    : 'Resume automatic background trickle'
+                }
+              >
+                {autoExpandEnabled ? (
+                  <>
+                    <Pause className="w-2.5 h-2.5" aria-hidden="true" />
+                    Active
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-2.5 h-2.5" aria-hidden="true" />
+                    Paused
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-[#FBF8F2] border border-[#C8BEAA] space-y-2">
+            {/* Progress toward target catalog size */}
+            <div className="flex items-center justify-between text-[11px] font-tabular">
+              <span className="text-[#52483E]">
+                Archive Size:{' '}
+                <strong className="text-[#171412]">
+                  {mediaCounts?.all ?? totalMediaCount}
+                </strong>{' '}
+                / {autoExpandTarget}
+              </span>
+              {expandedCount > 0 && (
+                <span className="text-[#2A6B53] font-semibold">
+                  +{expandedCount} Added
+                </span>
+              )}
+            </div>
+
+            <div className="w-full h-1.5 rounded-full bg-[#E5DEC9] overflow-hidden">
+              <div
+                className="h-full bg-[#2A6B53] transition-all duration-500"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.round(
+                      ((mediaCounts?.all ?? totalMediaCount) /
+                        Math.max(1, autoExpandTarget)) *
+                        100
+                    )
+                  )}%`,
+                }}
+              />
+            </div>
+
+            {lastCollaboratorCrawled && (
+              <div className="text-[10px] text-[#52483E] truncate flex items-center gap-1">
+                {isAutoExpanding ? (
+                  <Loader2
+                    className="w-2.5 h-2.5 animate-spin text-[#B8292F] shrink-0"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <span className="truncate">
+                  {isAutoExpanding ? 'Crawling:' : 'Last hub:'}{' '}
+                  <strong className="text-[#171412]">
+                    {lastCollaboratorCrawled}
+                  </strong>
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5 pt-0.5">
+              {onTriggerExpandNow && (
+                <button
+                  type="button"
+                  disabled={isAutoExpanding}
+                  onClick={onTriggerExpandNow}
+                  className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 px-2 rounded text-[11px] font-semibold bg-[#EFE8DA] hover:bg-[#B8292F] text-[#171412] hover:text-[#FBF8F2] border border-[#C8BEAA] hover:border-[#8C1D22] disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {isAutoExpanding ? (
+                    <>
+                      <Loader2
+                        className="w-3 h-3 animate-spin"
+                        aria-hidden="true"
+                      />
+                      Expanding…
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3 h-3" aria-hidden="true" />
+                      Expand +5 Now
+                    </>
+                  )}
+                </button>
+              )}
+
+              {expandedCount > 0 && onResetExpandedCatalog && (
+                <button
+                  type="button"
+                  onClick={onResetExpandedCatalog}
+                  className="py-1.5 px-2 rounded text-[10px] font-semibold text-[#6B5E50] hover:text-[#8C1D22] hover:bg-[#EFE8DA] border border-transparent hover:border-[#C8BEAA] transition-colors cursor-pointer"
+                  title="Reset auto-expanded titles back to base seed archive"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {/* Free-Tier Quota Guard & Cloud Firestore Telemetry */}
+            <div className="pt-1.5 border-t border-[#E5DEC9] space-y-1.5 text-[10px] font-tabular text-[#6B5E50]">
+              <div className="flex items-center justify-between">
+                <span>
+                  OMDb Quota:{' '}
+                  <strong className="text-[#171412]">
+                    {quotaTelemetry?.omdbCallsToday ?? 0}
+                  </strong>
+                  /{quotaTelemetry?.omdbDailySafeLimit ?? 750}
+                </span>
+                <span className="text-[#2A6B53] font-medium">
+                  0 OMDb on Bulk
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1 min-w-0 truncate">
+                  <Database
+                    className={`w-3 h-3 shrink-0 ${
+                      firestoreTelemetry?.enabled
+                        ? 'text-[#2A6B53]'
+                        : 'text-[#8F816B]'
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="truncate">
+                    Firestore:{' '}
+                    <strong
+                      className={
+                        firestoreTelemetry?.enabled
+                          ? 'text-[#1E563F]'
+                          : 'text-[#52483E]'
+                      }
+                    >
+                      {firestoreTelemetry?.enabled
+                        ? firestoreTelemetry.projectId
+                        : 'Local Disk'}
+                    </strong>
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = getActiveApiKeys();
+                    setProjectIdInput(
+                      current.firebaseProjectId ||
+                        firestoreTelemetry?.projectId ||
+                        ''
+                    );
+                    setApiKeyInput(current.firebaseApiKey || '');
+                    setShowFirestoreModal((v) => !v);
+                  }}
+                  className="text-[10px] font-semibold text-[#234B6E] hover:underline shrink-0 cursor-pointer"
+                >
+                  {firestoreTelemetry?.enabled ? 'Config' : 'Connect'}
+                </button>
+              </div>
+
+              {firestoreTelemetry?.enabled && (
+                <div className="flex items-center justify-between text-[9px] text-[#6B5E50]">
+                  <span>
+                    Bundled Reads: {firestoreTelemetry.firestoreReadsSession} ·
+                    Writes: {firestoreTelemetry.firestoreWritesSession}
+                  </span>
+                  <span>Spark Free Tier</span>
+                </div>
+              )}
+
+              {showFirestoreModal && (
+                <div className="pt-1.5 mt-1 border-t border-[#D5CCB9] space-y-1.5">
+                  <div className="text-[10px] font-semibold text-[#171412]">
+                    Cloud Firestore (Free Tier)
+                  </div>
+                  <input
+                    type="text"
+                    value={projectIdInput}
+                    onChange={(e) => setProjectIdInput(e.target.value)}
+                    placeholder="FIREBASE_PROJECT_ID"
+                    className="w-full px-2 py-1 rounded text-[11px] bg-[#EFE8DA] border border-[#C8BEAA] text-[#171412] placeholder:text-[#6B5E50] focus:outline-none focus:border-[#B8292F]"
+                  />
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="FIREBASE_API_KEY (Web API Key)"
+                    className="w-full px-2 py-1 rounded text-[11px] bg-[#EFE8DA] border border-[#C8BEAA] text-[#171412] placeholder:text-[#6B5E50] focus:outline-none focus:border-[#B8292F]"
+                  />
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowFirestoreModal(false)}
+                      className="px-2 py-0.5 rounded text-[10px] text-[#52483E] hover:bg-[#E5DEC9] cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const existing = getActiveApiKeys();
+                        saveRuntimeApiKeys(
+                          existing.tmdbKey,
+                          existing.omdbKey,
+                          projectIdInput,
+                          apiKeyInput
+                        );
+                        setShowFirestoreModal(false);
+                        onFirestoreConfigUpdated?.();
+                      }}
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#2A6B53] text-[#FBF8F2] hover:bg-[#1E563F] cursor-pointer"
+                    >
+                      Save &amp; Sync
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </div>
