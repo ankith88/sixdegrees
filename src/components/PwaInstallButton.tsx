@@ -9,7 +9,7 @@ import {
   PlusSquare,
   Monitor,
   Smartphone,
-  Sparkles,
+  Bookmark,
 } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -218,7 +218,7 @@ export function PwaInstallButton({
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
         >
           <div
-            className="fixed inset-0 bg-[#171412]/45 backdrop-blur-xs"
+            className="fixed inset-0 bg-[#171412]/45"
             onClick={() => setShowModal(false)}
             aria-hidden="true"
           />
@@ -259,7 +259,7 @@ export function PwaInstallButton({
 
             <div className="p-3 rounded-lg bg-[#EFE8DA]/70 border border-[#D5CCB9] space-y-2 text-xs text-[#52483E]">
               <div className="flex items-center gap-2 font-semibold text-[#171412]">
-                <Sparkles
+                <Bookmark
                   className="w-3.5 h-3.5 text-[#B8292F] shrink-0"
                   aria-hidden="true"
                 />

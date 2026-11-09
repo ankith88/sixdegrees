@@ -7,10 +7,13 @@ import { SpatialViewport } from './SpatialViewport';
 import { SimilarityMatrixView } from './SimilarityMatrixView';
 import { WatchSuggestionsView } from './WatchSuggestionsView';
 import { RightInspectorCard } from './RightInspectorCard';
+import { UserProfileModal } from './UserProfileModal';
 import {
   getInitialMediaLibrary,
   getInitialWatchedIds,
   saveWatchedIdsToStorage,
+  getInitialInterestedIds,
+  saveInterestedIdsToStorage,
   fetchLiveSuggestions,
   fetchMediaFromTmdbAndOmdb,
   fetchSingleLiveMedia,
@@ -27,6 +30,20 @@ import {
   QuotaTelemetry,
   FirestoreSyncTelemetry,
 } from '@/lib/api';
+import {
+  createOrUpdateUserProfile,
+  deleteSavedUserProfile,
+  fetchServerProfilesList,
+  fetchUserProfileFromServer,
+  getInitialActiveUserProfile,
+  getSavedUserProfiles,
+  importUserProfileJson,
+  setActiveUserIdInStorage,
+  signInWithCredentials,
+  signInWithGoogleIdToken,
+  syncUserProfileToServer,
+  updateSavedUserLists,
+} from '@/lib/user-profile';
 import { SEED_MEDIA_ITEMS } from '@/lib/seed-data';
 import {
   buildSpatialGraph,
@@ -39,15 +56,26 @@ import {
   EntityNodeType,
   EntityVisibility,
   ForceSettings,
+  GraphFilterState,
+  GraphLayoutMode,
   GraphNode,
+  GraphScopeMode,
   GravityPreset,
+  LabelDisplayMode,
   MediaItem,
+  NodeColorMode,
+  NodeSizeMode,
   RegionCode,
   SimilarityBreakdown,
   SuggestionFilterState,
+  UserAuthMode,
+  UserProfile,
   ViewMode,
 } from '@/lib/types';
-import { DEFAULT_SUGGESTION_FILTERS } from '@/lib/recommendations';
+import {
+  DEFAULT_SUGGESTION_FILTERS,
+  computeWatchSuggestions,
+} from '@/lib/recommendations';
 import {
   Loader2,
   CheckCircle2,
@@ -114,18 +142,115 @@ export function SixDegreesApp() {
     string | null
   >(null);
 
-  // Watched Titles & Smart Suggestion Studio State
-  const [watchedIds, setWatchedIds] = useState<string[]>(() =>
-    getInitialWatchedIds()
+  // User Profiles & Personal Watched Graph State
+  const [savedProfiles, setSavedProfiles] = useState<UserProfile[]>(() =>
+    getSavedUserProfiles()
   );
+  const [activeUser, setActiveUser] = useState<UserProfile | null>(() =>
+    getInitialActiveUserProfile()
+  );
+  const [profileModalOpen, setProfileModalOpen] = useState<boolean>(false);
+  const [isSyncingProfile, setIsSyncingProfile] = useState<boolean>(false);
+  const [graphScope, setGraphScope] = useState<GraphScopeMode>(() => {
+    const initialUser = getInitialActiveUserProfile();
+    return initialUser?.defaultGraphScope || 'FULL_ARCHIVE';
+  });
+
+  // Watched & Interested Lists + Smart Suggestion Studio State (Only populated for logged-in users)
+  const [watchedIds, setWatchedIds] = useState<string[]>(() => {
+    const initialUser = getInitialActiveUserProfile();
+    return initialUser ? initialUser.watchedIds || [] : [];
+  });
+  const [interestedIds, setInterestedIds] = useState<string[]>(() => {
+    const initialUser = getInitialActiveUserProfile();
+    return initialUser ? initialUser.interestedIds || [] : [];
+  });
   const [suggestionFilters, setSuggestionFilters] =
     useState<SuggestionFilterState>(DEFAULT_SUGGESTION_FILTERS);
   const [isFetchingLiveSuggestions, setIsFetchingLiveSuggestions] =
     useState<boolean>(false);
 
+  // Movie Map REA: Multi-faceted Filters, Layout Projection, Color & Size Modes, and Labels
+  const [graphFilters, setGraphFilters] = useState<GraphFilterState>({
+    selectedGenres: [],
+    selectedTropes: [],
+    matchMode: 'OR',
+    filterBehavior: 'DIM',
+    yearRange: [1970, 2030],
+    minImdbRating: 0,
+    watchedFilter: 'ALL',
+    activeClusterId: null,
+    searchHighlightQuery: '',
+  });
+  const [layoutMode, setLayoutMode] =
+    useState<GraphLayoutMode>('FORCE_CONSTELLATION');
+  const [colorMode, setColorMode] = useState<NodeColorMode>('CATEGORY');
+  const [sizeMode, setSizeMode] = useState<NodeSizeMode>('RATING');
+  const [labelMode, setLabelMode] = useState<LabelDisplayMode>('AUTO');
+
+  // Restore any custom watched or interested MediaItems stored inside the active user's profile
   useEffect(() => {
+    const customList = [
+      ...(activeUser?.watchedCustomItems || []),
+      ...(activeUser?.interestedCustomItems || []),
+    ];
+    if (customList.length === 0) return;
+    setMediaLibrary((prev) => {
+      const map = new Map<string, MediaItem>();
+      for (const item of prev) map.set(item.id, item);
+      let changed = false;
+      for (const custom of customList) {
+        if (custom?.id && !map.has(custom.id)) {
+          map.set(custom.id, custom);
+          changed = true;
+        }
+      }
+      return changed ? Array.from(map.values()) : prev;
+    });
+  }, [
+    activeUser?.id,
+    activeUser?.watchedCustomItems,
+    activeUser?.interestedCustomItems,
+  ]);
+
+  // Persist watchedIds & interestedIds strictly for logged-in activeUser
+  useEffect(() => {
+    if (!activeUser) return;
     saveWatchedIdsToStorage(watchedIds);
-  }, [watchedIds]);
+    saveInterestedIdsToStorage(interestedIds);
+
+    const { profile: updated, allProfiles } = updateSavedUserLists(
+      activeUser.id,
+      watchedIds,
+      interestedIds,
+      mediaLibrary
+    );
+    if (updated) {
+      setSavedProfiles(allProfiles);
+      setActiveUser(updated);
+      const timer = setTimeout(() => {
+        syncUserProfileToServer(updated);
+      }, 450);
+      return () => clearTimeout(timer);
+    }
+  }, [watchedIds, interestedIds, activeUser?.id, mediaLibrary]);
+
+  // Hydrate server-side user profiles list on mount so profiles created in previous sessions are available
+  useEffect(() => {
+    let cancelled = false;
+    fetchServerProfilesList().then((serverProfiles) => {
+      if (cancelled || serverProfiles.length === 0) return;
+      setSavedProfiles((prev) => {
+        const map = new Map<string, UserProfile>();
+        for (const p of serverProfiles) map.set(p.handle, p);
+        for (const p of prev) map.set(p.handle, p);
+        return Array.from(map.values());
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setSuggestionFilters((prev) => ({
@@ -407,12 +532,32 @@ export function SixDegreesApp() {
     []
   );
 
-  // Build spatial graph dynamically whenever focalId, preset, filters, or visibility change
+  // Compute top suggested media IDs for WATCHED_PLUS_SUGGESTIONS personal graph mode
+  const suggestedMediaIdsForGraph = useMemo(() => {
+    if (graphScope !== 'WATCHED_PLUS_SUGGESTIONS') return [];
+    const watchedSet = new Set(watchedIds);
+    const recs = computeWatchSuggestions(
+      mediaLibrary,
+      watchedSet,
+      {
+        ...DEFAULT_SUGGESTION_FILTERS,
+        preset,
+        mediaFilter,
+        hideWatched: true,
+      },
+      region
+    );
+    return recs.slice(0, 8).map((r) => r.item.id);
+  }, [graphScope, mediaLibrary, watchedIds, preset, mediaFilter, region]);
+
+  // Build spatial graph dynamically whenever focalId, preset, filters, visibility, or graphScope change
   const {
     nodes,
     links,
     focalItem: graphFocalItem,
     rankedMatches,
+    clusters,
+    matchingMediaCount,
   } = useMemo(() => {
     return buildSpatialGraph({
       items: mediaLibrary,
@@ -421,8 +566,31 @@ export function SixDegreesApp() {
       mediaFilter,
       forceSettings,
       visibility,
+      graphScope,
+      watchedIds,
+      interestedIds,
+      suggestedMediaIds: suggestedMediaIdsForGraph,
+      graphFilters,
+      layoutMode,
+      colorMode,
+      sizeMode,
     });
-  }, [mediaLibrary, focalId, preset, mediaFilter, forceSettings, visibility]);
+  }, [
+    mediaLibrary,
+    focalId,
+    preset,
+    mediaFilter,
+    forceSettings,
+    visibility,
+    graphScope,
+    watchedIds,
+    interestedIds,
+    suggestedMediaIdsForGraph,
+    graphFilters,
+    layoutMode,
+    colorMode,
+    sizeMode,
+  ]);
 
   const focalItem: MediaItem | null = useMemo(() => {
     if (!focalId) return null;
@@ -476,26 +644,78 @@ export function SixDegreesApp() {
     forceSettings.matchThreshold,
   ]);
 
-  // Filtered media items for the right catalogue index
+  // Filtered media items for the right catalogue index (respects personal graphScope)
   const activeMediaItems = useMemo(() => {
+    const watchedSet = new Set(watchedIds);
+    const interestedSet = new Set(interestedIds);
+    const suggestedSet = new Set(suggestedMediaIdsForGraph);
     return mediaLibrary.filter((item) => {
+      if (graphScope === 'WATCHED_ONLY' && !watchedSet.has(item.id)) {
+        return false;
+      }
+      if (graphScope === 'INTERESTED_ONLY' && !interestedSet.has(item.id)) {
+        return false;
+      }
+      if (
+        graphScope === 'WATCHED_AND_INTERESTED' &&
+        !watchedSet.has(item.id) &&
+        !interestedSet.has(item.id)
+      ) {
+        return false;
+      }
+      if (
+        graphScope === 'WATCHED_PLUS_SUGGESTIONS' &&
+        !watchedSet.has(item.id) &&
+        !suggestedSet.has(item.id)
+      ) {
+        return false;
+      }
       if (mediaFilter === 'MOVIE' && item.mediaType !== 'MOVIE') return false;
       if (mediaFilter === 'TV' && item.mediaType !== 'TV') return false;
       if (!visibility.MOVIE && item.mediaType === 'MOVIE') return false;
       if (!visibility.TV && item.mediaType === 'TV') return false;
       return true;
     });
-  }, [mediaLibrary, mediaFilter, visibility.MOVIE, visibility.TV]);
+  }, [
+    mediaLibrary,
+    graphScope,
+    watchedIds,
+    interestedIds,
+    suggestedMediaIdsForGraph,
+    mediaFilter,
+    visibility.MOVIE,
+    visibility.TV,
+  ]);
 
   const mediaCounts = useMemo(() => {
-    const movies = mediaLibrary.filter((m) => m.mediaType === 'MOVIE').length;
-    const tv = mediaLibrary.filter((m) => m.mediaType === 'TV').length;
+    const watchedSet = new Set(watchedIds);
+    const interestedSet = new Set(interestedIds);
+    const suggestedSet = new Set(suggestedMediaIdsForGraph);
+    const scoped = mediaLibrary.filter((item) => {
+      if (graphScope === 'WATCHED_ONLY') return watchedSet.has(item.id);
+      if (graphScope === 'INTERESTED_ONLY') return interestedSet.has(item.id);
+      if (graphScope === 'WATCHED_AND_INTERESTED') {
+        return watchedSet.has(item.id) || interestedSet.has(item.id);
+      }
+      if (graphScope === 'WATCHED_PLUS_SUGGESTIONS') {
+        return watchedSet.has(item.id) || suggestedSet.has(item.id);
+      }
+      return true;
+    });
+    const movies = scoped.filter((m) => m.mediaType === 'MOVIE').length;
+    const tv = scoped.filter((m) => m.mediaType === 'TV').length;
     return {
-      all: mediaLibrary.length,
+      all: scoped.length,
       movies,
       tv,
     };
-  }, [mediaLibrary]);
+  }, [
+    mediaLibrary,
+    graphScope,
+    watchedIds,
+    interestedIds,
+    suggestedMediaIdsForGraph,
+  ]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -693,6 +913,7 @@ export function SixDegreesApp() {
       setActiveEntityNode(null);
       setOrbitTargetNodeId(node.id);
     } else {
+      setInspectedMediaId(null);
       setActiveEntityNode(node);
       setOrbitTargetNodeId(node.id);
     }
@@ -703,6 +924,292 @@ export function SixDegreesApp() {
     setInspectedMediaId(null);
     setOrbitTargetNodeId(null);
   }, []);
+
+  /**
+   * Resets the entire workspace (selected node isolation, focal lock, filters, visibility, and camera view)
+   * back to the default full archive constellation.
+   */
+  const handleResetEverything = useCallback(() => {
+    setFocalId(null);
+    setInspectedMediaId(null);
+    setActiveEntityNode(null);
+    setOrbitTargetNodeId(null);
+    setGraphScope('FULL_ARCHIVE');
+    setMediaFilter('ALL');
+    setPreset('VIBE_TROPES');
+    setForceSettings({
+      sphericalForce: 1.0,
+      linkDistanceMultiplier: 1.0,
+      zRepulsion: 1.15,
+      matchThreshold: 15,
+    });
+    setVisibility({
+      MOVIE: true,
+      TV: true,
+      DIRECTOR: true,
+      ACTOR: true,
+      TROPE: true,
+      COMPOSER: true,
+    });
+    setGraphFilters({
+      selectedGenres: [],
+      selectedTropes: [],
+      matchMode: 'OR',
+      filterBehavior: 'DIM',
+      yearRange: [1970, 2030],
+      minImdbRating: 0,
+      watchedFilter: 'ALL',
+      activeClusterId: null,
+      searchHighlightQuery: '',
+    });
+    setLayoutMode('FORCE_CONSTELLATION');
+    setColorMode('CATEGORY');
+    setSizeMode('RATING');
+    setLabelMode('AUTO');
+    setCameraMode('ORBIT');
+    setResetPitchTrigger((c) => c + 1);
+  }, []);
+
+  const handleSaveUserProfile = useCallback(
+    async (input: {
+      handle: string;
+      displayName: string;
+      email?: string;
+      bio?: string;
+      avatarColor: string;
+      authMode?: UserAuthMode;
+      pinOrPassword?: string;
+      clearPin?: boolean;
+      preferredRegion: RegionCode;
+      defaultPreset: GravityPreset;
+      defaultGraphScope: GraphScopeMode;
+    }) => {
+      setIsSyncingProfile(true);
+      const { profile, allProfiles } = createOrUpdateUserProfile({
+        ...input,
+        hasPinOrPassword: input.clearPin
+          ? false
+          : Boolean(input.pinOrPassword || activeUser?.hasPinOrPassword),
+        watchedIds,
+        interestedIds,
+        allMediaItems: mediaLibrary,
+      });
+      setSavedProfiles(allProfiles);
+      setActiveUser(profile);
+      setRegion(profile.preferredRegion);
+      setPreset(profile.defaultPreset);
+      setGraphScope(profile.defaultGraphScope);
+
+      const syncRes = await syncUserProfileToServer(profile, {
+        pinOrPassword: input.pinOrPassword,
+        clearPin: input.clearPin,
+        action: input.pinOrPassword ? 'auth-signup' : 'save',
+      });
+      setIsSyncingProfile(false);
+      if (syncRes?.profile) {
+        setActiveUser(syncRes.profile);
+        setSavedProfiles(getSavedUserProfiles());
+      }
+      if (syncRes?.firestore) {
+        setFirestoreTelemetry(syncRes.firestore);
+      }
+
+      setLiveStatusToast(
+        syncRes?.syncedFirestore
+          ? `Saved @${profile.handle} (${profile.watchedIds.length} watched · ${profile.interestedIds.length} interested) & synced to Cloud Firestore`
+          : `Saved personal profile @${profile.handle} (${profile.watchedIds.length} watched · ${profile.interestedIds.length} interested)`
+      );
+      setTimeout(() => setLiveStatusToast(null), 4000);
+    },
+    [watchedIds, interestedIds, mediaLibrary, activeUser?.hasPinOrPassword]
+  );
+
+  const handleSignInCredentials = useCallback(
+    async (params: { identifier: string; password?: string }) => {
+      setIsSyncingProfile(true);
+      const res = await signInWithCredentials({
+        identifier: params.identifier,
+        password: params.password,
+        watchedIds,
+        interestedIds,
+      });
+      setIsSyncingProfile(false);
+      if (res.firestore) {
+        setFirestoreTelemetry(res.firestore);
+      }
+      if (res.ok && res.profile) {
+        const loaded = res.profile;
+        setSavedProfiles(getSavedUserProfiles());
+        setActiveUser(loaded);
+        setWatchedIds(loaded.watchedIds || []);
+        setInterestedIds(loaded.interestedIds || []);
+        setRegion(loaded.preferredRegion || 'AU');
+        setPreset(loaded.defaultPreset || 'VIBE_TROPES');
+        setGraphScope(loaded.defaultGraphScope || 'WATCHED_ONLY');
+        setLiveStatusToast(
+          `Signed in as @${loaded.handle} (${loaded.watchedIds?.length || 0} Watched · ${loaded.interestedIds?.length || 0} Interested)`
+        );
+        setTimeout(() => setLiveStatusToast(null), 4000);
+      }
+      return {
+        ok: res.ok,
+        requiresAuth: res.requiresAuth,
+        notFound: res.notFound,
+        error: res.error,
+      };
+    },
+    [watchedIds, interestedIds]
+  );
+
+  const handleGoogleSignIn = useCallback(
+    async (idToken: string) => {
+      setIsSyncingProfile(true);
+      const res = await signInWithGoogleIdToken(idToken, {
+        watchedIds,
+        interestedIds,
+        preferredRegion: region,
+        defaultPreset: preset,
+        defaultGraphScope: graphScope,
+      });
+      setIsSyncingProfile(false);
+      if (res.firestore) {
+        setFirestoreTelemetry(res.firestore);
+      }
+      if (res.ok && res.profile) {
+        const loaded = res.profile;
+        setSavedProfiles(getSavedUserProfiles());
+        setActiveUser(loaded);
+        setWatchedIds(loaded.watchedIds || []);
+        setInterestedIds(loaded.interestedIds || []);
+        setLiveStatusToast(`Signed in with Google as @${loaded.handle}`);
+        setTimeout(() => setLiveStatusToast(null), 4000);
+      }
+      return {
+        ok: res.ok,
+        error: res.error,
+      };
+    },
+    [watchedIds, interestedIds, region, preset, graphScope]
+  );
+
+  const handleSwitchUser = useCallback((profile: UserProfile | null) => {
+    if (!profile) {
+      setActiveUserIdInStorage(null);
+      setActiveUser(null);
+      setWatchedIds([]);
+      setInterestedIds([]);
+      setGraphScope('FULL_ARCHIVE');
+      setLiveStatusToast('Signed out to Guest Mode (Full Archive)');
+      setTimeout(() => setLiveStatusToast(null), 3500);
+      return;
+    }
+
+    setActiveUserIdInStorage(profile.id);
+    setActiveUser(profile);
+    setWatchedIds(profile.watchedIds || []);
+    setInterestedIds(profile.interestedIds || []);
+    setRegion(profile.preferredRegion || 'AU');
+    setPreset(profile.defaultPreset || 'VIBE_TROPES');
+    setGraphScope(profile.defaultGraphScope || 'WATCHED_ONLY');
+    setFocalId(null);
+    setInspectedMediaId(null);
+    setActiveEntityNode(null);
+    setLiveStatusToast(
+      `Signed in as ${profile.displayName} (@${profile.handle}) · ${profile.watchedIds?.length || 0} Watched · ${profile.interestedIds?.length || 0} Interested`
+    );
+    setTimeout(() => setLiveStatusToast(null), 4000);
+  }, []);
+
+  const handleDeleteProfile = useCallback(
+    (userId: string) => {
+      const remaining = deleteSavedUserProfile(userId);
+      setSavedProfiles(remaining);
+      if (activeUser?.id === userId) {
+        const nextUser = remaining[0] || null;
+        setActiveUser(nextUser);
+        if (nextUser) {
+          setWatchedIds(nextUser.watchedIds || []);
+          setInterestedIds(nextUser.interestedIds || []);
+          setGraphScope(nextUser.defaultGraphScope || 'WATCHED_ONLY');
+        } else {
+          setWatchedIds([]);
+          setInterestedIds([]);
+          setGraphScope('FULL_ARCHIVE');
+        }
+      }
+    },
+    [activeUser?.id]
+  );
+
+  const handleLoadCloudProfile = useCallback(
+    async (
+      handle: string,
+      pinOrPassword?: string
+    ): Promise<{ ok: boolean; requiresAuth?: boolean; error?: string }> => {
+      setIsSyncingProfile(true);
+      const res = await fetchUserProfileFromServer(handle, pinOrPassword);
+      setIsSyncingProfile(false);
+      if (res?.firestore) {
+        setFirestoreTelemetry(res.firestore);
+      }
+      if (res?.requiresAuth) {
+        return {
+          ok: false,
+          requiresAuth: true,
+          error: res.error,
+        };
+      }
+      if (res?.profile) {
+        const loaded = res.profile;
+        setSavedProfiles(getSavedUserProfiles());
+        setActiveUser(loaded);
+        setWatchedIds(loaded.watchedIds || []);
+        setInterestedIds(loaded.interestedIds || []);
+        setRegion(loaded.preferredRegion || 'AU');
+        setPreset(loaded.defaultPreset || 'VIBE_TROPES');
+        setGraphScope(loaded.defaultGraphScope || 'WATCHED_ONLY');
+        setLiveStatusToast(
+          `Restored @${loaded.handle} (${loaded.watchedIds?.length || 0} Watched · ${loaded.interestedIds?.length || 0} Interested)`
+        );
+        setTimeout(() => setLiveStatusToast(null), 4000);
+        return { ok: true };
+      }
+      return { ok: false, error: res?.error };
+    },
+    []
+  );
+
+  const handleImportProfileJson = useCallback((rawJson: string): boolean => {
+    const res = importUserProfileJson(rawJson);
+    if (!res) return false;
+    setSavedProfiles(res.allProfiles);
+    setActiveUser(res.profile);
+    setWatchedIds(res.profile.watchedIds || []);
+    setInterestedIds(res.profile.interestedIds || []);
+    setRegion(res.profile.preferredRegion || 'AU');
+    setPreset(res.profile.defaultPreset || 'VIBE_TROPES');
+    setGraphScope(res.profile.defaultGraphScope || 'WATCHED_ONLY');
+    syncUserProfileToServer(res.profile);
+    setLiveStatusToast(
+      `Imported profile @${res.profile.handle} (${res.profile.watchedIds.length} watched · ${res.profile.interestedIds.length} interested)`
+    );
+    setTimeout(() => setLiveStatusToast(null), 4000);
+    return true;
+  }, []);
+
+  const handleOpenMyWatchedGraph = useCallback(
+    (scope: GraphScopeMode = 'WATCHED_ONLY') => {
+      setFocalId(null);
+      setInspectedMediaId(null);
+      setActiveEntityNode(null);
+      setGraphScope(scope);
+      if (viewMode === 'SUGGEST' || viewMode === 'MATRIX') {
+        setViewMode('3D');
+      }
+      setResetPitchTrigger((c) => c + 1);
+    },
+    [viewMode]
+  );
 
   const handleSelectNodeById = useCallback(
     (nodeId: string) => {
@@ -741,6 +1248,14 @@ export function SixDegreesApp() {
     );
   }, []);
 
+  const handleToggleInterested = useCallback((mediaId: string) => {
+    setInterestedIds((prev) =>
+      prev.includes(mediaId)
+        ? prev.filter((id) => id !== mediaId)
+        : [...prev, mediaId]
+    );
+  }, []);
+
   const handleAddLiveMediaAndWatch = useCallback(
     async (target: LiveSearchResult) => {
       setIsBuildingCluster(true);
@@ -766,6 +1281,41 @@ export function SixDegreesApp() {
         );
         setLiveStatusToast(
           `Added "${singleData.item.title}" to your Watched list`
+        );
+        setTimeout(() => setLiveStatusToast(null), 4000);
+      } else {
+        setLiveStatusToast(`Could not import "${target.title}".`);
+        setTimeout(() => setLiveStatusToast(null), 3500);
+      }
+    },
+    [mergeMediaItemsIntoLibrary]
+  );
+
+  const handleAddLiveMediaAndInterest = useCallback(
+    async (target: LiveSearchResult) => {
+      setIsBuildingCluster(true);
+      setLiveStatusToast(
+        `Importing "${target.title}" (${target.year}) to your Interested list…`
+      );
+
+      const singleData = await fetchSingleLiveMedia({
+        tmdbId: target.tmdbId,
+        imdbId: target.imdbId,
+        mediaType: target.mediaType,
+        title: target.title,
+        year: target.year,
+        posterUrl: target.posterUrl,
+      });
+
+      setIsBuildingCluster(false);
+
+      if (singleData?.item) {
+        const resolvedId = mergeMediaItemsIntoLibrary(singleData.item, []);
+        setInterestedIds((prev) =>
+          prev.includes(resolvedId) ? prev : [...prev, resolvedId]
+        );
+        setLiveStatusToast(
+          `Added "${singleData.item.title}" to your Want to Watch / Interested list`
         );
         setTimeout(() => setLiveStatusToast(null), 4000);
       } else {
@@ -882,6 +1432,8 @@ export function SixDegreesApp() {
         linksCount={links.length}
         focalItem={focalItem}
         onClearFocal={handleClearFocal}
+        onResetEverything={handleResetEverything}
+        hasActiveSelection={Boolean(activeEntityNode || inspectedItem)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onResetPitch={() => setResetPitchTrigger((c) => c + 1)}
@@ -893,8 +1445,23 @@ export function SixDegreesApp() {
         isBuildingCluster={isBuildingCluster}
         onToggleMobileMenu={() => setMobileMenuOpen((v) => !v)}
         activeFilterCount={activeFilterCount}
-        watchedIds={watchedIds}
-        onToggleWatched={handleToggleWatched}
+        watchedIds={activeUser ? watchedIds : []}
+        onToggleWatched={activeUser ? handleToggleWatched : undefined}
+        interestedIds={activeUser ? interestedIds : []}
+        onToggleInterested={activeUser ? handleToggleInterested : undefined}
+        activeUser={activeUser}
+        graphScope={graphScope}
+        onGraphScopeChange={(nextScope) => {
+          setFocalId(null);
+          setInspectedMediaId(null);
+          setActiveEntityNode(null);
+          setGraphScope(nextScope);
+          setResetPitchTrigger((c) => c + 1);
+        }}
+        onOpenProfileModal={() => setProfileModalOpen(true)}
+        layoutMode={layoutMode}
+        onLayoutModeChange={setLayoutMode}
+        matchingMediaCount={matchingMediaCount}
       />
 
       {/* Main Workspace Below Fixed Top Bar */}
@@ -917,21 +1484,36 @@ export function SixDegreesApp() {
           onResetAllVisibility={handleResetAllVisibility}
           mobileOpen={mobileMenuOpen}
           onCloseMobile={() => setMobileMenuOpen(false)}
-          autoExpandEnabled={autoExpandEnabled}
-          onToggleAutoExpand={() => setAutoExpandEnabled((v) => !v)}
-          onTriggerExpandNow={() => runAutoExpandStep(true)}
-          isAutoExpanding={isAutoExpanding}
-          autoExpandTarget={autoExpandTarget}
-          lastCollaboratorCrawled={lastCollaboratorCrawled}
-          quotaTelemetry={quotaTelemetry}
-          firestoreTelemetry={firestoreTelemetry}
-          expandedCount={expandedCount}
-          onResetExpandedCatalog={handleResetExpandedCatalog}
-          onFirestoreConfigUpdated={() => setApiKeyVersion((v) => v + 1)}
           watchedCount={watchedIds.length}
+          interestedCount={interestedIds.length}
           isSuggestMode={viewMode === 'SUGGEST'}
           onOpenSuggestions={() => setViewMode('SUGGEST')}
           onSuggestByGenre={handleSuggestByGenre}
+          activeUser={activeUser}
+          graphScope={graphScope}
+          onGraphScopeChange={(nextScope) => {
+            setFocalId(null);
+            setInspectedMediaId(null);
+            setActiveEntityNode(null);
+            setGraphScope(nextScope);
+            if (viewMode === 'SUGGEST') {
+              setViewMode('3D');
+            }
+            setResetPitchTrigger((c) => c + 1);
+          }}
+          onOpenProfileModal={() => setProfileModalOpen(true)}
+          graphFilters={graphFilters}
+          onGraphFiltersChange={setGraphFilters}
+          layoutMode={layoutMode}
+          onLayoutModeChange={setLayoutMode}
+          colorMode={colorMode}
+          onColorModeChange={setColorMode}
+          sizeMode={sizeMode}
+          onSizeModeChange={setSizeMode}
+          labelMode={labelMode}
+          onLabelModeChange={setLabelMode}
+          clusters={clusters}
+          matchingMediaCount={matchingMediaCount}
         />
 
         {/* C. Central 3D/2D Constellation, Critical Ledger, or Watch Next Suggestion Studio */}
@@ -955,6 +1537,8 @@ export function SixDegreesApp() {
               allMediaItems={mediaLibrary}
               watchedIds={watchedIds}
               onToggleWatched={handleToggleWatched}
+              interestedIds={interestedIds}
+              onToggleInterested={handleToggleInterested}
               filters={suggestionFilters}
               onFiltersChange={setSuggestionFilters}
               region={region}
@@ -968,6 +1552,9 @@ export function SixDegreesApp() {
               onAddLiveMediaAndWatch={handleAddLiveMediaAndWatch}
               onFetchLiveSuggestions={handleFetchLiveSuggestions}
               isFetchingLive={isFetchingLiveSuggestions}
+              activeUser={activeUser}
+              onOpenProfileModal={() => setProfileModalOpen(true)}
+              onOpenMyWatchedGraph={handleOpenMyWatchedGraph}
             />
           ) : viewMode === 'MATRIX' ? (
             <SimilarityMatrixView
@@ -982,8 +1569,8 @@ export function SixDegreesApp() {
               }}
               onMakeFocal={handleMakeFocal}
               onClearFocal={handleClearFocal}
-              watchedIds={watchedIds}
-              onToggleWatched={handleToggleWatched}
+              watchedIds={activeUser ? watchedIds : []}
+              onToggleWatched={activeUser ? handleToggleWatched : undefined}
             />
           ) : (
             <SpatialViewport
@@ -999,6 +1586,7 @@ export function SixDegreesApp() {
               }
               onSelectNode={handleSelectNode}
               onClearSelection={handleClearSelection}
+              onResetEverything={handleResetEverything}
               onMakeFocal={handleMakeFocal}
               onClearFocal={handleClearFocal}
               viewMode={viewMode}
@@ -1010,6 +1598,32 @@ export function SixDegreesApp() {
               resetPitchTrigger={resetPitchTrigger}
               orbitTargetNodeId={orbitTargetNodeId}
               onFovChange={setFov}
+              graphScope={graphScope}
+              activeUser={activeUser}
+              onGraphScopeChange={(nextScope) => {
+                setFocalId(null);
+                setInspectedMediaId(null);
+                setActiveEntityNode(null);
+                setGraphScope(nextScope);
+                setResetPitchTrigger((c) => c + 1);
+              }}
+              onOpenProfileModal={() => setProfileModalOpen(true)}
+              clusters={clusters}
+              layoutMode={layoutMode}
+              onLayoutModeChange={setLayoutMode}
+              colorMode={colorMode}
+              onColorModeChange={setColorMode}
+              sizeMode={sizeMode}
+              onSizeModeChange={setSizeMode}
+              labelMode={labelMode}
+              onLabelModeChange={setLabelMode}
+              graphFilters={graphFilters}
+              onSelectCluster={(clusterId) =>
+                setGraphFilters((prev) => ({
+                  ...prev,
+                  activeClusterId: clusterId,
+                }))
+              }
             />
           )}
         </main>
@@ -1017,6 +1631,7 @@ export function SixDegreesApp() {
         {/* D. Right Monograph Inspector / All Graph Titles Catalogue */}
         <RightInspectorCard
           inspectedItem={inspectedItem}
+          activeEntityNode={activeEntityNode}
           focalItem={focalItem}
           allMediaItems={activeMediaItems}
           similarity={inspectedSimilarity}
@@ -1024,6 +1639,7 @@ export function SixDegreesApp() {
           onMakeFocal={handleMakeFocal}
           onClearFocal={handleClearFocal}
           onClearInspected={handleClearSelection}
+          onResetEverything={handleResetEverything}
           onOrbitNode={handleOrbitNode}
           onSelectEntityNode={handleSelectNodeById}
           topRecommendations={inspectorRecommendations}
@@ -1032,11 +1648,45 @@ export function SixDegreesApp() {
             setActiveEntityNode(null);
             setOrbitTargetNodeId(item.id);
           }}
-          watchedIds={watchedIds}
-          onToggleWatched={handleToggleWatched}
+          watchedIds={activeUser ? watchedIds : []}
+          onToggleWatched={activeUser ? handleToggleWatched : undefined}
+          interestedIds={activeUser ? interestedIds : []}
+          onToggleInterested={activeUser ? handleToggleInterested : undefined}
           onSuggestFromMedia={handleSuggestFromMedia}
         />
       </div>
+
+      {/* E. User Profile & Personal Watched / Interested Graph Studio Modal */}
+      <UserProfileModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        activeUser={activeUser}
+        savedProfiles={savedProfiles}
+        watchedIds={watchedIds}
+        interestedIds={interestedIds}
+        allMediaItems={mediaLibrary}
+        graphScope={graphScope}
+        onGraphScopeChange={(nextScope) => {
+          setFocalId(null);
+          setInspectedMediaId(null);
+          setActiveEntityNode(null);
+          setGraphScope(nextScope);
+          setResetPitchTrigger((c) => c + 1);
+        }}
+        onSaveProfile={handleSaveUserProfile}
+        onSignInCredentials={handleSignInCredentials}
+        onGoogleSignIn={handleGoogleSignIn}
+        onSwitchUser={handleSwitchUser}
+        onDeleteProfile={handleDeleteProfile}
+        onLoadCloudProfile={handleLoadCloudProfile}
+        onImportProfileJson={handleImportProfileJson}
+        onToggleWatched={handleToggleWatched}
+        onToggleInterested={handleToggleInterested}
+        onAddLiveMediaAndWatch={handleAddLiveMediaAndWatch}
+        onAddLiveMediaAndInterest={handleAddLiveMediaAndInterest}
+        onOpenMyWatchedGraph={handleOpenMyWatchedGraph}
+        isSyncingProfile={isSyncingProfile}
+      />
     </div>
   );
 }

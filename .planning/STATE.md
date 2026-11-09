@@ -1,12 +1,17 @@
 # Project State
 
 ## Current Position
-- **Current Phase:** `02-watch-suggestions` (Smart Watch Suggestions & Multi-Criteria Discovery)
-- **Status:** Completed (`02-01-PLAN.md` and `02-02-PLAN.md` executed)
-- **Last Action:** Executed Phase 2 and verified Next.js build
+- **Current Phase:** `04-user-profiles-and-personal-graph` (User Profiles, Dual Auth, Persistent Watched + Interested Sync & Personal Graphs)
+- **Status:** Planned & Executed (`04-01-PLAN.md`, `04-02-PLAN.md`)
+- **Last Action:** Planned and implemented Phase 4 user-level profile persistence, dual authentication (`@handle` + optional PIN/password AND Firebase Email/Password + Google OAuth), and personal 3D/2D graph scopes (`WATCHED_ONLY`, `INTERESTED_ONLY`, `WATCHED_AND_INTERESTED`, and `WATCHED_PLUS_SUGGESTIONS`)
 
 ## Key Decisions
-- **Dual-Mode Suggestion Engine (`src/lib/recommendations.ts`)**:
-  1. **Watched-Seed Mode ("Because You Watched")**: Aggregates craft, narrative theme, and genre similarity across one or more user-watched titles (excluding already-watched titles by default so suggestions are genuinely un-watched discoveries) and surfaces per-item attribution (*"Because you watched Inception & Dark"*).
-  2. **Genre & Category Mode ("Browse by Genre, Theme & Mood")**: Allows filtering and scoring across broad genres (`Sci-Fi`, `Thriller`, `Mystery`, `Drama`, `Crime`, `Action`, `Fantasy`, `Animation`, etc.), specific narrative tropes, curated editorial categories (*Mind-Bending Sci-Fi*, *Slow-Burn Mystery*, *Critics' Darlings RT ≥ 88%*, *Audience Favorites IMDb ≥ 8.3*, *Auteur Cinema*, *AI/Tech/Dystopia*, *Time & Memory Puzzles*), release eras, and regional streaming providers (`AU`, `US`, `UK`).
-- **Design System Consistency**: Uses the established Warm Archival Folio palette (`#F6F1E7`, `#EFE8DA`, `#FBF8F2`, `#171412`, `#B8292F`, `#234B6E`, `#6B3A6E`, `#2A6B53`) and `Spectral` + `Source Sans 3` typography.
+- **User-Level Profile, Dual Auth & Watched/Interested Persistence (`src/lib/user-profile.ts`, `src/app/api/user-profile/route.ts`, `src/lib/firestore-cache.ts`)**:
+  1. Each `UserProfile` stores `id`, `handle`, `displayName`, optional `email` and `bio`, `avatarColor`, `authMode` (`'HANDLE_ONLY' | 'PIN_PROTECTED' | 'FIREBASE_EMAIL' | 'FIREBASE_GOOGLE'`), `hasPinOrPassword`, `watchedIds`, `watchedCustomItems`, `interestedIds`, `interestedCustomItems`, `preferredRegion`, `defaultPreset`, and `defaultGraphScope`.
+  2. Supports both **lightweight `@handle` + optional PIN/password** (salted `crypto.scryptSync` server verification) and **real Email & Password / Google OAuth authentication** (Firebase Identity Toolkit REST API + salted server verification).
+  3. Profiles persist locally in `localStorage`, on the server in `.next/cache/sixdegrees-users.json`, and in Cloud Firestore (`sixdegrees_catalog/user_<handle>`).
+- **Personal Watched & Interested Graph Engine (`src/lib/similarity.ts`)**:
+  - `buildSpatialGraph` supports `graphScope: 'FULL_ARCHIVE' | 'WATCHED_ONLY' | 'INTERESTED_ONLY' | 'WATCHED_AND_INTERESTED' | 'WATCHED_PLUS_SUGGESTIONS'`.
+  - Users can explore a full 3D/2D constellation of only their **Watched** titles, only their **Interested / Want to Watch** titles, or both combined (`WATCHED_AND_INTERESTED`) with shared Director, Writer, Cast, Composer, and Theme bridges.
+- **Strict Subgraph Isolation & Global Reset (`src/components/SpatialViewport.tsx`, `src/components/SixDegreesApp.tsx`)**:
+  - Selecting any node isolates its connected neighborhood in 3D/2D; `handleResetEverything` restores the full archive view.

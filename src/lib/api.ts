@@ -14,6 +14,7 @@ const STORAGE_EXPANDED_CATALOG_KEY = 'sixdegrees_expanded_catalog_v1';
 const STORAGE_QUERIED_COLLABORATORS_KEY =
   'sixdegrees_queried_collaborators_v1';
 const STORAGE_WATCHED_MEDIA_KEY = 'sixdegrees_watched_ids_v1';
+const STORAGE_INTERESTED_MEDIA_KEY = 'sixdegrees_interested_ids_v1';
 
 export interface QuotaTelemetry {
   omdbCallsToday: number;
@@ -549,6 +550,31 @@ export function saveWatchedIdsToStorage(ids: string[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_WATCHED_MEDIA_KEY, JSON.stringify(ids));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+export function getInitialInterestedIds(): string[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_INTERESTED_MEDIA_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveInterestedIdsToStorage(ids: string[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_INTERESTED_MEDIA_KEY, JSON.stringify(ids));
   } catch {
     // Ignore storage quota errors
   }

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { MediaItem } from './types';
+import { MediaItem, UserProfile } from './types';
 
 /**
  * Cloud Firestore Free-Tier Optimized Store for SixDegrees
@@ -404,4 +404,106 @@ export async function saveCatalogToFirestore(
     return false;
   }
 }
+
+export interface StoredUserRecord {
+  profile: UserProfile;
+  passwordHash?: string;
+}
+
+/**
+ * Loads a single UserProfile (and optional salted passwordHash) from Cloud Firestore
+ * (`sixdegrees_catalog/user_<handle>`) using 1 document read.
+ */
+export async function loadUserRecordFromFirestore(
+  handle: string,
+  overrideProjectId?: string,
+  overrideApiKey?: string
+): Promise<StoredUserRecord | null> {
+  const cleanHandle = handle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  if (!cleanHandle) return null;
+
+  const doc = await readFirestoreDoc(
+    `user_${cleanHandle}`,
+    overrideProjectId,
+    overrideApiKey
+  );
+  if (!doc?.profileJson) return null;
+
+  try {
+    const parsed = JSON.parse(doc.profileJson) as UserProfile;
+    if (!parsed?.id || !parsed?.handle) return null;
+    const normalized: UserProfile = {
+      ...parsed,
+      watchedIds: Array.isArray(parsed.watchedIds) ? parsed.watchedIds : [],
+      watchedCustomItems: Array.isArray(parsed.watchedCustomItems)
+        ? parsed.watchedCustomItems
+        : [],
+      interestedIds: Array.isArray(parsed.interestedIds)
+        ? parsed.interestedIds
+        : [],
+      interestedCustomItems: Array.isArray(parsed.interestedCustomItems)
+        ? parsed.interestedCustomItems
+        : [],
+      hasPinOrPassword: Boolean(doc.passwordHash || parsed.hasPinOrPassword),
+    };
+    return {
+      profile: normalized,
+      passwordHash: doc.passwordHash || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function loadUserFromFirestore(
+  handle: string,
+  overrideProjectId?: string,
+  overrideApiKey?: string
+): Promise<UserProfile | null> {
+  const rec = await loadUserRecordFromFirestore(
+    handle,
+    overrideProjectId,
+    overrideApiKey
+  );
+  return rec ? rec.profile : null;
+}
+
+/**
+ * Persists a single UserProfile (including watchedIds, interestedIds, custom items, and optional salted passwordHash)
+ * to Cloud Firestore (`sixdegrees_catalog/user_<handle>`) using 1 document write.
+ */
+export async function saveUserToFirestore(
+  profile: UserProfile,
+  overrideProjectId?: string,
+  overrideApiKey?: string,
+  passwordHash?: string
+): Promise<boolean> {
+  const cleanHandle = profile.handle
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
+  if (!cleanHandle) return false;
+
+  const fields: Record<string, string> = {
+    handle: cleanHandle,
+    displayName: profile.displayName,
+    email: profile.email || '',
+    authMode: profile.authMode || 'HANDLE_ONLY',
+    watchedCount: String(profile.watchedIds?.length || 0),
+    interestedCount: String(profile.interestedIds?.length || 0),
+    updatedAt: profile.updatedAt || new Date().toISOString(),
+    profileJson: JSON.stringify(profile),
+  };
+  if (passwordHash) {
+    fields.passwordHash = passwordHash;
+  }
+
+  return writeFirestoreDoc(
+    `user_${cleanHandle}`,
+    fields,
+    overrideProjectId,
+    overrideApiKey
+  );
+}
+
 

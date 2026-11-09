@@ -2,10 +2,16 @@ import {
   EntityNodeType,
   EntityVisibility,
   ForceSettings,
+  GraphFilterState,
+  GraphLayoutMode,
   GraphLink,
   GraphNode,
+  GraphScopeMode,
   GravityPreset,
   MediaItem,
+  NodeColorMode,
+  NodeSizeMode,
+  SemanticCluster,
   SharedConnection,
   SimilarityBreakdown,
 } from './types';
@@ -134,6 +140,379 @@ export function isValidPersonName(name: string): boolean {
   if (!clean || clean.length < 2) return false;
   return !PLACEHOLDER_CREDIT_NAMES.has(clean);
 }
+
+// ==================== MOVIE MAP REA: SEMANTIC CLUSTERS, COLOR BLENDING & FILTERING ====================
+
+export const DEFAULT_GRAPH_FILTERS: GraphFilterState = {
+  selectedGenres: [],
+  selectedTropes: [],
+  matchMode: 'OR',
+  filterBehavior: 'DIM',
+  yearRange: [1970, 2030],
+  minImdbRating: 0,
+  watchedFilter: 'ALL',
+  activeClusterId: null,
+  searchHighlightQuery: '',
+};
+
+export function hasActiveGraphFilters(filters: GraphFilterState): boolean {
+  return (
+    filters.selectedGenres.length > 0 ||
+    filters.selectedTropes.length > 0 ||
+    filters.yearRange[0] > 1970 ||
+    filters.yearRange[1] < 2030 ||
+    filters.minImdbRating > 0 ||
+    filters.watchedFilter !== 'ALL' ||
+    Boolean(filters.activeClusterId) ||
+    Boolean(filters.searchHighlightQuery.trim())
+  );
+}
+
+/**
+ * 8 Primary Semantic Galaxy clusters inspired by Mikey Guinness's Movie Map HDBSCAN clusters.
+ * Each cluster anchors a spatial sector in the galaxy projection and features a rich archival signature palette.
+ */
+export const SEMANTIC_CLUSTER_DEFINITIONS: Array<{
+  id: string;
+  label: string;
+  shortLabel: string;
+  description: string;
+  color: string;
+  glowColor: string;
+  centroid: { x: number; y: number; z: number };
+  keywords: string[];
+  genres: string[];
+}> = [
+  {
+    id: 'mind-bending-scifi',
+    label: 'Mind-Bending & Speculative Sci-Fi',
+    shortLabel: 'Speculative Sci-Fi',
+    description: 'Quantum realities, time loops, artificial intelligence, and existential cosmos.',
+    color: '#234B6E', // Archival Prussian Blue
+    glowColor: '#3D78A8',
+    centroid: { x: -160, y: 110, z: 25 },
+    keywords: [
+      'time travel', 'artificial intelligence', 'existential dread', 'dystopia',
+      'cyborg', 'space exploration', 'virtual reality', 'parallel dimensions',
+      'cyberpunk', 'simulation hypothesis', 'mind games', 'quantum mechanics',
+    ],
+    genres: ['Science Fiction', 'Mystery', 'Thriller'],
+  },
+  {
+    id: 'auteur-prestige-drama',
+    label: 'Auteur Prestige & Psychological Drama',
+    shortLabel: 'Auteur Drama',
+    description: 'Character-driven psychological labyrinths, moral ambiguity, and cinematic auteur craft.',
+    color: '#B8292F', // Archival Crimson
+    glowColor: '#E04A50',
+    centroid: { x: -140, y: -120, z: -35 },
+    keywords: [
+      'psychological unraveling', 'moral ambiguity', 'character study',
+      'existential crisis', 'family trauma', 'paranoia', 'obsession',
+      'unreliable narrator', 'social alienation', 'auteur signature',
+    ],
+    genres: ['Drama', 'Mystery'],
+  },
+  {
+    id: 'visceral-noir-thrillers',
+    label: 'Visceral Noir & Neo-Crime Sagas',
+    shortLabel: 'Noir & Crime',
+    description: 'Corrupt syndicates, high-stakes heists, hard-boiled detectives, and gripping cat-and-mouse games.',
+    color: '#B86B14', // Archival Ochre Amber
+    glowColor: '#E28E2B',
+    centroid: { x: 130, y: 130, z: -20 },
+    keywords: [
+      'heist', 'organized crime', 'conspiracy', 'cat-and-mouse',
+      'revenge', 'detective noir', 'corruption', 'assassin',
+      'underworld', 'betrayal', 'fbi investigation',
+    ],
+    genres: ['Crime', 'Thriller', 'Action'],
+  },
+  {
+    id: 'atmospheric-supernatural',
+    label: 'Atmospheric Horror & Macabre Mystery',
+    shortLabel: 'Horror & Macabre',
+    description: 'Gothic dread, psychological tension, supernatural anomalies, and slow-burn cosmic terror.',
+    color: '#6B3A6E', // Archival Imperial Plum
+    glowColor: '#9C58A0',
+    centroid: { x: 70, y: -160, z: 45 },
+    keywords: [
+      'isolation', 'folklore', 'cosmic horror', 'haunted past',
+      'psychological terror', 'supernatural', 'monsters', 'occult',
+      'claustrophobia', 'body horror', 'creepy atmosphere',
+    ],
+    genres: ['Horror', 'Mystery', 'Thriller'],
+  },
+  {
+    id: 'epic-worldbuilding-fantasy',
+    label: 'Epic Worldbuilding & Mythic Adventure',
+    shortLabel: 'Epic & Fantasy',
+    description: 'Sweeping mythologies, grand quests, legendary realms, and heroic odysseys.',
+    color: '#2A6B53', // Archival Verdigris Green
+    glowColor: '#429E7C',
+    centroid: { x: 165, y: -50, z: -30 },
+    keywords: [
+      'heroic journey', 'ancient prophecy', 'mythic world', 'grand crusade',
+      'sword & sorcery', 'empire politics', 'monumental scale', 'rebellion',
+      'chosen one', 'fellowship',
+    ],
+    genres: ['Fantasy', 'Adventure', 'Action'],
+  },
+  {
+    id: 'philosophical-slow-burn',
+    label: 'Contemplative & Philosophical Cinema',
+    shortLabel: 'Contemplative',
+    description: 'Lyrical pacing, metaphysical questions, memory, grief, and visual poetry.',
+    color: '#5C5446', // Archival Sepia Slate
+    glowColor: '#8C8270',
+    centroid: { x: -40, y: 170, z: -40 },
+    keywords: [
+      'memory and loss', 'meditative', 'melancholy', 'philosophical inquiry',
+      'visual poetry', 'human condition', 'solitude', 'grief and healing',
+      'slow burn', 'art-house aesthetic',
+    ],
+    genres: ['Drama', 'Mystery'],
+  },
+  {
+    id: 'kinetic-action-spectacle',
+    label: 'Kinetic Spectacle & Tactical Escapism',
+    shortLabel: 'Action Spectacle',
+    description: 'Precision stuntwork, explosive set-pieces, adrenaline-fueled pacing, and survival combat.',
+    color: '#A63A2B', // Archival Terracotta Red
+    glowColor: '#CF5745',
+    centroid: { x: 120, y: 70, z: 60 },
+    keywords: [
+      'martial arts', 'car chases', 'survival battle', 'explosive stunts',
+      'tactical combat', 'superheroes', 'adrenaline rush', 'high octane',
+      'military ops', 'blockbuster spectacle',
+    ],
+    genres: ['Action', 'Adventure', 'Thriller'],
+  },
+  {
+    id: 'satirical-wry-humanity',
+    label: 'Wry Satire & Humanist Tragicomedy',
+    shortLabel: 'Satire & Comedy',
+    description: 'Dark comedy, sharp societal critiques, absurdism, and bittersweet human connection.',
+    color: '#8C4820', // Archival Burnt Umber
+    glowColor: '#B66635',
+    centroid: { x: -80, y: -60, z: 65 },
+    keywords: [
+      'dark humor', 'existential irony', 'social commentary', 'tragicomedy',
+      'eccentric characters', 'satire', 'workplace absurdity', 'cynicism',
+      'witty dialogue', 'bittersweet romance',
+    ],
+    genres: ['Comedy', 'Drama'],
+  },
+];
+
+/**
+ * Linearly blends two hex colors with a ratio t in [0, 1] (0 = c1, 1 = c2).
+ * Mimics Movie Map's boundary color blending between adjacent semantic clusters.
+ */
+export function blendHexColors(c1: string, c2: string, t: number): string {
+  const clean1 = c1.replace('#', '');
+  const clean2 = c2.replace('#', '');
+  const r1 = parseInt(clean1.slice(0, 2), 16) || 0;
+  const g1 = parseInt(clean1.slice(2, 4), 16) || 0;
+  const b1 = parseInt(clean1.slice(4, 6), 16) || 0;
+  const r2 = parseInt(clean2.slice(0, 2), 16) || 0;
+  const g2 = parseInt(clean2.slice(2, 4), 16) || 0;
+  const b2 = parseInt(clean2.slice(4, 6), 16) || 0;
+
+  const r = Math.round(r1 + (r2 - r1) * Math.max(0, Math.min(1, t)));
+  const g = Math.round(g1 + (g2 - g1) * Math.max(0, Math.min(1, t)));
+  const b = Math.round(b1 + (b2 - b1) * Math.max(0, Math.min(1, t)));
+
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+export const GENRE_COLOR_PALETTE: Record<string, string> = {
+  'Science Fiction': '#234B6E',
+  'Sci-Fi': '#234B6E',
+  Drama: '#B8292F',
+  Thriller: '#B86B14',
+  Crime: '#7A4B1A',
+  Horror: '#6B3A6E',
+  Mystery: '#4F3B68',
+  Action: '#A63A2B',
+  Adventure: '#2A6B53',
+  Fantasy: '#1D6B4F',
+  Comedy: '#9C6824',
+  Animation: '#286B7B',
+  Romance: '#A63F52',
+  War: '#6E5C3B',
+  Western: '#8C5624',
+  Documentary: '#505E6B',
+};
+
+export function getGenreColor(genreName: string): string {
+  return GENRE_COLOR_PALETTE[genreName] || '#52483E';
+}
+
+export function getDecadeColor(year: number): string {
+  if (year >= 2020) return '#234B6E'; // 2020s: Contemporary Prussian Blue
+  if (year >= 2010) return '#2A6B53'; // 2010s: Verdigris Green
+  if (year >= 2000) return '#B86B14'; // 2000s: Ochre Amber
+  if (year >= 1990) return '#6B3A6E'; // 1990s: Imperial Plum
+  if (year >= 1980) return '#A63A2B'; // 1980s: Terracotta Red
+  if (year >= 1970) return '#B8292F'; // 1970s: Archival Crimson
+  return '#7A6B58'; // Classic Eras
+}
+
+/**
+ * Assigns a MediaItem to its primary and secondary semantic clusters based on
+ * thematic keywords, tropes, and broad genres.
+ */
+export function assignItemSemanticCluster(item: MediaItem): {
+  primary: typeof SEMANTIC_CLUSTER_DEFINITIONS[0];
+  secondary: typeof SEMANTIC_CLUSTER_DEFINITIONS[0];
+  blendRatio: number; // 0.0 (pure primary) to 0.5 (equal split)
+} {
+  const itemKeywords = [
+    ...item.tropes.map((t) => t.toLowerCase()),
+    ...item.genres.map((g) => g.toLowerCase()),
+    item.primaryGenre.toLowerCase(),
+  ];
+
+  const scores = SEMANTIC_CLUSTER_DEFINITIONS.map((cluster) => {
+    let score = 0;
+    // Tropes/keywords match
+    for (const kw of cluster.keywords) {
+      const lowerKw = kw.toLowerCase();
+      if (itemKeywords.some((ik) => ik.includes(lowerKw) || lowerKw.includes(ik))) {
+        score += 8;
+      }
+    }
+    // Broad genre match
+    for (const g of cluster.genres) {
+      if (item.genres.some((ig) => ig.toLowerCase() === g.toLowerCase())) {
+        score += 4;
+      }
+      if (item.primaryGenre.toLowerCase() === g.toLowerCase()) {
+        score += 6;
+      }
+    }
+    return { cluster, score };
+  });
+
+  scores.sort((a, b) => b.score - a.score);
+  const primary = scores[0]?.score > 0 ? scores[0].cluster : SEMANTIC_CLUSTER_DEFINITIONS[0];
+  const secondary = scores[1]?.score > 0 ? scores[1].cluster : scores[0].cluster;
+
+  const total = (scores[0]?.score || 1) + (scores[1]?.score || 0);
+  const blendRatio = scores[1]?.score > 0
+    ? Math.min(0.45, Math.max(0.1, (scores[1].score / total) * 0.7))
+    : 0.0;
+
+  return { primary, secondary, blendRatio };
+}
+
+/**
+ * Evaluates whether a MediaItem matches the active multi-faceted Movie Map filters.
+ * Supports Any (OR) vs. All (AND) across multi-selected genres and keywords.
+ */
+export function evaluateMediaItemFilterMatch(
+  item: MediaItem,
+  filters: GraphFilterState,
+  isWatched: boolean,
+  isInterested: boolean
+): boolean {
+  // 1. Watched / Want to Watch status filter
+  if (filters.watchedFilter === 'WATCHED' && !isWatched) return false;
+  if (filters.watchedFilter === 'UNWATCHED' && isWatched) return false;
+  if (filters.watchedFilter === 'INTERESTED' && !isInterested) return false;
+
+  // 2. Release Year Range
+  if (item.year < filters.yearRange[0] || item.year > filters.yearRange[1]) {
+    return false;
+  }
+
+  // 3. Minimum IMDb Rating
+  if (filters.minImdbRating > 0 && item.imdbRating < filters.minImdbRating) {
+    return false;
+  }
+
+  // 4. Specific Semantic Cluster filter
+  if (filters.activeClusterId) {
+    const { primary } = assignItemSemanticCluster(item);
+    if (primary.id !== filters.activeClusterId) {
+      return false;
+    }
+  }
+
+  // 5. Freeform Search Highlight Query
+  if (filters.searchHighlightQuery.trim()) {
+    const q = filters.searchHighlightQuery.trim().toLowerCase();
+    const match =
+      item.title.toLowerCase().includes(q) ||
+      item.directors.some((d) => d.toLowerCase().includes(q)) ||
+      item.cast.some((c) => c.name.toLowerCase().includes(q)) ||
+      item.tropes.some((t) => t.toLowerCase().includes(q)) ||
+      item.genres.some((g) => g.toLowerCase().includes(g));
+    if (!match) return false;
+  }
+
+  // 6. Genres & Tropes (Keywords) with OR vs. AND logic
+  const hasGenreFilter = filters.selectedGenres.length > 0;
+  const hasTropeFilter = filters.selectedTropes.length > 0;
+
+  if (!hasGenreFilter && !hasTropeFilter) {
+    return true;
+  }
+
+  const itemGenresLower = item.genres.map((g) => g.toLowerCase());
+  const itemTropesLower = item.tropes.map((t) => t.toLowerCase());
+
+  if (filters.matchMode === 'AND') {
+    // Every selected genre must be present
+    for (const g of filters.selectedGenres) {
+      if (!itemGenresLower.includes(g.toLowerCase())) return false;
+    }
+    // Every selected trope must be present
+    for (const t of filters.selectedTropes) {
+      if (!itemTropesLower.some((it) => it.includes(t.toLowerCase()))) return false;
+    }
+    return true;
+  } else {
+    // Match ANY (OR) of the selected genres or tropes
+    const matchedGenre = filters.selectedGenres.some((g) =>
+      itemGenresLower.includes(g.toLowerCase())
+    );
+    const matchedTrope = filters.selectedTropes.some((t) =>
+      itemTropesLower.some((it) => it.includes(t.toLowerCase()))
+    );
+    return matchedGenre || matchedTrope;
+  }
+}
+
+/**
+ * Precomputes the top 20 nearest neighbors for each media item in the active library
+ * (mirroring Mikey Guinness's 20 nearest neighbors surfaced in the "Similar films" inspector tab).
+ */
+export function computeNearestNeighbors(
+  items: MediaItem[],
+  preset: GravityPreset = 'VIBE_TROPES'
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+
+  for (const item of items) {
+    const scored = items
+      .filter((other) => other.id !== item.id)
+      .map((other) => ({
+        id: other.id,
+        sim: calculateSimilarity(item, other, preset),
+      }))
+      .filter((entry) => entry.sim.totalScore > 0)
+      .sort((a, b) => b.sim.totalScore - a.sim.totalScore)
+      .slice(0, 20)
+      .map((entry) => entry.id);
+
+    map.set(item.id, scored);
+  }
+
+  return map;
+}
+
 
 /**
  * Returns true ONLY when two titles share at least one concrete craft or narrative connection
@@ -425,6 +804,74 @@ export interface BuildGraphOptions {
   forceSettings: ForceSettings;
   visibility: EntityVisibility;
   searchQuery?: string;
+  graphScope?: GraphScopeMode;
+  watchedIds?: string[];
+  interestedIds?: string[];
+  suggestedMediaIds?: string[];
+  graphFilters?: GraphFilterState;
+  layoutMode?: GraphLayoutMode;
+  colorMode?: NodeColorMode;
+  sizeMode?: NodeSizeMode;
+}
+
+/**
+ * Enhances pairwise similarity for a user's personal Watched Graph when two watched titles
+ * share a primary/secondary genre or co-watch kinship, so smaller personal watched collections
+ * still form a rich, navigable constellation alongside concrete shared craft bridges.
+ */
+function calculatePersonalGraphSimilarity(
+  itemA: MediaItem,
+  itemB: MediaItem,
+  preset: GravityPreset
+): SimilarityBreakdown {
+  const base = calculateSimilarity(itemA, itemB, preset);
+  if (hasConcreteSharedConnection(base) && base.totalScore > 0) {
+    return base;
+  }
+
+  const sharedGenres = itemA.genres.filter((g) =>
+    itemB.genres.some((bg) => bg.toLowerCase() === g.toLowerCase())
+  );
+  const primaryMatches =
+    itemA.primaryGenre.toLowerCase() === itemB.primaryGenre.toLowerCase();
+
+  if (sharedGenres.length === 0 && !primaryMatches) {
+    return base;
+  }
+
+  const genrePts = Math.min(
+    18,
+    sharedGenres.length * 6 + (primaryMatches ? 6 : 0)
+  );
+  const topGenre = primaryMatches
+    ? itemA.primaryGenre
+    : sharedGenres[0] || itemA.primaryGenre;
+
+  const conn: SharedConnection = {
+    id: `genre-${topGenre.toLowerCase()}`,
+    label: `Genre: ${topGenre}`,
+    prefix: 'Genre',
+    value: topGenre,
+    category: 'GENRE',
+    entityType: 'TROPE',
+    points: genrePts,
+    color: ENTITY_COLORS.TROPE.primary,
+  };
+
+  const totalScore = Math.max(14, Math.min(48, genrePts + 8));
+  return {
+    totalScore,
+    rawPoints: {
+      tropes: 0,
+      auteur: 0,
+      genres: genrePts,
+      cast: 0,
+      sonicVisual: 0,
+      coWatch: 0,
+    },
+    sharedConnections: [conn],
+    linkDistance: Math.max(85, Math.round(180 - totalScore * 1.1)),
+  };
 }
 
 export function buildSpatialGraph({
@@ -434,22 +881,141 @@ export function buildSpatialGraph({
   mediaFilter,
   forceSettings,
   visibility,
+  graphScope = 'FULL_ARCHIVE',
+  watchedIds = [],
+  interestedIds = [],
+  suggestedMediaIds = [],
+  graphFilters = DEFAULT_GRAPH_FILTERS,
+  layoutMode = 'FORCE_CONSTELLATION',
+  colorMode = 'CATEGORY',
+  sizeMode = 'RATING',
 }: BuildGraphOptions): {
   nodes: GraphNode[];
   links: GraphLink[];
   focalItem: MediaItem | null;
   rankedMatches: Array<{ item: MediaItem; similarity: SimilarityBreakdown }>;
+  clusters: SemanticCluster[];
+  matchingMediaCount: number;
 } {
+  const watchedSet = new Set(watchedIds);
+  const interestedSet = new Set(interestedIds);
+  const suggestedSet = new Set(suggestedMediaIds);
+  const isPersonalGraph =
+    graphScope === 'WATCHED_ONLY' ||
+    graphScope === 'INTERESTED_ONLY' ||
+    graphScope === 'WATCHED_AND_INTERESTED' ||
+    graphScope === 'WATCHED_PLUS_SUGGESTIONS';
+
+  const nearestNeighborsMap = computeNearestNeighbors(items, preset);
+
+  // Precompute semantic cluster membership map for all items
+  const itemClusterMap = new Map<
+    string,
+    {
+      primary: typeof SEMANTIC_CLUSTER_DEFINITIONS[0];
+      secondary: typeof SEMANTIC_CLUSTER_DEFINITIONS[0];
+      blendRatio: number;
+    }
+  >();
+  for (const item of items) {
+    itemClusterMap.set(item.id, assignItemSemanticCluster(item));
+  }
+
+  // Precompute filter match map for all items
+  const filterMatchMap = new Map<string, boolean>();
+  for (const item of items) {
+    const isW = watchedSet.has(item.id);
+    const isI = interestedSet.has(item.id);
+    filterMatchMap.set(
+      item.id,
+      evaluateMediaItemFilterMatch(item, graphFilters, isW, isI)
+    );
+  }
+
+  const scopedItems = items.filter((item) => {
+    if (focalId && item.id === focalId) return true;
+    if (graphScope === 'WATCHED_ONLY') {
+      return watchedSet.has(item.id);
+    }
+    if (graphScope === 'INTERESTED_ONLY') {
+      return interestedSet.has(item.id);
+    }
+    if (graphScope === 'WATCHED_AND_INTERESTED') {
+      return watchedSet.has(item.id) || interestedSet.has(item.id);
+    }
+    if (graphScope === 'WATCHED_PLUS_SUGGESTIONS') {
+      return watchedSet.has(item.id) || suggestedSet.has(item.id);
+    }
+    return true;
+  });
+
+  const matchingMediaCount = scopedItems.filter(
+    (item) => filterMatchMap.get(item.id) ?? true
+  ).length;
+
   const focalItem = focalId
-    ? items.find((m) => m.id === focalId) || null
+    ? scopedItems.find((m) => m.id === focalId) ||
+      items.find((m) => m.id === focalId) ||
+      null
     : null;
 
   const nodesMap = new Map<string, GraphNode>();
   const links: GraphLink[] = [];
 
-  // ==================== MODE A: GLOBAL ARCHIVE CONSTELLATION (ALL MEDIA, NO SINGLE FOCAL ITEM) ====================
+  // Helper to resolve node visual color according to NodeColorMode
+  const resolveNodeColor = (
+    item: MediaItem,
+    isFilterMatch: boolean
+  ): { color: string; glowColor: string } => {
+    const clusterInfo = itemClusterMap.get(item.id);
+    const blended = clusterInfo
+      ? blendHexColors(
+          clusterInfo.primary.color,
+          clusterInfo.secondary.color,
+          clusterInfo.blendRatio
+        )
+      : ENTITY_COLORS[item.mediaType].primary;
+
+    let baseColor = ENTITY_COLORS[item.mediaType].primary;
+    let baseGlow = ENTITY_COLORS[item.mediaType].glow;
+
+    if (colorMode === 'CLUSTER') {
+      baseColor = blended;
+      baseGlow = clusterInfo ? clusterInfo.primary.glowColor : blended;
+    } else if (colorMode === 'GENRE') {
+      baseColor = getGenreColor(item.primaryGenre);
+      baseGlow = baseColor;
+    } else if (colorMode === 'DECADE') {
+      baseColor = getDecadeColor(item.year);
+      baseGlow = baseColor;
+    }
+
+    return { color: baseColor, glowColor: baseGlow };
+  };
+
+  // Helper to resolve node radius according to NodeSizeMode
+  const resolveNodeRadius = (
+    item: MediaItem,
+    connectionCount: number
+  ): number => {
+    if (sizeMode === 'UNIFORM') return 8.0;
+    if (sizeMode === 'CONNECTIONS') {
+      return Math.min(14, Math.max(5.5, 5.5 + Math.sqrt(connectionCount) * 1.8));
+    }
+    // Default RATING
+    return 7.2 + Math.max(0, (item.imdbRating - 7.0) * 1.35);
+  };
+
+  // ==================== MODE A: GLOBAL OR PERSONAL ARCHIVE CONSTELLATION (NO SINGLE FOCAL ITEM) ====================
   if (!focalItem) {
-    const filteredMedia = items.filter((item) => {
+    const filteredMedia = scopedItems.filter((item) => {
+      // If graphFilters.filterBehavior is 'HIDE', completely exclude items that do not match filters
+      if (
+        graphFilters.filterBehavior === 'HIDE' &&
+        filterMatchMap.get(item.id) === false
+      ) {
+        return false;
+      }
       if (mediaFilter === 'MOVIE' && item.mediaType !== 'MOVIE') return false;
       if (mediaFilter === 'TV' && item.mediaType !== 'TV') return false;
       if (!visibility.MOVIE && item.mediaType === 'MOVIE') return false;
@@ -457,9 +1023,11 @@ export function buildSpatialGraph({
       return true;
     });
 
-    const effectiveThreshold = Math.max(15, forceSettings.matchThreshold);
+    const effectiveThreshold = isPersonalGraph
+      ? Math.min(12, forceSettings.matchThreshold)
+      : Math.max(15, forceSettings.matchThreshold);
 
-    // Compute pairwise similarities across all active media items (only keeping pairs with concrete shared connections)
+    // Compute pairwise similarities across all active media items
     const pairwiseMap = new Map<
       string,
       Array<{ target: MediaItem; similarity: SimilarityBreakdown }>
@@ -472,11 +1040,23 @@ export function buildSpatialGraph({
       }> = [];
       for (const itemB of filteredMedia) {
         if (itemA.id === itemB.id) continue;
-        const sim = calculateSimilarity(itemA, itemB, preset);
+        // In WATCHED_PLUS_SUGGESTIONS mode, suggested unwatched items should primarily link to watched items
         if (
-          hasConcreteSharedConnection(sim) &&
-          sim.totalScore >= effectiveThreshold
+          graphScope === 'WATCHED_PLUS_SUGGESTIONS' &&
+          !watchedSet.has(itemA.id) &&
+          !watchedSet.has(itemB.id)
         ) {
+          continue;
+        }
+        const sim = isPersonalGraph
+          ? calculatePersonalGraphSimilarity(itemA, itemB, preset)
+          : calculateSimilarity(itemA, itemB, preset);
+        const qualifies = isPersonalGraph
+          ? (hasConcreteSharedConnection(sim) || sim.rawPoints.genres > 0) &&
+            sim.totalScore >= effectiveThreshold
+          : hasConcreteSharedConnection(sim) &&
+            sim.totalScore >= effectiveThreshold;
+        if (qualifies) {
           peers.push({ target: itemB, similarity: sim });
         }
       }
@@ -599,11 +1179,14 @@ export function buildSpatialGraph({
       const peers = pairwiseMap.get(item.id) || [];
       let countForNode = 0;
       for (const peer of peers) {
-        if (countForNode >= 5) break;
-        if (
-          !hasConcreteSharedConnection(peer.similarity) ||
-          peer.similarity.totalScore < effectiveThreshold
-        ) {
+        if (countForNode >= (isPersonalGraph ? 6 : 5)) break;
+        const qualifies = isPersonalGraph
+          ? (hasConcreteSharedConnection(peer.similarity) ||
+              peer.similarity.rawPoints.genres > 0) &&
+            peer.similarity.totalScore >= effectiveThreshold
+          : hasConcreteSharedConnection(peer.similarity) &&
+            peer.similarity.totalScore >= effectiveThreshold;
+        if (!qualifies) {
           continue;
         }
 
@@ -642,37 +1225,114 @@ export function buildSpatialGraph({
     }
 
     rankedMatches.forEach(({ item, similarity }, idx) => {
-      const isUnlinked = (connectedMediaByNode.get(item.id)?.size || 1) <= 1;
+      const isWatched = watchedSet.has(item.id);
+      const isInterested = interestedSet.has(item.id);
+      const isSuggested =
+        !isWatched &&
+        !isInterested &&
+        graphScope === 'WATCHED_PLUS_SUGGESTIONS' &&
+        suggestedSet.has(item.id);
+      const isFilterMatch = filterMatchMap.get(item.id) ?? true;
+      const clusterInfo = itemClusterMap.get(item.id);
+      const nearestNeighbors = nearestNeighborsMap.get(item.id) || [];
+      const connectionsCount = connectedMediaByNode.get(item.id)?.size || 1;
+
+      const isUnlinked =
+        !isPersonalGraph &&
+        connectionsCount <= 1;
       const shellOffset = (idx % 3) * 24;
       const baseRadius = isUnlinked
         ? 245 * forceSettings.linkDistanceMultiplier
-        : (82 +
-            (idx / Math.max(1, rankedMatches.length - 1)) * 78 +
-            shellOffset) *
-          forceSettings.linkDistanceMultiplier;
-      const pos = seededSphericalPosition(
-        idx,
-        rankedMatches.length,
-        baseRadius
+        : isPersonalGraph
+          ? (68 +
+              (idx / Math.max(1, rankedMatches.length - 1)) * 68 +
+              (isSuggested ? 34 : (idx % 2) * 14)) *
+            forceSettings.linkDistanceMultiplier
+          : (82 +
+              (idx / Math.max(1, rankedMatches.length - 1)) * 78 +
+              shellOffset) *
+            forceSettings.linkDistanceMultiplier;
+
+      let posX = 0;
+      let posY = 0;
+      let posZ = 0;
+
+      if (layoutMode === 'SEMANTIC_GALAXY' && clusterInfo) {
+        // Position relative to its HDBSCAN semantic cluster centroid
+        // with boundary pull toward its secondary cluster
+        const c1 = clusterInfo.primary.centroid;
+        const c2 = clusterInfo.secondary.centroid;
+        const pull = clusterInfo.blendRatio; // 0 to 0.45
+        const baseX = c1.x * (1 - pull) + c2.x * pull;
+        const baseY = c1.y * (1 - pull) + c2.y * pull;
+        const baseZ = c1.z * (1 - pull) + c2.z * pull;
+
+        // Local cluster dispersion via seeded golden spiral
+        const localSpread = 46 * forceSettings.linkDistanceMultiplier;
+        const theta = idx * 2.399963; // Golden angle
+        const r = Math.sqrt((idx % 19) + 1) * (localSpread / 4.4);
+        posX = baseX + r * Math.cos(theta);
+        posY = baseY + r * Math.sin(theta);
+        posZ = baseZ + ((idx % 7) - 3) * 10 * forceSettings.zRepulsion;
+      } else {
+        const pos = seededSphericalPosition(
+          idx,
+          rankedMatches.length,
+          baseRadius
+        );
+        posX = pos.x;
+        posY = pos.y;
+        posZ = pos.z * forceSettings.zRepulsion;
+      }
+
+      const { color: nodeColor, glowColor: nodeGlow } = resolveNodeColor(
+        item,
+        isFilterMatch
       );
-      const zScaled = pos.z * forceSettings.zRepulsion;
-      const ratingScale = Math.max(0, (item.imdbRating - 7.0) * 1.35);
+      const nodeRadius = resolveNodeRadius(item, connectionsCount);
+
+      const statusSuffix = isSuggested
+        ? ' · Suggested Match'
+        : isPersonalGraph && isInterested && !isWatched
+          ? ' · Want to Watch'
+          : isPersonalGraph && isWatched
+            ? ' · Watched'
+            : '';
+
+      const blendedColor = clusterInfo
+        ? blendHexColors(
+            clusterInfo.primary.color,
+            clusterInfo.secondary.color,
+            clusterInfo.blendRatio
+          )
+        : nodeColor;
 
       nodesMap.set(item.id, {
         id: item.id,
         label: item.title,
-        subLabel: `${item.year} · IMDb ${item.imdbRating.toFixed(1)} · ${item.primaryGenre}`,
+        subLabel: `${item.year} · IMDb ${item.imdbRating.toFixed(1)} · ${item.primaryGenre}${statusSuffix}`,
         type: item.mediaType,
         isFocal: false,
+        isWatched,
+        isInterested,
+        isSuggested,
+        isFilterMatch,
+        clusterId: clusterInfo?.primary.id,
+        clusterLabel: clusterInfo?.primary.label,
+        clusterColor: clusterInfo?.primary.color,
+        secondaryClusterColor: clusterInfo?.secondary.color,
+        blendedClusterColor: blendedColor,
+        connectionCount: connectionsCount,
+        nearestNeighborIds: nearestNeighbors,
         matchScore: undefined,
         similarity,
         mediaItem: item,
-        color: ENTITY_COLORS[item.mediaType].primary,
-        glowColor: ENTITY_COLORS[item.mediaType].glow,
-        radius: 7.2 + ratingScale,
-        x: pos.x,
-        y: pos.y,
-        z: zScaled,
+        color: nodeColor,
+        glowColor: nodeGlow,
+        radius: nodeRadius,
+        x: posX,
+        y: posY,
+        z: posZ,
         vx: 0,
         vy: 0,
         vz: 0,
@@ -717,8 +1377,14 @@ export function buildSpatialGraph({
     };
 
     for (const media of filteredMedia) {
-      // Do not register entity bridge links for unlinked standalone titles
-      if ((connectedMediaByNode.get(media.id)?.size || 1) <= 1) continue;
+      // In full archive mode, do not register entity bridge links for unlinked standalone titles;
+      // in Personal Graph mode, always inspect all watched/suggested titles so shared collaborators & themes bridge them.
+      if (
+        !isPersonalGraph &&
+        (connectedMediaByNode.get(media.id)?.size || 1) <= 1
+      ) {
+        continue;
+      }
       for (const dir of media.directors) {
         registerEntity('DIRECTOR', dir, 'Director / Showrunner', media.id);
       }
@@ -727,7 +1393,7 @@ export function buildSpatialGraph({
           registerEntity('DIRECTOR', writer, 'Screenwriter / Creator', media.id);
         }
       }
-      for (const actor of media.cast.slice(0, 3)) {
+      for (const actor of media.cast.slice(0, isPersonalGraph ? 5 : 3)) {
         registerEntity(
           'ACTOR',
           actor.name,
@@ -745,6 +1411,9 @@ export function buildSpatialGraph({
 
     const validEntities = Array.from(entityAcc.values())
       .map((ent) => {
+        if (isPersonalGraph) {
+          return ent;
+        }
         // Keep only mediaIds that share a threshold-verified similarity link with another member of this entity
         const allIds = Array.from(ent.mediaIds);
         const linkedSubset = allIds.filter((idA) =>
@@ -836,16 +1505,40 @@ export function buildSpatialGraph({
       }
     });
 
+    // Build active semantic clusters list with associated mediaIds for canvas territory banners
+    const activeClusters: SemanticCluster[] = SEMANTIC_CLUSTER_DEFINITIONS.map(
+      (def) => {
+        const clusterMediaIds = filteredMedia
+          .filter((m) => itemClusterMap.get(m.id)?.primary.id === def.id)
+          .map((m) => m.id);
+
+        return {
+          id: def.id,
+          label: def.label,
+          shortLabel: def.shortLabel,
+          description: def.description,
+          color: def.color,
+          glowColor: def.glowColor,
+          centroid: def.centroid,
+          keywords: def.keywords,
+          genres: def.genres,
+          mediaIds: clusterMediaIds,
+        };
+      }
+    );
+
     return {
       nodes: Array.from(nodesMap.values()),
       links,
       focalItem: null,
       rankedMatches,
+      clusters: activeClusters,
+      matchingMediaCount,
     };
   }
 
   // ==================== MODE B: SINGLE FOCAL TITLE MODE ====================
-  const allScored = items
+  const allScored = scopedItems
     .filter((item) => {
       if (item.id === focalItem.id) return true;
       if (mediaFilter === 'MOVIE' && item.mediaType !== 'MOVIE') return false;
@@ -856,13 +1549,19 @@ export function buildSpatialGraph({
     })
     .map((item) => ({
       item,
-      similarity: calculateSimilarity(focalItem, item, preset),
+      similarity: isPersonalGraph
+        ? calculatePersonalGraphSimilarity(focalItem, item, preset)
+        : calculateSimilarity(focalItem, item, preset),
     }))
     .filter(
       (entry) =>
         entry.item.id === focalItem.id ||
-        (hasConcreteSharedConnection(entry.similarity) &&
-          entry.similarity.totalScore >= forceSettings.matchThreshold)
+        ((hasConcreteSharedConnection(entry.similarity) ||
+          (isPersonalGraph && entry.similarity.rawPoints.genres > 0)) &&
+          entry.similarity.totalScore >=
+            (isPersonalGraph
+              ? Math.min(12, forceSettings.matchThreshold)
+              : forceSettings.matchThreshold))
     );
 
   const rankedMatches = allScored
@@ -870,12 +1569,36 @@ export function buildSpatialGraph({
     .sort((a, b) => b.similarity.totalScore - a.similarity.totalScore);
 
   // 1. Add Focal Centerpiece Node at origin (0, 0, 0)
+  const focalClusterInfo = itemClusterMap.get(focalItem.id);
+  const focalNearestNeighbors = nearestNeighborsMap.get(focalItem.id) || [];
+  const focalBlended = focalClusterInfo
+    ? blendHexColors(
+        focalClusterInfo.primary.color,
+        focalClusterInfo.secondary.color,
+        focalClusterInfo.blendRatio
+      )
+    : '#B8292F';
+
   nodesMap.set(focalItem.id, {
     id: focalItem.id,
     label: focalItem.title,
     subLabel: `${focalItem.year} · Selected Title`,
     type: focalItem.mediaType,
     isFocal: true,
+    isWatched: watchedSet.has(focalItem.id),
+    isInterested: interestedSet.has(focalItem.id),
+    isSuggested:
+      !watchedSet.has(focalItem.id) &&
+      graphScope === 'WATCHED_PLUS_SUGGESTIONS' &&
+      suggestedSet.has(focalItem.id),
+    isFilterMatch: filterMatchMap.get(focalItem.id) ?? true,
+    clusterId: focalClusterInfo?.primary.id,
+    clusterLabel: focalClusterInfo?.primary.label,
+    clusterColor: focalClusterInfo?.primary.color,
+    secondaryClusterColor: focalClusterInfo?.secondary.color,
+    blendedClusterColor: focalBlended,
+    connectionCount: rankedMatches.length,
+    nearestNeighborIds: focalNearestNeighbors,
     matchScore: 100,
     similarity: calculateSimilarity(focalItem, focalItem, preset),
     mediaItem: focalItem,
@@ -896,6 +1619,16 @@ export function buildSpatialGraph({
 
   // 2. Add Recommended Film / Series Nodes
   rankedMatches.forEach(({ item, similarity }, idx) => {
+    const isWatched = watchedSet.has(item.id);
+    const isInterested = interestedSet.has(item.id);
+    const isSuggested =
+      !isWatched &&
+      graphScope === 'WATCHED_PLUS_SUGGESTIONS' &&
+      suggestedSet.has(item.id);
+    const isFilterMatch = filterMatchMap.get(item.id) ?? true;
+    const clusterInfo = itemClusterMap.get(item.id);
+    const nearestNeighbors = nearestNeighborsMap.get(item.id) || [];
+
     const effectiveDistance =
       similarity.linkDistance * forceSettings.linkDistanceMultiplier;
     const pos = seededSphericalPosition(
@@ -905,18 +1638,46 @@ export function buildSpatialGraph({
     );
     const zScaled = pos.z * forceSettings.zRepulsion;
 
+    const { color: nodeColor, glowColor: nodeGlow } = resolveNodeColor(
+      item,
+      isFilterMatch
+    );
+    const nodeRadius =
+      sizeMode === 'UNIFORM'
+        ? 8.0
+        : 6.5 + (similarity.totalScore / 100) * 4.5;
+
+    const blendedColor = clusterInfo
+      ? blendHexColors(
+          clusterInfo.primary.color,
+          clusterInfo.secondary.color,
+          clusterInfo.blendRatio
+        )
+      : nodeColor;
+
     nodesMap.set(item.id, {
       id: item.id,
       label: item.title,
       subLabel: `${item.year} · ${similarity.totalScore}% Match`,
       type: item.mediaType,
       isFocal: false,
+      isWatched,
+      isInterested,
+      isSuggested,
+      isFilterMatch,
+      clusterId: clusterInfo?.primary.id,
+      clusterLabel: clusterInfo?.primary.label,
+      clusterColor: clusterInfo?.primary.color,
+      secondaryClusterColor: clusterInfo?.secondary.color,
+      blendedClusterColor: blendedColor,
+      connectionCount: 1,
+      nearestNeighborIds: nearestNeighbors,
       matchScore: similarity.totalScore,
       similarity,
       mediaItem: item,
-      color: ENTITY_COLORS[item.mediaType].primary,
-      glowColor: ENTITY_COLORS[item.mediaType].glow,
-      radius: 6.5 + (similarity.totalScore / 100) * 4.5,
+      color: nodeColor,
+      glowColor: nodeGlow,
+      radius: nodeRadius,
       x: pos.x,
       y: pos.y,
       z: zScaled,
@@ -1082,10 +1843,34 @@ export function buildSpatialGraph({
     }
   });
 
+  // Active semantic clusters for focal mode
+  const activeClusters: SemanticCluster[] = SEMANTIC_CLUSTER_DEFINITIONS.map(
+    (def) => {
+      const clusterMediaIds = [focalItem, ...rankedMatches.map((r) => r.item)]
+        .filter((m) => itemClusterMap.get(m.id)?.primary.id === def.id)
+        .map((m) => m.id);
+
+      return {
+        id: def.id,
+        label: def.label,
+        shortLabel: def.shortLabel,
+        description: def.description,
+        color: def.color,
+        glowColor: def.glowColor,
+        centroid: def.centroid,
+        keywords: def.keywords,
+        genres: def.genres,
+        mediaIds: clusterMediaIds,
+      };
+    }
+  );
+
   return {
     nodes: Array.from(nodesMap.values()),
     links,
     focalItem,
     rankedMatches,
+    clusters: activeClusters,
+    matchingMediaCount,
   };
 }

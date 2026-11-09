@@ -21,12 +21,17 @@ import {
   SlidersHorizontal,
   Sparkles,
   Check,
+  User,
+  BookmarkCheck,
+  Bookmark,
 } from 'lucide-react';
 import { SixDegreesLogo } from './SixDegreesLogo';
 import { PwaInstallButton } from './PwaInstallButton';
 import {
   GraphNode,
+  GraphScopeMode,
   MediaItem,
+  UserProfile,
   ViewMode,
 } from '@/lib/types';
 import {
@@ -39,6 +44,8 @@ interface TopNavBarProps {
   linksCount: number;
   focalItem: MediaItem | null;
   onClearFocal: () => void;
+  onResetEverything?: () => void;
+  hasActiveSelection?: boolean;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   onResetPitch: () => void;
@@ -52,6 +59,15 @@ interface TopNavBarProps {
   activeFilterCount?: number;
   watchedIds?: string[];
   onToggleWatched?: (mediaId: string) => void;
+  interestedIds?: string[];
+  onToggleInterested?: (mediaId: string) => void;
+  activeUser?: UserProfile | null;
+  graphScope?: GraphScopeMode;
+  onGraphScopeChange?: (scope: GraphScopeMode) => void;
+  onOpenProfileModal?: () => void;
+  layoutMode?: string;
+  onLayoutModeChange?: (mode: any) => void;
+  matchingMediaCount?: number;
 }
 
 export function TopNavBar({
@@ -59,6 +75,8 @@ export function TopNavBar({
   linksCount,
   focalItem,
   onClearFocal,
+  onResetEverything,
+  hasActiveSelection = false,
   viewMode,
   onViewModeChange,
   onResetPitch,
@@ -72,6 +90,15 @@ export function TopNavBar({
   activeFilterCount = 0,
   watchedIds = [],
   onToggleWatched,
+  interestedIds = [],
+  onToggleInterested,
+  activeUser = null,
+  graphScope = 'FULL_ARCHIVE',
+  onGraphScopeChange,
+  onOpenProfileModal,
+  layoutMode = 'FORCE_CONSTELLATION',
+  onLayoutModeChange,
+  matchingMediaCount,
 }: TopNavBarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -235,9 +262,9 @@ export function TopNavBar({
 
         <button
           type="button"
-          onClick={onClearFocal}
+          onClick={onResetEverything || onClearFocal}
           className="text-left cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B8292F] shrink-0"
-          title="Show Full Archive"
+          title="Reset everything & show full archive"
         >
           <SixDegreesLogo />
         </button>
@@ -443,6 +470,32 @@ export function TopNavBar({
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      {onToggleInterested && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleInterested(item.id);
+                          }}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                            interestedIds.includes(item.id)
+                              ? 'bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
+                              : 'bg-[#FBF8F2] text-[#52483E] border-[#C8BEAA] hover:text-[#171412]'
+                          }`}
+                          title={
+                            interestedIds.includes(item.id)
+                              ? 'In Want to Watch / Interested list'
+                              : 'Save to Want to Watch / Interested list'
+                          }
+                        >
+                          <Bookmark className="w-2.5 h-2.5" aria-hidden="true" />
+                          <span>
+                            {interestedIds.includes(item.id)
+                              ? 'Interested'
+                              : 'Want'}
+                          </span>
+                        </button>
+                      )}
                       {onToggleWatched && (
                         <button
                           type="button"
@@ -561,8 +614,102 @@ export function TopNavBar({
         })}
       </nav>
 
-      {/* RIGHT: Minimal Graph Counts + Reset View */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* RIGHT: Personal Watched / Interested Graph Toggles (Logged-in Users Only) + User Profile + Counts + Reset View */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {activeUser && onGraphScopeChange && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                const nextScope: GraphScopeMode =
+                  graphScope === 'WATCHED_ONLY' ? 'FULL_ARCHIVE' : 'WATCHED_ONLY';
+                onGraphScopeChange(nextScope);
+                if (viewMode === 'SUGGEST') {
+                  onViewModeChange('3D');
+                }
+              }}
+              aria-pressed={graphScope === 'WATCHED_ONLY'}
+              className={`hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                graphScope === 'WATCHED_ONLY'
+                  ? 'bg-[#2A6B53] hover:bg-[#1E563F] text-[#FBF8F2] border-[#1E563F] shadow-archival-sm'
+                  : 'bg-[#FBF8F2] hover:bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+              }`}
+              title={
+                graphScope === 'WATCHED_ONLY'
+                  ? 'Viewing My Watched Graph — click to return to Full Archive'
+                  : 'Switch 3D/2D constellation to only Movies & TV Shows you have watched'
+              }
+            >
+              <BookmarkCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>Watched ({watchedIds.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const nextScope: GraphScopeMode =
+                  graphScope === 'INTERESTED_ONLY'
+                    ? 'FULL_ARCHIVE'
+                    : 'INTERESTED_ONLY';
+                onGraphScopeChange(nextScope);
+                if (viewMode === 'SUGGEST') {
+                  onViewModeChange('3D');
+                }
+              }}
+              aria-pressed={graphScope === 'INTERESTED_ONLY'}
+              className={`hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                graphScope === 'INTERESTED_ONLY'
+                  ? 'bg-[#234B6E] hover:bg-[#193854] text-[#FBF8F2] border-[#193854] shadow-archival-sm'
+                  : 'bg-[#FBF8F2] hover:bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
+              }`}
+              title={
+                graphScope === 'INTERESTED_ONLY'
+                  ? 'Viewing My Interested / Want to Watch Graph — click to return to Full Archive'
+                  : 'Switch 3D/2D constellation to your Interested / Want to Watch list'
+              }
+            >
+              <Bookmark className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>Interested ({interestedIds.length})</span>
+            </button>
+          </>
+        )}
+
+        {onOpenProfileModal && (
+          <button
+            type="button"
+            onClick={onOpenProfileModal}
+            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+              activeUser
+                ? 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#171412] border-[#B5A892] shadow-archival-sm'
+                : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
+            }`}
+            title={
+              activeUser
+                ? `Signed in as ${activeUser.displayName} (@${activeUser.handle}) — Click to manage profile, watchlist & interested graph`
+                : 'Sign in to access your Watchlist, Interested list, and personal graphs'
+            }
+          >
+            {activeUser ? (
+              <>
+                <span
+                  className="w-4 h-4 rounded-full text-[9px] font-bold text-[#FBF8F2] flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: activeUser.avatarColor }}
+                >
+                  {activeUser.displayName.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="max-w-[96px] truncate hidden md:inline">
+                  {activeUser.displayName}
+                </span>
+              </>
+            ) : (
+              <>
+                <User className="w-3.5 h-3.5 text-[#B8292F] shrink-0" aria-hidden="true" />
+                <span className="hidden md:inline">Sign In</span>
+              </>
+            )}
+          </button>
+        )}
+
         {focalItem && (
           <button
             type="button"
@@ -576,12 +723,14 @@ export function TopNavBar({
           </button>
         )}
 
-        <div className="hidden lg:flex items-center gap-2 h-8 px-2.5 rounded-lg bg-[#FBF8F2]/80 border border-[#C8BEAA] text-xs font-tabular text-[#52483E]">
+        <div className="hidden xl:flex items-center gap-2 h-8 px-2.5 rounded-lg bg-[#FBF8F2]/80 border border-[#C8BEAA] text-xs font-tabular text-[#52483E]">
           <span>
             <strong className="text-[#171412] font-semibold">
-              {mediaNodesCount}
+              {matchingMediaCount !== undefined ? matchingMediaCount : mediaNodesCount}
             </strong>{' '}
-            Titles
+            {matchingMediaCount !== undefined && matchingMediaCount !== mediaNodesCount
+              ? `of ${mediaNodesCount} Titles`
+              : 'Titles'}
           </span>
           <span className="text-[#B5A892]" aria-hidden="true">·</span>
           <span>
@@ -594,15 +743,43 @@ export function TopNavBar({
 
         <button
           type="button"
-          onClick={onResetPitch}
-          className="group flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-[#FBF8F2] hover:bg-[#E5DEC9] text-xs font-medium text-[#171412] border border-[#C8BEAA] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B8292F]"
-          title="Reset camera view"
+          onClick={() => {
+            if (onResetEverything) {
+              onResetEverything();
+            } else {
+              onClearFocal();
+              onResetPitch();
+            }
+          }}
+          className={`group flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B8292F] ${
+            hasActiveSelection ||
+            focalItem ||
+            activeFilterCount > 0 ||
+            graphScope !== 'FULL_ARCHIVE'
+              ? 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22] shadow-archival-sm'
+              : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border-[#C8BEAA]'
+          }`}
+          title="Reset selection, filters, and camera to show the full graph"
         >
           <RotateCcw
-            className="w-3.5 h-3.5 text-[#52483E] group-hover:-rotate-45 transition-transform duration-200"
+            className={`w-3.5 h-3.5 group-hover:-rotate-45 transition-transform duration-200 ${
+              hasActiveSelection ||
+              focalItem ||
+              activeFilterCount > 0 ||
+              graphScope !== 'FULL_ARCHIVE'
+                ? 'text-[#FBF8F2]'
+                : 'text-[#52483E]'
+            }`}
             aria-hidden="true"
           />
-          <span className="hidden sm:inline">Reset</span>
+          <span className="hidden sm:inline">
+            {hasActiveSelection ||
+            focalItem ||
+            activeFilterCount > 0 ||
+            graphScope !== 'FULL_ARCHIVE'
+              ? 'Reset All'
+              : 'Reset'}
+          </span>
         </button>
 
         <PwaInstallButton variant="topbar" />

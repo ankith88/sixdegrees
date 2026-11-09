@@ -17,6 +17,7 @@ import {
   EyeOff,
   Loader2,
   BookmarkCheck,
+  Bookmark,
   SlidersHorizontal,
   Award,
   Hash,
@@ -25,9 +26,11 @@ import {
 import {
   CuratedCategoryId,
   DecadeFilter,
+  GraphScopeMode,
   MediaItem,
   RegionCode,
   SuggestionFilterState,
+  UserProfile,
   WatchSuggestion,
 } from '@/lib/types';
 import {
@@ -43,6 +46,8 @@ interface WatchSuggestionsViewProps {
   allMediaItems: MediaItem[];
   watchedIds: string[];
   onToggleWatched: (mediaId: string) => void;
+  interestedIds?: string[];
+  onToggleInterested?: (mediaId: string) => void;
   filters: SuggestionFilterState;
   onFiltersChange: React.Dispatch<React.SetStateAction<SuggestionFilterState>>;
   region: RegionCode;
@@ -57,12 +62,17 @@ interface WatchSuggestionsViewProps {
     mediaType?: 'ALL' | 'MOVIE' | 'TV';
   }) => Promise<void>;
   isFetchingLive: boolean;
+  activeUser?: UserProfile | null;
+  onOpenProfileModal?: () => void;
+  onOpenMyWatchedGraph?: (scope?: GraphScopeMode) => void;
 }
 
 export function WatchSuggestionsView({
   allMediaItems,
   watchedIds,
   onToggleWatched,
+  interestedIds = [],
+  onToggleInterested,
   filters,
   onFiltersChange,
   region,
@@ -73,6 +83,9 @@ export function WatchSuggestionsView({
   onAddLiveMediaAndWatch,
   onFetchLiveSuggestions,
   isFetchingLive,
+  activeUser = null,
+  onOpenProfileModal,
+  onOpenMyWatchedGraph,
 }: WatchSuggestionsViewProps) {
   const [watchedQuery, setWatchedQuery] = useState('');
   const [watchedDropdownOpen, setWatchedDropdownOpen] = useState(false);
@@ -273,33 +286,81 @@ export function WatchSuggestionsView({
           </div>
 
           <div className="flex items-center flex-wrap gap-2">
-            {/* Hide / Show Already Watched Toggle */}
-            <button
-              type="button"
-              onClick={() =>
-                onFiltersChange((prev) => ({
-                  ...prev,
-                  hideWatched: !prev.hideWatched,
-                }))
-              }
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
-                filters.hideWatched
-                  ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
-                  : 'bg-[#FBF8F2] text-[#52483E] border-[#C8BEAA] hover:bg-[#EFE8DA]'
-              }`}
-              title="Toggle whether titles you have already watched are excluded from suggestions"
-            >
-              {filters.hideWatched ? (
-                <EyeOff className="w-3.5 h-3.5" aria-hidden="true" />
-              ) : (
-                <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-              )}
-              <span>
-                {filters.hideWatched
-                  ? `Hiding ${watchedIds.length} Watched`
-                  : `Showing Watched (${watchedIds.length})`}
-              </span>
-            </button>
+            {activeUser && onOpenMyWatchedGraph && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenMyWatchedGraph('WATCHED_ONLY')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#2A6B53] hover:bg-[#1E563F] text-[#FBF8F2] border border-[#1E563F] shadow-archival-sm transition-colors cursor-pointer"
+                  title="Generate a 3D constellation built exclusively from your Watched movies and TV shows"
+                >
+                  <Orbit className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Watched Graph ({watchedIds.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenMyWatchedGraph('INTERESTED_ONLY')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#234B6E] hover:bg-[#193854] text-[#FBF8F2] border border-[#193854] shadow-archival-sm transition-colors cursor-pointer"
+                  title="Generate a 3D constellation built exclusively from your Interested / Want to Watch list"
+                >
+                  <Bookmark className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Interested Graph ({interestedIds.length})</span>
+                </button>
+              </>
+            )}
+
+            {onOpenProfileModal && (
+              <button
+                type="button"
+                onClick={onOpenProfileModal}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA] transition-colors cursor-pointer"
+                title="Sign in or manage your personalized user profile"
+              >
+                {activeUser ? (
+                  <>
+                    <span
+                      className="w-4 h-4 rounded-full text-[9px] font-bold text-[#FBF8F2] flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: activeUser.avatarColor }}
+                    >
+                      {activeUser.displayName.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span>@{activeUser.handle}</span>
+                  </>
+                ) : (
+                  <span>Sign In to Save Watchlist</span>
+                )}
+              </button>
+            )}
+
+            {/* Hide / Show Already Watched Toggle (Logged-In Users Only) */}
+            {activeUser && (
+              <button
+                type="button"
+                onClick={() =>
+                  onFiltersChange((prev) => ({
+                    ...prev,
+                    hideWatched: !prev.hideWatched,
+                  }))
+                }
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                  filters.hideWatched
+                    ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                    : 'bg-[#FBF8F2] text-[#52483E] border-[#C8BEAA] hover:bg-[#EFE8DA]'
+                }`}
+                title="Toggle whether titles you have already watched are excluded from suggestions"
+              >
+                {filters.hideWatched ? (
+                  <EyeOff className="w-3.5 h-3.5" aria-hidden="true" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                )}
+                <span>
+                  {filters.hideWatched
+                    ? `Hiding ${watchedIds.length} Watched`
+                    : `Showing Watched (${watchedIds.length})`}
+                </span>
+              </button>
+            )}
 
             {/* Regional Streaming Selector (AU / US / UK) */}
             <div
@@ -365,273 +426,309 @@ export function WatchSuggestionsView({
           </div>
         </header>
 
-        {/* ==================== 1. BASED ON WHAT YOU HAVE ALREADY WATCHED ==================== */}
-        <section
-          aria-label="Based on what you have already watched"
-          className="p-4 rounded-xl bg-[#FBF8F2] border border-[#C8BEAA] shadow-archival-sm space-y-3.5"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-heading text-base font-bold text-[#171412] flex items-center gap-2">
-                <BookmarkCheck
-                  className="w-4 h-4 text-[#2A6B53]"
-                  aria-hidden="true"
-                />
-                <span>
-                  1. Based on Movies &amp; Shows You&apos;ve Already Watched
-                </span>
-              </h2>
-              <p className="text-xs text-[#52483E] mt-0.5">
-                Mark titles you have watched or enjoyed. Suggestions are ranked
-                by shared narrative themes, directors, cast, composers, and
-                genre kinship—while hiding titles you&apos;ve already seen.
-              </p>
-            </div>
-
-            {/* Search & Add Any Watched Movie or TV Show */}
-            <div ref={watchedSearchRef} className="relative w-full sm:w-72">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#F6F1E7] border border-[#B5A892] focus-within:border-[#B8292F]">
-                {isSearchingWatchedLive ? (
-                  <Loader2 className="w-3.5 h-3.5 text-[#B8292F] animate-spin shrink-0" />
-                ) : (
-                  <Search className="w-3.5 h-3.5 text-[#6B5E50] shrink-0" />
-                )}
-                <input
-                  type="text"
-                  value={watchedQuery}
-                  onFocus={() => setWatchedDropdownOpen(true)}
-                  onChange={(e) => {
-                    setWatchedQuery(e.target.value);
-                    setWatchedDropdownOpen(true);
-                  }}
-                  placeholder="Add a movie or show you've watched…"
-                  aria-label="Add a movie or show you've watched"
-                  className="w-full bg-transparent text-xs text-[#171412] placeholder:text-[#6B5E50] focus:outline-none"
-                />
-                {watchedQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setWatchedQuery('')}
-                    className="text-[#6B5E50] hover:text-[#171412]"
-                    aria-label="Clear watched search"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+        {/* ==================== 1. BASED ON WHAT YOU HAVE ALREADY WATCHED (LOGGED-IN USERS ONLY) ==================== */}
+        {activeUser ? (
+          <section
+            aria-label="Based on what you have already watched"
+            className="p-4 rounded-xl bg-[#FBF8F2] border border-[#C8BEAA] shadow-archival-sm space-y-3.5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-heading text-base font-bold text-[#171412] flex items-center gap-2">
+                  <BookmarkCheck
+                    className="w-4 h-4 text-[#2A6B53]"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    1. Based on Movies &amp; Shows You&apos;ve Already Watched
+                  </span>
+                </h2>
+                <p className="text-xs text-[#52483E] mt-0.5">
+                  Mark titles you have watched or enjoyed. Suggestions are ranked
+                  by shared narrative themes, directors, cast, composers, and
+                  genre kinship—while hiding titles you&apos;ve already seen.
+                </p>
               </div>
 
-              {watchedDropdownOpen && (
-                <div className="absolute right-0 left-0 sm:w-80 top-10 rounded-xl bg-[#FBF8F2] border border-[#B5A892] shadow-archival p-2 max-h-80 overflow-y-auto z-40 space-y-2">
-                  {/* Matches in Current Collection */}
-                  <div>
-                    <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#52483E]">
-                      In Graph Archive
-                    </div>
-                    {localWatchedSearchMatches.map((item) => {
-                      const isWatched = watchedSet.has(item.id);
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => {
-                            if (!isWatched) {
-                              onToggleWatched(item.id);
-                            }
-                            setWatchedQuery('');
-                            setWatchedDropdownOpen(false);
-                          }}
-                          className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-[#EFE8DA] text-left transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            {item.mediaType === 'MOVIE' ? (
-                              <Film className="w-3.5 h-3.5 text-[#234B6E] shrink-0" />
-                            ) : (
-                              <Tv className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" />
-                            )}
-                            <div className="min-w-0">
-                              <div className="text-xs font-semibold text-[#171412] truncate">
-                                {item.title}{' '}
-                                <span className="font-normal font-tabular text-[#52483E]">
-                                  ({item.year})
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-[#6B5E50] truncate">
-                                {item.primaryGenre} · {item.directors[0]}
-                              </div>
-                            </div>
-                          </div>
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
-                              isWatched
-                                ? 'bg-[#E4F0EA] text-[#1E563F]'
-                                : 'bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA]'
-                            }`}
-                          >
-                            {isWatched ? 'Watched ✓' : '+ Watched'}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* Search & Add Any Watched Movie or TV Show */}
+              <div ref={watchedSearchRef} className="relative w-full sm:w-72">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#F6F1E7] border border-[#B5A892] focus-within:border-[#B8292F]">
+                  {isSearchingWatchedLive ? (
+                    <Loader2 className="w-3.5 h-3.5 text-[#B8292F] animate-spin shrink-0" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5 text-[#6B5E50] shrink-0" />
+                  )}
+                  <input
+                    type="text"
+                    value={watchedQuery}
+                    onFocus={() => setWatchedDropdownOpen(true)}
+                    onChange={(e) => {
+                      setWatchedQuery(e.target.value);
+                      setWatchedDropdownOpen(true);
+                    }}
+                    placeholder="Add a movie or show you've watched…"
+                    aria-label="Add a movie or show you've watched"
+                    className="w-full bg-transparent text-xs text-[#171412] placeholder:text-[#6B5E50] focus:outline-none"
+                  />
+                  {watchedQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setWatchedQuery('')}
+                      className="text-[#6B5E50] hover:text-[#171412]"
+                      aria-label="Clear watched search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
 
-                  {/* Worldwide Live Catalog Matches */}
-                  {watchedQuery.trim().length >= 2 && (
-                    <div className="pt-1.5 border-t border-[#D5CCB9]">
-                      <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#2A6B53]">
-                        Worldwide Catalog (Import &amp; Mark Watched)
+                {watchedDropdownOpen && (
+                  <div className="absolute right-0 left-0 sm:w-80 top-10 rounded-xl bg-[#FBF8F2] border border-[#B5A892] shadow-archival p-2 max-h-80 overflow-y-auto z-40 space-y-2">
+                    {/* Matches in Current Collection */}
+                    <div>
+                      <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#52483E]">
+                        In Graph Archive
                       </div>
-                      {liveWatchedResults.length > 0 ? (
-                        liveWatchedResults.slice(0, 5).map((liveItem) => (
+                      {localWatchedSearchMatches.map((item) => {
+                        const isWatched = watchedSet.has(item.id);
+                        return (
                           <button
-                            key={`${liveItem.source}-${liveItem.id}-${liveItem.imdbId}`}
+                            key={item.id}
                             type="button"
-                            onClick={async () => {
-                              setWatchedDropdownOpen(false);
+                            onClick={() => {
+                              if (!isWatched) {
+                                onToggleWatched(item.id);
+                              }
                               setWatchedQuery('');
-                              await onAddLiveMediaAndWatch(liveItem);
+                              setWatchedDropdownOpen(false);
                             }}
                             className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-[#EFE8DA] text-left transition-colors cursor-pointer"
                           >
                             <div className="flex items-center gap-2 min-w-0">
-                              {liveItem.mediaType === 'MOVIE' ? (
+                              {item.mediaType === 'MOVIE' ? (
                                 <Film className="w-3.5 h-3.5 text-[#234B6E] shrink-0" />
                               ) : (
                                 <Tv className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" />
                               )}
                               <div className="min-w-0">
                                 <div className="text-xs font-semibold text-[#171412] truncate">
-                                  {liveItem.title}{' '}
+                                  {item.title}{' '}
                                   <span className="font-normal font-tabular text-[#52483E]">
-                                    ({liveItem.year})
+                                    ({item.year})
                                   </span>
                                 </div>
                                 <div className="text-[10px] text-[#6B5E50] truncate">
-                                  {liveItem.mediaType === 'MOVIE'
-                                    ? 'Film'
-                                    : 'Series'}
-                                  {liveItem.stars ? ` · ${liveItem.stars}` : ''}
+                                  {item.primaryGenre} · {item.directors[0]}
                                 </div>
                               </div>
                             </div>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#B8292F] text-[#FBF8F2] shrink-0">
-                              + Import &amp; Watch
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
+                                isWatched
+                                  ? 'bg-[#E4F0EA] text-[#1E563F]'
+                                  : 'bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA]'
+                              }`}
+                            >
+                              {isWatched ? 'Watched ✓' : '+ Watched'}
                             </span>
                           </button>
-                        ))
-                      ) : !isSearchingWatchedLive ? (
-                        <div className="px-2 py-1 text-xs text-[#6B5E50]">
-                          No external catalog matches found.
-                        </div>
-                      ) : null}
+                        );
+                      })}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
 
-          {/* Active Watched Titles Shelf */}
-          {watchedMediaItems.length > 0 ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-[#52483E]">
-                <span>
-                  Your Watched Titles ({watchedMediaItems.length}) — click any
-                  title to focus suggestions specifically on it:
-                </span>
-                {filters.seedMediaIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onFiltersChange((prev) => ({ ...prev, seedMediaIds: [] }))
-                    }
-                    className="text-[#8C1D22] font-semibold hover:underline cursor-pointer"
-                  >
-                    Use All Watched Titles ({watchedMediaItems.length})
-                  </button>
+                    {/* Worldwide Live Catalog Matches */}
+                    {watchedQuery.trim().length >= 2 && (
+                      <div className="pt-1.5 border-t border-[#D5CCB9]">
+                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#2A6B53]">
+                          Worldwide Catalog (Import &amp; Mark Watched)
+                        </div>
+                        {liveWatchedResults.length > 0 ? (
+                          liveWatchedResults.slice(0, 5).map((liveItem) => (
+                            <button
+                              key={`${liveItem.source}-${liveItem.id}-${liveItem.imdbId}`}
+                              type="button"
+                              onClick={async () => {
+                                setWatchedDropdownOpen(false);
+                                setWatchedQuery('');
+                                await onAddLiveMediaAndWatch(liveItem);
+                              }}
+                              className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-[#EFE8DA] text-left transition-colors cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                {liveItem.mediaType === 'MOVIE' ? (
+                                  <Film className="w-3.5 h-3.5 text-[#234B6E] shrink-0" />
+                                ) : (
+                                  <Tv className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold text-[#171412] truncate">
+                                    {liveItem.title}{' '}
+                                    <span className="font-normal font-tabular text-[#52483E]">
+                                      ({liveItem.year})
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-[#6B5E50] truncate">
+                                    {liveItem.mediaType === 'MOVIE'
+                                      ? 'Film'
+                                      : 'Series'}
+                                    {liveItem.stars ? ` · ${liveItem.stars}` : ''}
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#B8292F] text-[#FBF8F2] shrink-0">
+                                + Import &amp; Watch
+                              </span>
+                            </button>
+                          ))
+                        ) : !isSearchingWatchedLive ? (
+                          <div className="px-2 py-1 text-xs text-[#6B5E50]">
+                            No external catalog matches found.
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
+            </div>
 
-              <div className="flex items-center flex-wrap gap-2">
-                {watchedMediaItems.map((item) => {
-                  const isFocusedSeed = filters.seedMediaIds.includes(item.id);
-                  return (
-                    <div
-                      key={item.id}
-                      className={`inline-flex items-center gap-2 pl-1.5 pr-2 py-1 rounded-lg border text-xs transition-all ${
-                        isFocusedSeed
-                          ? 'bg-[#F5E4E4] border-[#B8292F] text-[#8C1D22] shadow-archival-sm'
-                          : 'bg-[#EFE8DA] border-[#C8BEAA] text-[#171412]'
-                      }`}
+            {/* Active Watched Titles Shelf */}
+            {watchedMediaItems.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-[#52483E]">
+                  <span>
+                    Your Watched Titles ({watchedMediaItems.length}) — click any
+                    title to focus suggestions specifically on it:
+                  </span>
+                  {filters.seedMediaIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onFiltersChange((prev) => ({
+                          ...prev,
+                          seedMediaIds: [],
+                        }))
+                      }
+                      className="text-[#8C1D22] font-semibold hover:underline cursor-pointer"
                     >
-                      <img
-                        src={item.posterUrl}
-                        alt=""
-                        className="w-5 h-7 rounded-sm object-cover border border-[#C8BEAA] shrink-0"
-                        onError={(e) => {
-                          e.currentTarget.src = getPosterFallbackDataUri(item);
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleSeedFocus(item.id)}
-                        className="font-semibold hover:text-[#B8292F] cursor-pointer text-left truncate max-w-[170px]"
-                        title={
-                          isFocusedSeed
-                            ? 'Focused seed (click to unfocus and use all watched titles)'
-                            : 'Click to focus suggestions specifically around this title'
-                        }
-                      >
-                        {item.title}{' '}
-                        <span className="font-normal font-tabular opacity-75">
-                          ({item.year})
-                        </span>
-                      </button>
-                      {isFocusedSeed && (
-                        <span className="px-1.5 py-0.2 rounded bg-[#B8292F] text-[#FBF8F2] text-[9px] font-bold uppercase">
-                          Focused
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => onToggleWatched(item.id)}
-                        className="p-0.5 rounded text-[#6B5E50] hover:text-[#8C1D22] cursor-pointer"
-                        title={`Remove ${item.title} from Watched`}
-                        aria-label={`Remove ${item.title} from Watched`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="p-3 rounded-lg bg-[#EFE8DA]/60 border border-[#D5CCB9] text-xs text-[#52483E]">
-              You haven&apos;t marked any movies or shows as watched yet. Click
-              any title below to add it to your watched history:
-            </div>
-          )}
+                      Use All Watched Titles ({watchedMediaItems.length})
+                    </button>
+                  )}
+                </div>
 
-          {/* Quick-Add Popular Titles Bar */}
-          {starterSeedCandidates.length > 0 && (
-            <div className="pt-2 border-t border-[#E5DEC9] flex items-center flex-wrap gap-1.5">
-              <span className="text-[11px] font-semibold text-[#6B5E50] mr-1">
-                Quick-mark watched:
-              </span>
-              {starterSeedCandidates.map((cand) => (
-                <button
-                  key={cand.id}
-                  type="button"
-                  onClick={() => onToggleWatched(cand.id)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-[#F6F1E7] hover:bg-[#E4F0EA] text-[#52483E] hover:text-[#1E563F] border border-[#D5CCB9] hover:border-[#B3D4C5] transition-colors cursor-pointer"
-                >
-                  <Plus className="w-2.5 h-2.5" />
-                  <span>{cand.title}</span>
-                </button>
-              ))}
+                <div className="flex items-center flex-wrap gap-2">
+                  {watchedMediaItems.map((item) => {
+                    const isFocusedSeed = filters.seedMediaIds.includes(item.id);
+                    return (
+                      <div
+                        key={item.id}
+                        className={`inline-flex items-center gap-2 pl-1.5 pr-2 py-1 rounded-lg border text-xs transition-all ${
+                          isFocusedSeed
+                            ? 'bg-[#F5E4E4] border-[#B8292F] text-[#8C1D22] shadow-archival-sm'
+                            : 'bg-[#EFE8DA] border-[#C8BEAA] text-[#171412]'
+                        }`}
+                      >
+                        <img
+                          src={item.posterUrl}
+                          alt=""
+                          className="w-5 h-7 rounded-sm object-cover border border-[#C8BEAA] shrink-0"
+                          onError={(e) => {
+                            e.currentTarget.src = getPosterFallbackDataUri(item);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => toggleSeedFocus(item.id)}
+                          className="font-semibold hover:text-[#B8292F] cursor-pointer text-left truncate max-w-[170px]"
+                          title={
+                            isFocusedSeed
+                              ? 'Focused seed (click to unfocus and use all watched titles)'
+                              : 'Click to focus suggestions specifically around this title'
+                          }
+                        >
+                          {item.title}{' '}
+                          <span className="font-normal font-tabular opacity-75">
+                            ({item.year})
+                          </span>
+                        </button>
+                        {isFocusedSeed && (
+                          <span className="px-1.5 py-0.2 rounded bg-[#B8292F] text-[#FBF8F2] text-[9px] font-bold uppercase">
+                            Focused
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onToggleWatched(item.id)}
+                          className="p-0.5 rounded text-[#6B5E50] hover:text-[#8C1D22] cursor-pointer"
+                          title={`Remove ${item.title} from Watched`}
+                          aria-label={`Remove ${item.title} from Watched`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg bg-[#EFE8DA]/60 border border-[#D5CCB9] text-xs text-[#52483E]">
+                You haven&apos;t marked any movies or shows as watched yet. Click
+                any title below to add it to your watched history:
+              </div>
+            )}
+
+            {/* Quick-Add Popular Titles Bar */}
+            {starterSeedCandidates.length > 0 && (
+              <div className="pt-2 border-t border-[#E5DEC9] flex items-center flex-wrap gap-1.5">
+                <span className="text-[11px] font-semibold text-[#6B5E50] mr-1">
+                  Quick-mark watched:
+                </span>
+                {starterSeedCandidates.map((cand) => (
+                  <button
+                    key={cand.id}
+                    type="button"
+                    onClick={() => onToggleWatched(cand.id)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-[#F6F1E7] hover:bg-[#E4F0EA] text-[#52483E] hover:text-[#1E563F] border border-[#D5CCB9] hover:border-[#B3D4C5] transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                    <span>{cand.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <section
+            aria-label="Sign in to unlock your Watchlist and Interested list"
+            className="p-4 rounded-xl bg-[#FBF8F2] border border-[#C8BEAA] shadow-archival-sm flex flex-wrap items-center justify-between gap-3"
+          >
+            <div>
+              <h2 className="font-heading text-base font-bold text-[#171412] flex items-center gap-2">
+                <BookmarkCheck
+                  className="w-4 h-4 text-[#B8292F]"
+                  aria-hidden="true"
+                />
+                <span>
+                  Sign In to Unlock Your Watchlist &amp; Interested List
+                </span>
+              </h2>
+              <p className="text-xs text-[#52483E] mt-0.5">
+                Log in with an @handle or Email &amp; Password to track movies
+                and TV shows you&apos;ve watched or want to watch, and build
+                your own personal 3D constellations.
+              </p>
             </div>
-          )}
-        </section>
+            {onOpenProfileModal && (
+              <button
+                type="button"
+                onClick={onOpenProfileModal}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm transition-colors cursor-pointer shrink-0"
+              >
+                <span>Sign In / Create Account</span>
+              </button>
+            )}
+          </section>
+        )}
 
         {/* ==================== 2. BROWSE BY GENRE, THEME & CURATED CATEGORY ==================== */}
         <section
@@ -1193,25 +1290,46 @@ export function WatchSuggestionsView({
                             className="flex items-center flex-wrap gap-1.5"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <button
-                              type="button"
-                              onClick={() => onToggleWatched(item.id)}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
-                                isWatched
-                                  ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
-                                  : 'bg-[#F6F1E7] hover:bg-[#EFE8DA] text-[#171412] border-[#C8BEAA]'
-                              }`}
-                            >
-                              <Check className="w-3 h-3" />
-                              <span>
-                                {isWatched ? 'Watched ✓' : 'Mark Watched'}
-                              </span>
-                            </button>
+                            {activeUser && onToggleInterested && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleInterested(item.id)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                                  interestedIds.includes(item.id)
+                                    ? 'bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
+                                    : 'bg-[#F6F1E7] hover:bg-[#EFE8DA] text-[#171412] border-[#C8BEAA]'
+                                }`}
+                              >
+                                <Bookmark className="w-3 h-3" />
+                                <span>
+                                  {interestedIds.includes(item.id)
+                                    ? 'Interested ✓'
+                                    : 'Want to Watch'}
+                                </span>
+                              </button>
+                            )}
+
+                            {activeUser && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleWatched(item.id)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                                  isWatched
+                                    ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                                    : 'bg-[#F6F1E7] hover:bg-[#EFE8DA] text-[#171412] border-[#C8BEAA]'
+                                }`}
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>
+                                  {isWatched ? 'Watched ✓' : 'Mark Watched'}
+                                </span>
+                              </button>
+                            )}
 
                             <button
                               type="button"
                               onClick={() => {
-                                if (!isWatched) {
+                                if (activeUser && !isWatched) {
                                   onToggleWatched(item.id);
                                 }
                                 onFiltersChange((prev) => ({

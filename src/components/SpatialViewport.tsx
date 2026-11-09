@@ -16,15 +16,23 @@ import {
   Award,
   Music,
   Hash,
-  X,
   Link2,
 } from 'lucide-react';
 import {
   CameraMode,
   ForceSettings,
+  GraphFilterBehavior,
+  GraphFilterState,
+  GraphLayoutMode,
   GraphLink,
   GraphNode,
+  GraphScopeMode,
+  LabelDisplayMode,
   MediaItem,
+  NodeColorMode,
+  NodeSizeMode,
+  SemanticCluster,
+  UserProfile,
   ViewMode,
 } from '@/lib/types';
 import { getPosterFallbackDataUri } from '@/lib/seed-data';
@@ -36,6 +44,7 @@ interface SpatialViewportProps {
   selectedNodeId: string | null;
   onSelectNode: (node: GraphNode) => void;
   onClearSelection?: () => void;
+  onResetEverything?: () => void;
   onMakeFocal: (mediaId: string) => void;
   onClearFocal?: () => void;
   viewMode: '2D' | '3D';
@@ -47,6 +56,22 @@ interface SpatialViewportProps {
   resetPitchTrigger: number;
   orbitTargetNodeId: string | null;
   onFovChange?: (fov: number) => void;
+  graphScope?: GraphScopeMode;
+  activeUser?: UserProfile | null;
+  onGraphScopeChange?: (scope: GraphScopeMode) => void;
+  onOpenProfileModal?: () => void;
+  // Movie Map REA Integration Props
+  clusters?: SemanticCluster[];
+  layoutMode?: GraphLayoutMode;
+  onLayoutModeChange?: (mode: GraphLayoutMode) => void;
+  colorMode?: NodeColorMode;
+  onColorModeChange?: (mode: NodeColorMode) => void;
+  sizeMode?: NodeSizeMode;
+  onSizeModeChange?: (mode: NodeSizeMode) => void;
+  labelMode?: LabelDisplayMode;
+  onLabelModeChange?: (mode: LabelDisplayMode) => void;
+  graphFilters?: GraphFilterState;
+  onSelectCluster?: (clusterId: string | null) => void;
 }
 
 interface HoveredTooltipState {
@@ -334,6 +359,56 @@ function computeLinkedSubgraph(
     linkedMedia,
     linkedEntities,
   };
+}
+
+/**
+ * Computes a clean, balanced radial 3D/2D layout centered at (0, 0, 0) for the isolated
+ * interconnected subgraph when a user selects a node, so that only the selected node and
+ * its connected nodes are shown in a clear, non-overlapping constellation.
+ */
+function computeIsolatedLayoutTargets(
+  sub: LinkedSubgraphResult
+): Map<string, { x: number; y: number; z: number }> {
+  const targets = new Map<string, { x: number; y: number; z: number }>();
+  if (!sub.focusNode) return targets;
+
+  // Selected focus node sits at the center of the isolated view
+  targets.set(sub.focusNode.id, { x: 0, y: 0, z: 0 });
+
+  const entityCount = sub.linkedEntities.length;
+  const mediaCount = sub.linkedMedia.length;
+
+  // Inner/mid ring: shared collaborators & themes
+  sub.linkedEntities.forEach(({ node }, idx) => {
+    const angle = (Math.PI * 2 * idx) / Math.max(1, entityCount) - Math.PI / 2;
+    const radius = entityCount > 6 ? 72 + (idx % 2) * 16 : 74;
+    const zOffset = ((idx % 3) - 1) * 18;
+    targets.set(node.id, {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius,
+      z: zOffset,
+    });
+  });
+
+  // Outer ring: connected films & series
+  sub.linkedMedia.forEach(({ node }, idx) => {
+    const angleOffset = entityCount > 0 ? Math.PI / Math.max(4, mediaCount) : 0;
+    const angle =
+      (Math.PI * 2 * idx) / Math.max(1, mediaCount) -
+      Math.PI / 2 +
+      angleOffset;
+    const baseRadius = entityCount > 0 ? 128 : 108;
+    const radius =
+      mediaCount > 7 ? baseRadius + (idx % 2) * 24 : baseRadius;
+    const zOffset = Math.sin(idx * 1.7) * 24;
+    targets.set(node.id, {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius,
+      z: zOffset,
+    });
+  });
+
+  return targets;
 }
 
 /**
@@ -823,9 +898,9 @@ function createCategoryNodeAssembly(
     const reelMesh = new THREE.Mesh(reelGeo, coreMat);
     reelGroup.add(reelMesh);
 
-    // Inner dark celluloid film tape wound inside the reel
+    // Inner wound celluloid film pack with warm brass sheen
     const tapeCore = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.86, r * 0.86, r * 0.18, 36),
+      new THREE.CylinderGeometry(r * 0.86, r * 0.86, r * 0.19, 36),
       metalAccentMat
     );
     tapeCore.rotation.x = Math.PI / 2;
@@ -833,18 +908,33 @@ function createCategoryNodeAssembly(
 
     // Precision outer metallic reel rim
     const rimTorus = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.1, r * 0.06, 16, 64),
+      new THREE.TorusGeometry(r * 1.1, r * 0.062, 16, 64),
       metalAccentMat
     );
     reelGroup.add(rimTorus);
 
-    // Center spindle hub cap
+    // Inner vellum calibration ring around spindle
+    const innerCalibRing = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 0.34, r * 0.028, 12, 36),
+      ivoryContrastMat
+    );
+    innerCalibRing.position.z = r * 0.16;
+    reelGroup.add(innerCalibRing);
+
+    // Dual-stepped center spindle hub cap
     const hubCap = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.24, r * 0.24, r * 0.42, 24),
+      new THREE.CylinderGeometry(r * 0.25, r * 0.25, r * 0.44, 24),
       ivoryContrastMat
     );
     hubCap.rotation.x = Math.PI / 2;
     reelGroup.add(hubCap);
+
+    const spindlePin = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 0.1, r * 0.1, r * 0.54, 16),
+      metalAccentMat
+    );
+    spindlePin.rotation.x = Math.PI / 2;
+    reelGroup.add(spindlePin);
 
     reelGroup.rotation.x = 0.22;
     reelGroup.rotation.y = -0.25;
@@ -852,35 +942,53 @@ function createCategoryNodeAssembly(
     coreObject = reelGroup;
     outerShell = rimTorus;
   } else if (node.type === 'TV') {
-    // ==================== TV SERIES: 3D WIDESCREEN TELEVISION SET ====================
+    // ==================== TV SERIES: 3D WIDESCREEN BROADCAST MONITOR ====================
     const tvGroup = new THREE.Group();
 
     // Widescreen 16:9 beveled cabinet body
     const cabinetGeo = createRoundedRectPrismGeometry(
-      r * 1.85,
-      r * 1.22,
-      r * 0.52,
+      r * 1.88,
+      r * 1.24,
+      r * 0.54,
       r * 0.22
     );
     const cabinetMesh = new THREE.Mesh(cabinetGeo, coreMat);
     tvGroup.add(cabinetMesh);
 
-    // Recessed glowing glass screen on front & back so it looks great from any 3D orbit angle
+    // Recessed glowing vellum screen shifted slightly left to leave room for side tuner panel
     const screenGeo = createRoundedRectPrismGeometry(
-      r * 1.48,
+      r * 1.28,
       r * 0.9,
-      r * 0.62,
-      r * 0.14
+      r * 0.63,
+      r * 0.13
     );
     const screenMesh = new THREE.Mesh(screenGeo, ivoryContrastMat);
+    screenMesh.position.set(-r * 0.14, 0, 0);
     tvGroup.add(screenMesh);
 
-    // Metallic bezel frame
+    // Brass rotary tuner knobs on right side of monitor bezel (front & back)
+    const dialGeo = new THREE.CylinderGeometry(
+      r * 0.095,
+      r * 0.095,
+      r * 0.66,
+      16
+    );
+    const upperDial = new THREE.Mesh(dialGeo, metalAccentMat);
+    upperDial.rotation.x = Math.PI / 2;
+    upperDial.position.set(r * 0.66, r * 0.22, 0);
+    tvGroup.add(upperDial);
+
+    const lowerDial = new THREE.Mesh(dialGeo, ivoryContrastMat);
+    lowerDial.rotation.x = Math.PI / 2;
+    lowerDial.position.set(r * 0.66, -r * 0.16, 0);
+    tvGroup.add(lowerDial);
+
+    // Top antenna dipole mount
     const bezelTop = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.08, r * 0.08, r * 0.35, 16),
+      new THREE.CylinderGeometry(r * 0.12, r * 0.15, r * 0.22, 16),
       metalAccentMat
     );
-    bezelTop.position.set(0, r * 0.64, 0);
+    bezelTop.position.set(0, r * 0.66, 0);
     tvGroup.add(bezelTop);
 
     // Twin V-shaped rabbit-ear broadcast antennae on top
@@ -894,21 +1002,21 @@ function createCategoryNodeAssembly(
     const antTipGeo = new THREE.SphereGeometry(r * 0.075, 12, 12);
 
     const leftAnt = new THREE.Mesh(antStickGeo, metalAccentMat);
-    leftAnt.position.set(-r * 0.28, r * 0.92, 0);
+    leftAnt.position.set(-r * 0.28, r * 0.94, 0);
     leftAnt.rotation.z = 0.52;
     antennaGroup.add(leftAnt);
 
     const leftTip = new THREE.Mesh(antTipGeo, coreMat);
-    leftTip.position.set(-r * 0.48, r * 1.24, 0);
+    leftTip.position.set(-r * 0.48, r * 1.26, 0);
     antennaGroup.add(leftTip);
 
     const rightAnt = new THREE.Mesh(antStickGeo, metalAccentMat);
-    rightAnt.position.set(r * 0.28, r * 0.92, 0);
+    rightAnt.position.set(r * 0.28, r * 0.94, 0);
     rightAnt.rotation.z = -0.52;
     antennaGroup.add(rightAnt);
 
     const rightTip = new THREE.Mesh(antTipGeo, coreMat);
-    rightTip.position.set(r * 0.48, r * 1.24, 0);
+    rightTip.position.set(r * 0.48, r * 1.26, 0);
     antennaGroup.add(rightTip);
 
     tvGroup.add(antennaGroup);
@@ -923,7 +1031,7 @@ function createCategoryNodeAssembly(
     tvGroup.add(neckMesh);
 
     const basePlate = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.52, r * 0.58, r * 0.09, 24),
+      new THREE.CylinderGeometry(r * 0.54, r * 0.6, r * 0.095, 24),
       metalAccentMat
     );
     basePlate.position.set(0, -r * 0.86, 0);
@@ -973,6 +1081,20 @@ function createCategoryNodeAssembly(
     lowerBar.position.set(0, r * 0.42, 0);
     clapperGroup.add(lowerBar);
 
+    for (let s = 0; s < 3; s++) {
+      const lowerStripe = new THREE.Mesh(
+        new THREE.BoxGeometry(boardW * 0.14, r * 0.225, boardD * 1.34),
+        ivoryContrastMat
+      );
+      lowerStripe.position.set(
+        -boardW / 2 + boardW * (0.24 + s * 0.28),
+        r * 0.42,
+        0
+      );
+      lowerStripe.rotation.z = 0.25;
+      clapperGroup.add(lowerStripe);
+    }
+
     // Hinged upper clap-stick (pivots around left hinge)
     const upperStickPivot = new THREE.Group();
     upperStickPivot.position.set(-boardW / 2, r * 0.54, 0);
@@ -998,7 +1120,7 @@ function createCategoryNodeAssembly(
 
     // Brass hinge bolt
     const hingeBolt = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.12, r * 0.12, boardD * 1.5, 16),
+      new THREE.CylinderGeometry(r * 0.13, r * 0.13, boardD * 1.55, 16),
       metalAccentMat
     );
     hingeBolt.rotation.x = Math.PI / 2;
@@ -1020,7 +1142,7 @@ function createCategoryNodeAssembly(
 
     // Raised metallic center emblem on both faces
     const centerEmblem = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.26, r * 0.26, r * 0.46, 20),
+      new THREE.CylinderGeometry(r * 0.27, r * 0.27, r * 0.46, 20),
       ivoryContrastMat
     );
     centerEmblem.rotation.x = Math.PI / 2;
@@ -1028,7 +1150,7 @@ function createCategoryNodeAssembly(
 
     // Walk-of-Fame circular marquee frame ring
     const frameRing = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.32, r * 0.055, 16, 64),
+      new THREE.TorusGeometry(r * 1.34, r * 0.058, 16, 64),
       metalAccentMat
     );
     actorGroup.add(frameRing);
@@ -1052,7 +1174,7 @@ function createCategoryNodeAssembly(
     );
     bookGroup.add(spine);
 
-    // Left open wing (hardcover + cream vellum page block)
+    // Left open wing (hardcover + cream vellum page block + engraved text rules)
     const leftWing = new THREE.Group();
     const leftCover = new THREE.Mesh(
       new THREE.BoxGeometry(pageW, pageH, coverT),
@@ -1067,10 +1189,20 @@ function createCategoryNodeAssembly(
     );
     leftPages.position.set(-pageW * 0.46, 0, pageT * 0.15);
     leftWing.add(leftPages);
+
+    for (let l = -1; l <= 1; l++) {
+      const ruleLine = new THREE.Mesh(
+        new THREE.BoxGeometry(pageW * 0.56, r * 0.06, pageT * 1.18),
+        coreMat
+      );
+      ruleLine.position.set(-pageW * 0.48, l * r * 0.28, pageT * 0.15);
+      leftWing.add(ruleLine);
+    }
+
     leftWing.rotation.y = 0.38;
     bookGroup.add(leftWing);
 
-    // Right open wing (hardcover + cream vellum page block)
+    // Right open wing (hardcover + cream vellum page block + engraved text rules)
     const rightWing = new THREE.Group();
     const rightCover = new THREE.Mesh(
       new THREE.BoxGeometry(pageW, pageH, coverT),
@@ -1085,6 +1217,16 @@ function createCategoryNodeAssembly(
     );
     rightPages.position.set(pageW * 0.46, 0, pageT * 0.15);
     rightWing.add(rightPages);
+
+    for (let l = -1; l <= 1; l++) {
+      const ruleLine = new THREE.Mesh(
+        new THREE.BoxGeometry(pageW * 0.56, r * 0.06, pageT * 1.18),
+        coreMat
+      );
+      ruleLine.position.set(pageW * 0.48, l * r * 0.28, pageT * 0.15);
+      rightWing.add(ruleLine);
+    }
+
     rightWing.rotation.y = -0.38;
     bookGroup.add(rightWing);
 
@@ -1150,19 +1292,32 @@ function createCategoryNodeAssembly(
     );
     noteGroup.add(rightStem);
 
-    // Top connecting musical beam bar
+    // Top connecting musical double-beam bars
     const beamDx = rightX - leftX;
     const beamDy = topRightY - topLeftY;
     const beamLen = Math.sqrt(beamDx * beamDx + beamDy * beamDy) + r * 0.16;
-    const beamGeo = new THREE.BoxGeometry(beamLen, r * 0.24, r * 0.2);
+    const beamAngle = Math.atan2(beamDy, beamDx);
+    const beamGeo = new THREE.BoxGeometry(beamLen, r * 0.22, r * 0.2);
     const topBeam = new THREE.Mesh(beamGeo, coreMat);
     topBeam.position.set(
       (leftX + rightX) / 2 + r * 0.28,
-      (topLeftY + topRightY) / 2 - r * 0.06,
+      (topLeftY + topRightY) / 2 - r * 0.04,
       0
     );
-    topBeam.rotation.z = Math.atan2(beamDy, beamDx);
+    topBeam.rotation.z = beamAngle;
     noteGroup.add(topBeam);
+
+    const secondBeam = new THREE.Mesh(
+      new THREE.BoxGeometry(beamLen * 0.92, r * 0.13, r * 0.22),
+      ivoryContrastMat
+    );
+    secondBeam.position.set(
+      (leftX + rightX) / 2 + r * 0.28,
+      (topLeftY + topRightY) / 2 - r * 0.32,
+      0
+    );
+    secondBeam.rotation.z = beamAngle;
+    noteGroup.add(secondBeam);
 
     // Subtle acoustic soundwave ring around the musical note
     const waveRing = new THREE.Mesh(
@@ -1175,6 +1330,30 @@ function createCategoryNodeAssembly(
 
     group.add(noteGroup);
     coreObject = noteGroup;
+  }
+
+  // Primary Media Nodes (MOVIE / TV) receive an equatorial archival brass collet ring with 4 cardinal compass studs
+  if ((node.type === 'MOVIE' || node.type === 'TV') && !node.isFocal) {
+    const mediaCollet = new THREE.Group();
+    const colletRing = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 1.38, r * 0.028, 14, 64),
+      glassShellMat
+    );
+    mediaCollet.add(colletRing);
+
+    const studGeo = new THREE.SphereGeometry(r * 0.06, 10, 10);
+    for (let s = 0; s < 4; s++) {
+      const ang = (s * Math.PI) / 2;
+      const stud = new THREE.Mesh(studGeo, metalAccentMat);
+      stud.position.set(
+        Math.cos(ang) * r * 1.38,
+        Math.sin(ang) * r * 1.38,
+        0
+      );
+      mediaCollet.add(stud);
+    }
+    mediaCollet.rotation.x = Math.PI / 2.25;
+    group.add(mediaCollet);
   }
 
   // Selected Focal Title gets an additional centerpiece marquee halo ring
@@ -1241,8 +1420,8 @@ function createCategoryNodeAssembly(
   const baseLabelScale = node.isFocal
     ? 46
     : node.type === 'MOVIE' || node.type === 'TV'
-      ? 36
-      : 29;
+      ? 35
+      : 28;
 
   return {
     record: {
@@ -1267,12 +1446,13 @@ function createCategoryNodeAssembly(
 }
 
 /**
- * Creates a high-DPI 3D Sprite label texture for a GraphNode with a sleek category glyph badge
+ * Creates a high-DPI 3D Sprite label texture for a GraphNode styled as an engraved Criterion/museum vellum plate
+ * with a category medallion emblem, double-hairline border, and downward pointer nib.
  */
 function createLabelSprite(node: GraphNode): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 640;
-  canvas.height = 168;
+  canvas.width = 680;
+  canvas.height = 188;
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1285,71 +1465,96 @@ function createLabelSprite(node: GraphNode): THREE.Sprite {
       : isMedia && node.matchScore !== undefined
         ? `${node.matchScore}% Match · ${getEntityRoleLabel(node.type)}`
         : isMedia && node.mediaItem
-          ? `${node.mediaItem.year} · ★ ${node.mediaItem.imdbRating.toFixed(1)}`
+          ? `${node.mediaItem.year} · IMDb ${node.mediaItem.imdbRating.toFixed(1)}`
           : getEntityRoleLabel(node.type).toUpperCase();
 
-    const pillW = Math.min(600, Math.max(260, titleText.length * 17 + 112));
-    const pillH = 92;
+    const pillW = Math.min(636, Math.max(276, titleText.length * 17.5 + 124));
+    const pillH = 96;
     const pillX = (canvas.width - pillW) / 2;
-    const pillY = 34;
+    const pillY = 26;
+    const pointerTipY = pillY + pillH + 14;
+    const centerX = canvas.width / 2;
 
-    // Subtle elevation shadow
-    ctx.save();
-    ctx.shadowColor = 'rgba(23, 20, 18, 0.16)';
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetY = 4;
-
-    // Warm archival vellum card plate
-    ctx.fillStyle = node.isFocal
-      ? 'rgba(251, 248, 242, 0.98)'
-      : 'rgba(249, 245, 237, 0.95)';
-    ctx.strokeStyle = node.isFocal
+    const borderColor = node.isFocal
       ? '#B8292F'
       : isMedia
         ? node.color
         : '#B5A892';
-    ctx.lineWidth = node.isFocal ? 3 : 2;
+
+    // 1. Subtle offset elevation shadow
+    ctx.save();
+    ctx.shadowColor = 'rgba(23, 20, 18, 0.18)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 4;
+
+    // Warm archival vellum card plate with bottom pointer nib
+    ctx.fillStyle = node.isFocal
+      ? 'rgba(251, 248, 242, 0.99)'
+      : 'rgba(251, 248, 242, 0.96)';
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = node.isFocal ? 3 : 2.2;
 
     ctx.beginPath();
-    ctx.roundRect(pillX, pillY, pillW, pillH, 14);
+    ctx.roundRect(pillX, pillY, pillW, pillH, 10);
     ctx.fill();
     ctx.restore();
     ctx.stroke();
 
-    // Left category accent bar / badge circle
-    const badgeCx = pillX + 34;
+    // Inner engraved vellum inset rule
+    ctx.strokeStyle = 'rgba(213, 204, 185, 0.65)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(pillX + 4, pillY + 4, pillW - 8, pillH - 8, 7);
+    ctx.stroke();
+
+    // Downward pointer pin connecting label plate to 3D sculpture
+    ctx.fillStyle = borderColor;
+    ctx.beginPath();
+    ctx.moveTo(centerX - 8, pillY + pillH);
+    ctx.lineTo(centerX + 8, pillY + pillH);
+    ctx.lineTo(centerX, pointerTipY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Left category medallion disc
+    const badgeCx = pillX + 38;
     const badgeCy = pillY + pillH / 2;
     ctx.beginPath();
-    ctx.arc(badgeCx, badgeCy, 18, 0, Math.PI * 2);
-    ctx.fillStyle = node.isFocal ? 'rgba(184, 41, 47, 0.12)' : 'rgba(23, 20, 18, 0.05)';
+    ctx.arc(badgeCx, badgeCy, 20, 0, Math.PI * 2);
+    ctx.fillStyle = node.isFocal
+      ? 'rgba(184, 41, 47, 0.12)'
+      : 'rgba(239, 232, 218, 0.92)';
     ctx.fill();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
 
     drawCategoryGlyph2D(
       ctx,
       node.type,
       badgeCx,
       badgeCy,
-      9.5,
+      10,
       node.isFocal ? '#B8292F' : node.color
     );
 
-    const textCenterX = pillX + 58 + (pillW - 72) / 2;
+    const textCenterX = pillX + 64 + (pillW - 78) / 2;
 
     // Title in Spectral serif
-    ctx.font = `${node.isFocal ? '700 26px' : '600 23px'} "Spectral", Georgia, serif`;
+    ctx.font = `${node.isFocal ? '700 26px' : '700 23px'} "Spectral", Georgia, serif`;
     ctx.fillStyle = '#171412';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(titleText, textCenterX, pillY + 33);
+    ctx.fillText(titleText, textCenterX, pillY + 35);
 
-    // Subtitle in Source Sans 3
+    // Subtitle in Source Sans 3 (tabular numerals)
     ctx.font = '700 14.5px "Source Sans 3", -apple-system, sans-serif';
     ctx.fillStyle = node.isFocal
       ? '#B8292F'
       : isMedia && (node.matchScore || 0) >= 75
         ? '#2A6B53'
         : node.color;
-    ctx.fillText(badgeText, textCenterX, pillY + 65);
+    ctx.fillText(badgeText, textCenterX, pillY + 67);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -1364,10 +1569,10 @@ function createLabelSprite(node: GraphNode): THREE.Sprite {
   const scale = node.isFocal
     ? 46
     : node.type === 'MOVIE' || node.type === 'TV'
-      ? 36
-      : 29;
-  sprite.scale.set(scale, scale * (168 / 640), 1);
-  sprite.position.set(0, node.radius * 1.35 + 7.5, 0);
+      ? 35
+      : 28;
+  sprite.scale.set(scale, scale * (188 / 680), 1);
+  sprite.position.set(0, node.radius * 1.42 + 7.8, 0);
   return sprite;
 }
 
@@ -1378,6 +1583,7 @@ export function SpatialViewport({
   selectedNodeId,
   onSelectNode,
   onClearSelection,
+  onResetEverything,
   onMakeFocal,
   onClearFocal,
   viewMode,
@@ -1389,13 +1595,30 @@ export function SpatialViewport({
   resetPitchTrigger,
   orbitTargetNodeId,
   onFovChange,
+  graphScope = 'FULL_ARCHIVE',
+  activeUser = null,
+  onGraphScopeChange,
+  onOpenProfileModal,
+  clusters = [],
+  layoutMode = 'FORCE_CONSTELLATION',
+  onLayoutModeChange,
+  colorMode = 'CATEGORY',
+  onColorModeChange,
+  sizeMode = 'RATING',
+  onSizeModeChange,
+  labelMode = 'AUTO',
+  onLabelModeChange,
+  graphFilters,
+  onSelectCluster,
 }: SpatialViewportProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvas2dRef = useRef<HTMLCanvasElement | null>(null);
 
   const [hoveredTooltip, setHoveredTooltip] =
     useState<HoveredTooltipState | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [isNodeKeyOpen, setIsNodeKeyOpen] = useState(false);
 
   // Refs for mutable access inside animation loop
   const nodesRef = useRef<GraphNode[]>(nodes);
@@ -1418,7 +1641,38 @@ export function SpatialViewport({
 
   useEffect(() => {
     selectedIdRef.current = selectedNodeId;
+    if (!selectedNodeId) {
+      // Smoothly return camera to full archive center when selection is cleared
+      camSphericalRef.current.goalX = 0;
+      camSphericalRef.current.goalY = 0;
+      camSphericalRef.current.goalZ = 0;
+      camSphericalRef.current.goalRadius = 265;
+      pan2dRef.current.goalPanX = 0;
+      pan2dRef.current.goalPanY = 0;
+      pan2dRef.current.goalZoom = 1.05;
+    }
   }, [selectedNodeId]);
+
+  // Allow pressing Escape at any time to exit the isolated subgraph view / reset selection
+  // Allow pressing 'L' to toggle label display mode (Auto -> All -> Off)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.key === 'Escape' && selectedIdRef.current) {
+        onClearSelection?.();
+      } else if (e.key.toLowerCase() === 'l' && !e.metaKey && !e.ctrlKey) {
+        if (onLabelModeChange) {
+          const next =
+            labelMode === 'AUTO' ? 'ALL' : labelMode === 'ALL' ? 'OFF' : 'AUTO';
+          onLabelModeChange(next);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClearSelection, labelMode, onLabelModeChange]);
 
   useEffect(() => {
     autoRotateRef.current = autoRotate;
@@ -1455,8 +1709,8 @@ export function SpatialViewport({
   });
 
   /**
-   * Smoothly frames both the target node AND all of its linked nodes in 3D and 2D viewports
-   * so that every linked node remains clearly visible on screen when clicked.
+   * Smoothly frames the isolated interconnected subgraph centered at (0, 0, 0)
+   * so that only the selected node and all of its connected nodes fill the viewport cleanly.
    */
   const frameNodeAndLinkedCluster = useCallback((nodeId: string) => {
     const curNodes = nodesRef.current;
@@ -1465,63 +1719,18 @@ export function SpatialViewport({
     if (!targetNode) return;
 
     const sub = computeLinkedSubgraph(nodeId, curNodes, curLinks);
-    const clusterNodes = curNodes.filter((n) => sub.linkedNodeIds.has(n.id));
+    const totalLinked = sub.linkedMedia.length + sub.linkedEntities.length;
 
-    if (clusterNodes.length > 1) {
-      let avgX = 0;
-      let avgY = 0;
-      let avgZ = 0;
-      for (const cn of clusterNodes) {
-        avgX += cn.x;
-        avgY += cn.y;
-        avgZ += cn.z;
-      }
-      avgX /= clusterNodes.length;
-      avgY /= clusterNodes.length;
-      avgZ /= clusterNodes.length;
+    // Isolated subgraph arranges around (0, 0, 0)
+    camSphericalRef.current.goalX = 0;
+    camSphericalRef.current.goalY = 0;
+    camSphericalRef.current.goalZ = 0;
+    camSphericalRef.current.goalRadius =
+      totalLinked > 8 ? 245 : totalLinked > 0 ? 220 : 175;
 
-      // Weight camera target 55% toward the clicked node and 45% toward the centroid of its linked nodes
-      const goalX = targetNode.x * 0.55 + avgX * 0.45;
-      const goalY = targetNode.y * 0.55 + avgY * 0.45;
-      const goalZ = targetNode.z * 0.55 + avgZ * 0.45;
-
-      let maxDist3D = 0;
-      let maxDist2D = 0;
-      for (const cn of clusterNodes) {
-        const dx = cn.x - goalX;
-        const dy = cn.y - goalY;
-        const dz = cn.z - goalZ;
-        const d3 = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        const d2 = Math.sqrt(dx * dx + dy * dy);
-        if (d3 > maxDist3D) maxDist3D = d3;
-        if (d2 > maxDist2D) maxDist2D = d2;
-      }
-
-      camSphericalRef.current.goalX = goalX;
-      camSphericalRef.current.goalY = goalY;
-      camSphericalRef.current.goalZ = goalZ;
-      camSphericalRef.current.goalRadius = Math.max(
-        175,
-        Math.min(340, maxDist3D * 1.85 + 75)
-      );
-
-      const nextZoom2D = Math.max(
-        0.68,
-        Math.min(1.35, 240 / Math.max(120, maxDist2D + 60))
-      );
-      pan2dRef.current.goalZoom = nextZoom2D;
-      pan2dRef.current.goalPanX = -goalX * nextZoom2D;
-      pan2dRef.current.goalPanY = -goalY * nextZoom2D;
-    } else {
-      camSphericalRef.current.goalX = targetNode.x;
-      camSphericalRef.current.goalY = targetNode.y;
-      camSphericalRef.current.goalZ = targetNode.z;
-      camSphericalRef.current.goalRadius = targetNode.isFocal ? 235 : 165;
-
-      pan2dRef.current.goalZoom = 1.15;
-      pan2dRef.current.goalPanX = -targetNode.x * 1.15;
-      pan2dRef.current.goalPanY = -targetNode.y * 1.15;
-    }
+    pan2dRef.current.goalPanX = 0;
+    pan2dRef.current.goalPanY = 0;
+    pan2dRef.current.goalZoom = totalLinked > 8 ? 0.96 : 1.08;
   }, []);
 
   // Handle Reset View trigger
@@ -1809,7 +2018,15 @@ export function SpatialViewport({
       pointer.y = -(localY / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
 
-      const intersects = raycaster.intersectObjects(pickableMeshes, false);
+      const visibleMeshes = selectedIdRef.current
+        ? pickableMeshes.filter((m) => {
+            const nId = m.userData?.nodeId as string;
+            const grp = nodeAssembliesMap.get(nId)?.group;
+            return grp ? grp.visible : true;
+          })
+        : pickableMeshes;
+
+      const intersects = raycaster.intersectObjects(visibleMeshes, false);
       if (intersects.length > 0) {
         const hitId = intersects[0].object.userData?.nodeId as string;
         const hitNode = simNodes.find((n) => n.id === hitId) || null;
@@ -1843,7 +2060,15 @@ export function SpatialViewport({
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
 
-      const intersects = raycaster.intersectObjects(pickableMeshes, false);
+      const visibleMeshes = selectedIdRef.current
+        ? pickableMeshes.filter((m) => {
+            const nId = m.userData?.nodeId as string;
+            const grp = nodeAssembliesMap.get(nId)?.group;
+            return grp ? grp.visible : true;
+          })
+        : pickableMeshes;
+
+      const intersects = raycaster.intersectObjects(visibleMeshes, false);
       if (intersects.length > 0) {
         const hitId = intersects[0].object.userData?.nodeId as string;
         const hitNode = simNodes.find((n) => n.id === hitId);
@@ -1862,7 +2087,15 @@ export function SpatialViewport({
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
 
-      const intersects = raycaster.intersectObjects(pickableMeshes, false);
+      const visibleMeshes = selectedIdRef.current
+        ? pickableMeshes.filter((m) => {
+            const nId = m.userData?.nodeId as string;
+            const grp = nodeAssembliesMap.get(nId)?.group;
+            return grp ? grp.visible : true;
+          })
+        : pickableMeshes;
+
+      const intersects = raycaster.intersectObjects(visibleMeshes, false);
       if (intersects.length > 0) {
         const hitId = intersects[0].object.userData?.nodeId as string;
         const hitNode = simNodes.find((n) => n.id === hitId);
@@ -1905,100 +2138,143 @@ export function SpatialViewport({
     let frameId = 0;
     let clock = 0;
     const nodeIndexMap = new Map<string, GraphNode>();
-    simNodes.forEach((n) => nodeIndexMap.set(n.id, n));
+    const homePositions3D = new Map<
+      string,
+      { x: number; y: number; z: number }
+    >();
+    simNodes.forEach((n) => {
+      nodeIndexMap.set(n.id, n);
+      homePositions3D.set(n.id, { x: n.x, y: n.y, z: n.z });
+    });
     const upVec = new THREE.Vector3(0, 1, 0);
     const dirVec = new THREE.Vector3();
+
+    let cachedSelectedId: string | null = null;
+    let cachedSelectedSub: LinkedSubgraphResult | null = null;
+    let cachedIsolatedTargets = new Map<
+      string,
+      { x: number; y: number; z: number }
+    >();
 
     const animate = () => {
       frameId = requestAnimationFrame(animate);
       clock += 0.016;
 
       const fSettings = forceRef.current;
-
-      for (let i = 0; i < simNodes.length; i++) {
-        const nA = simNodes[i];
-        if (nA.isFocal) {
-          nA.x = 0;
-          nA.y = 0;
-          nA.z = 0;
-          continue;
-        }
-
-        if ((nA.type === 'MOVIE' || nA.type === 'TV') && nA.similarity) {
-          const targetR =
-            nA.similarity.linkDistance * fSettings.linkDistanceMultiplier;
-          const curR =
-            Math.sqrt(nA.x * nA.x + nA.y * nA.y + nA.z * nA.z) || 1;
-          const radialDelta =
-            (targetR - curR) * 0.032 * fSettings.sphericalForce;
-          nA.vx += (nA.x / curR) * radialDelta;
-          nA.vy += (nA.y / curR) * radialDelta;
-          nA.vz += (nA.z / curR) * radialDelta;
-        }
-
-        for (let j = i + 1; j < simNodes.length; j++) {
-          const nB = simNodes[j];
-          const dx = nA.x - nB.x;
-          const dy = nA.y - nB.y;
-          const dz = nA.z - nB.z;
-          const distSq = dx * dx + dy * dy + dz * dz + 1;
-          if (distSq < 3600) {
-            const force = (28 * fSettings.sphericalForce) / distSq;
-            nA.vx += dx * force;
-            nA.vy += dy * force;
-            nA.vz += dz * force * fSettings.zRepulsion;
-            if (!nB.isFocal) {
-              nB.vx -= dx * force;
-              nB.vy -= dy * force;
-              nB.vz -= dz * force * fSettings.zRepulsion;
-            }
-          }
-        }
-      }
-
-      for (const node of simNodes) {
-        if (
-          node.type !== 'MOVIE' &&
-          node.type !== 'TV' &&
-          node.connectedMediaIds.length > 0
-        ) {
-          let cx = 0;
-          let cy = 0;
-          let cz = 0;
-          let cnt = 0;
-          for (const mId of node.connectedMediaIds) {
-            const mNode = nodeIndexMap.get(mId);
-            if (mNode) {
-              cx += mNode.x;
-              cy += mNode.y;
-              cz += mNode.z;
-              cnt++;
-            }
-          }
-          if (cnt > 0) {
-            cx /= cnt;
-            cy /= cnt;
-            cz /= cnt;
-            const norm = Math.sqrt(cx * cx + cy * cy + cz * cz) || 1;
-            const targetX = cx + (cx / norm) * 24;
-            const targetY = cy + (cy / norm) * 24;
-            const targetZ = (cz + (cz / norm) * 24) * fSettings.zRepulsion;
-            node.vx += (targetX - node.x) * 0.04;
-            node.vy += (targetY - node.y) * 0.04;
-            node.vz += (targetZ - node.z) * 0.04;
-          }
-        }
-      }
-
       const camState = camSphericalRef.current;
       const activeHover = hoveredIdRef.current;
       const activeSelected = selectedIdRef.current;
       const hasActiveFocus = Boolean(activeSelected || activeHover);
 
+      if (activeSelected !== cachedSelectedId) {
+        cachedSelectedId = activeSelected;
+        cachedSelectedSub = activeSelected
+          ? computeLinkedSubgraph(activeSelected, simNodes, linksRef.current)
+          : null;
+        cachedIsolatedTargets = cachedSelectedSub
+          ? computeIsolatedLayoutTargets(cachedSelectedSub)
+          : new Map();
+      }
+
+      const selSub = cachedSelectedSub;
+      const isIsolatedMode = Boolean(selSub && selSub.focusNode);
+
+      if (!isIsolatedMode) {
+        for (let i = 0; i < simNodes.length; i++) {
+          const nA = simNodes[i];
+          if (nA.isFocal) {
+            nA.x = 0;
+            nA.y = 0;
+            nA.z = 0;
+            continue;
+          }
+
+          // Gentle restoring pull toward initial orbital seed position so resetting after isolation restores full layout
+          const home = homePositions3D.get(nA.id);
+          if (home && !nA.similarity) {
+            nA.vx += (home.x - nA.x) * 0.028;
+            nA.vy += (home.y - nA.y) * 0.028;
+            nA.vz += (home.z - nA.z) * 0.028;
+          }
+
+          if ((nA.type === 'MOVIE' || nA.type === 'TV') && nA.similarity) {
+            const targetR =
+              nA.similarity.linkDistance * fSettings.linkDistanceMultiplier;
+            const curR =
+              Math.sqrt(nA.x * nA.x + nA.y * nA.y + nA.z * nA.z) || 1;
+            const radialDelta =
+              (targetR - curR) * 0.032 * fSettings.sphericalForce;
+            nA.vx += (nA.x / curR) * radialDelta;
+            nA.vy += (nA.y / curR) * radialDelta;
+            nA.vz += (nA.z / curR) * radialDelta;
+            if (home) {
+              nA.vx += (home.x - nA.x) * 0.015;
+              nA.vy += (home.y - nA.y) * 0.015;
+              nA.vz += (home.z - nA.z) * 0.015;
+            }
+          }
+
+          for (let j = i + 1; j < simNodes.length; j++) {
+            const nB = simNodes[j];
+            const dx = nA.x - nB.x;
+            const dy = nA.y - nB.y;
+            const dz = nA.z - nB.z;
+            const distSq = dx * dx + dy * dy + dz * dz + 1;
+            if (distSq < 3600) {
+              const force = (28 * fSettings.sphericalForce) / distSq;
+              nA.vx += dx * force;
+              nA.vy += dy * force;
+              nA.vz += dz * force * fSettings.zRepulsion;
+              if (!nB.isFocal) {
+                nB.vx -= dx * force;
+                nB.vy -= dy * force;
+                nB.vz -= dz * force * fSettings.zRepulsion;
+              }
+            }
+          }
+        }
+
+        for (const node of simNodes) {
+          if (
+            node.type !== 'MOVIE' &&
+            node.type !== 'TV' &&
+            node.connectedMediaIds.length > 0
+          ) {
+            let cx = 0;
+            let cy = 0;
+            let cz = 0;
+            let cnt = 0;
+            for (const mId of node.connectedMediaIds) {
+              const mNode = nodeIndexMap.get(mId);
+              if (mNode) {
+                cx += mNode.x;
+                cy += mNode.y;
+                cz += mNode.z;
+                cnt++;
+              }
+            }
+            if (cnt > 0) {
+              cx /= cnt;
+              cy /= cnt;
+              cz /= cnt;
+              const norm = Math.sqrt(cx * cx + cy * cy + cz * cz) || 1;
+              const targetX = cx + (cx / norm) * 24;
+              const targetY = cy + (cy / norm) * 24;
+              const targetZ = (cz + (cz / norm) * 24) * fSettings.zRepulsion;
+              node.vx += (targetX - node.x) * 0.04;
+              node.vy += (targetY - node.y) * 0.04;
+              node.vz += (targetZ - node.z) * 0.04;
+            }
+          }
+        }
+      }
+
       if (cameraModeRef.current === 'FLY_THROUGH' && !isDragging) {
         camState.flyTimer += 0.016;
         const mediaNodes = simNodes.filter(
-          (n) => n.type === 'MOVIE' || n.type === 'TV'
+          (n) =>
+            (n.type === 'MOVIE' || n.type === 'TV') &&
+            (!selSub || selSub.linkedNodeIds.has(n.id))
         );
         if (mediaNodes.length > 0) {
           if (camState.flyTimer > 4.2) {
@@ -2040,10 +2316,7 @@ export function SpatialViewport({
       camera.position.set(camX, camY, camZ);
       camera.lookAt(camState.targetX, camState.targetY, camState.targetZ);
 
-      // Compute persistent selected subgraph + optional hover subgraph
-      const selSub = activeSelected
-        ? computeLinkedSubgraph(activeSelected, simNodes, linksRef.current)
-        : null;
+      // Compute optional hover subgraph
       const hovSub =
         activeHover && activeHover !== activeSelected
           ? computeLinkedSubgraph(activeHover, simNodes, linksRef.current)
@@ -2058,19 +2331,30 @@ export function SpatialViewport({
         for (const id of selSub.allIlluminatedLinkIds)
           illuminatedLinkSet.add(id);
         for (const id of selSub.directLinkIds) directLinkSet.add(id);
-      }
-      if (hovSub) {
-        // If no node is selected, or if hovering a node outside the selected cluster, also illuminate hover subgraph
-        if (!selSub || !selSub.linkedNodeIds.has(activeHover!)) {
-          for (const id of hovSub.linkedNodeIds) highlightedNodeSet.add(id);
-          for (const id of hovSub.allIlluminatedLinkIds)
-            illuminatedLinkSet.add(id);
-          for (const id of hovSub.directLinkIds) directLinkSet.add(id);
-        }
+      } else if (hovSub) {
+        for (const id of hovSub.linkedNodeIds) highlightedNodeSet.add(id);
+        for (const id of hovSub.allIlluminatedLinkIds)
+          illuminatedLinkSet.add(id);
+        for (const id of hovSub.directLinkIds) directLinkSet.add(id);
       }
 
       for (const node of simNodes) {
-        if (!node.isFocal) {
+        const isInIsolatedSubgraph =
+          !isIsolatedMode || Boolean(selSub?.linkedNodeIds.has(node.id));
+
+        if (isIsolatedMode) {
+          if (isInIsolatedSubgraph) {
+            const isoTarget = cachedIsolatedTargets.get(node.id);
+            if (isoTarget) {
+              node.vx = 0;
+              node.vy = 0;
+              node.vz = 0;
+              node.x += (isoTarget.x - node.x) * 0.12;
+              node.y += (isoTarget.y - node.y) * 0.12;
+              node.z += (isoTarget.z - node.z) * 0.12;
+            }
+          }
+        } else if (!node.isFocal) {
           node.vx *= 0.82;
           node.vy *= 0.82;
           node.vz *= 0.82;
@@ -2082,6 +2366,10 @@ export function SpatialViewport({
         const assembly = nodeAssembliesMap.get(node.id);
         if (assembly) {
           const grp = assembly.group;
+          // Strictly hide unconnected nodes when a node is selected
+          grp.visible = isInIsolatedSubgraph;
+          if (!isInIsolatedSubgraph) continue;
+
           grp.position.set(node.x, node.y, node.z);
 
           const isNodeSelected = node.id === activeSelected;
@@ -2093,11 +2381,11 @@ export function SpatialViewport({
             highlightedNodeSet.has(node.id);
 
           const targetScale = isNodeHovered
-            ? 1.3
+            ? 1.32
             : isNodeSelected
-              ? 1.24
+              ? 1.26
               : hasActiveFocus && isNodeLinked
-                ? 1.14
+                ? 1.15
                 : hasActiveFocus
                   ? 0.86
                   : 1.0;
@@ -2120,32 +2408,56 @@ export function SpatialViewport({
             const pulse = 1.0 + Math.sin(clock * 4.5) * 0.08;
             assembly.outerRingHalo.scale.set(pulse, pulse, 1);
           } else if (isNodeLinked) {
-            assembly.selectionHaloMat.opacity = 0.72;
-            assembly.outerRingHaloMat.opacity = 0.28;
+            assembly.selectionHaloMat.opacity = 0.76;
+            assembly.outerRingHaloMat.opacity = 0.32;
             assembly.outerRingHalo.scale.set(1, 1, 1);
           } else {
             assembly.selectionHaloMat.opacity = 0;
             assembly.outerRingHaloMat.opacity = 0;
           }
 
-          // Update 3D Label Sprite opacity & scale so linked node labels stay crisp and unlinked labels fade out
+          // MOVIE MAP REA: FILTER DIMMING LOGIC
+          const isFilterMatch = node.isFilterMatch !== false;
+
+          // Update 3D Label Sprite opacity & scale with camera-distance, labelMode, & filter dimming
           if (assembly.labelSprite) {
             const baseS = assembly.baseLabelScale;
-            if (!hasActiveFocus) {
-              assembly.labelSprite.material.opacity = 0.96;
-              assembly.labelSprite.scale.set(baseS, baseS * (168 / 640), 1);
+            const aspect = 188 / 680;
+
+            if (labelMode === 'OFF') {
+              assembly.labelSprite.material.opacity = 0;
+            } else if (!isFilterMatch) {
+              // Dimmed filtered nodes hide their labels so only matching nodes shine
+              assembly.labelSprite.material.opacity = 0;
+            } else if (labelMode === 'ALL') {
+              assembly.labelSprite.material.opacity = 0.95;
+              assembly.labelSprite.scale.set(baseS, baseS * aspect, 1);
+            } else if (!hasActiveFocus) {
+              const isMediaNode =
+                node.type === 'MOVIE' || node.type === 'TV' || node.isFocal;
+              const zoomReveal = Math.max(
+                0,
+                Math.min(1, (255 - camState.radius) / 85)
+              );
+              const baseOpacity = node.isFocal
+                ? 1.0
+                : isMediaNode
+                  ? 0.94
+                  : 0.42 + zoomReveal * 0.52;
+              assembly.labelSprite.material.opacity = baseOpacity;
+              assembly.labelSprite.scale.set(baseS, baseS * aspect, 1);
             } else if (isNodeSelected || isNodeHovered) {
               assembly.labelSprite.material.opacity = 1.0;
-              const s = baseS * 1.16;
-              assembly.labelSprite.scale.set(s, s * (168 / 640), 1);
+              const s = baseS * 1.18;
+              assembly.labelSprite.scale.set(s, s * aspect, 1);
             } else if (isNodeLinked) {
               assembly.labelSprite.material.opacity = 1.0;
-              const s = baseS * 1.08;
-              assembly.labelSprite.scale.set(s, s * (168 / 640), 1);
+              const s = baseS * 1.1;
+              assembly.labelSprite.scale.set(s, s * aspect, 1);
             } else {
               assembly.labelSprite.material.opacity = 0.08;
               const s = baseS * 0.85;
-              assembly.labelSprite.scale.set(s, s * (168 / 640), 1);
+              assembly.labelSprite.scale.set(s, s * aspect, 1);
             }
           }
 
@@ -2195,7 +2507,11 @@ export function SpatialViewport({
           }
 
           for (const mat of assembly.primaryMaterials) {
-            if (!hasActiveFocus) {
+            if (!isFilterMatch) {
+              // Non-matching filtered node in Dim mode stays at 12% opacity
+              mat.opacity = 0.12;
+              mat.emissiveIntensity = 0.01;
+            } else if (!hasActiveFocus) {
               mat.opacity = 0.98;
               mat.emissiveIntensity = node.isFocal ? 0.34 : 0.16;
             } else {
@@ -2209,12 +2525,10 @@ export function SpatialViewport({
             }
           }
           for (const accMat of assembly.accentMaterials) {
-            if ('opacity' in accMat) {
-              accMat.opacity = !hasActiveFocus
-                ? 0.32
-                : isNodeLinked
-                  ? 0.58
-                  : 0.05;
+            if (!isFilterMatch) {
+              accMat.opacity = 0.08;
+            } else {
+              accMat.opacity = !hasActiveFocus ? 0.98 : isNodeLinked ? 1.0 : 0.12;
             }
           }
         }
@@ -2224,6 +2538,17 @@ export function SpatialViewport({
         const src = nodeIndexMap.get(entry.link.source);
         const tgt = nodeIndexMap.get(entry.link.target);
         if (!src || !tgt) continue;
+
+        const isLinkInIsolated =
+          !isIsolatedMode ||
+          Boolean(selSub?.allIlluminatedLinkIds.has(entry.link.id));
+
+        // Strictly hide unconnected links when a node is selected
+        entry.line.visible = isLinkInIsolated;
+        if (!isLinkInIsolated) {
+          entry.beamMesh.visible = false;
+          continue;
+        }
 
         const posAttr = entry.geometry.getAttribute(
           'position'
@@ -2329,13 +2654,26 @@ export function SpatialViewport({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const simNodes: GraphNode[] = nodes.map((n) => ({
-      ...n,
-      x: n.x * 1.35,
-      y: n.y * 1.35,
-    }));
+    const homePositions2D = new Map<string, { x: number; y: number }>();
+    const simNodes: GraphNode[] = nodes.map((n) => {
+      const hx = n.x * 1.35;
+      const hy = n.y * 1.35;
+      homePositions2D.set(n.id, { x: hx, y: hy });
+      return {
+        ...n,
+        x: hx,
+        y: hy,
+      };
+    });
     nodesRef.current = simNodes;
     linksRef.current = links;
+
+    let cachedSelectedId2D: string | null = null;
+    let cachedSelectedSub2D: LinkedSubgraphResult | null = null;
+    let cachedIsolatedTargets2D = new Map<
+      string,
+      { x: number; y: number; z: number }
+    >();
 
     let isDragging = false;
     let dragMoved = false;
@@ -2367,8 +2705,15 @@ export function SpatialViewport({
 
     const findNodeAt = (sx: number, sy: number): GraphNode | null => {
       const { wx, wy } = screenToWorld(sx, sy);
+      const activeSel = selectedIdRef.current;
+      const activeSub = activeSel
+        ? computeLinkedSubgraph(activeSel, simNodes, linksRef.current)
+        : null;
       for (let i = simNodes.length - 1; i >= 0; i--) {
         const n = simNodes[i];
+        if (activeSub?.focusNode && !activeSub.linkedNodeIds.has(n.id)) {
+          continue;
+        }
         const dx = wx - n.x;
         const dy = wy - n.y;
         const hitR = n.radius * 1.6 + 6;
@@ -2487,18 +2832,18 @@ export function SpatialViewport({
       // Engraved Concentric Kinship Rings
       const rings = [
         {
-          r: 95,
-          label: 'Close Kinship (90%+)',
+          r: 76,
+          label: 'Shared Collaborators & Themes',
           color: 'rgba(184, 41, 47, 0.22)',
         },
         {
-          r: 165,
-          label: 'Strong Connection (75%+)',
+          r: 132,
+          label: 'Connected Films & Series',
           color: 'rgba(35, 75, 110, 0.20)',
         },
         {
-          r: 240,
-          label: 'Shared Threads (50%+)',
+          r: 230,
+          label: 'Extended Constellation',
           color: 'rgba(90, 82, 75, 0.22)',
         },
       ];
@@ -2519,9 +2864,38 @@ export function SpatialViewport({
       const activeSelected = selectedIdRef.current;
       const hasActiveFocus = Boolean(activeSelected || activeHover);
 
-      const selSub = activeSelected
-        ? computeLinkedSubgraph(activeSelected, simNodes, linksRef.current)
-        : null;
+      if (activeSelected !== cachedSelectedId2D) {
+        cachedSelectedId2D = activeSelected;
+        cachedSelectedSub2D = activeSelected
+          ? computeLinkedSubgraph(activeSelected, simNodes, linksRef.current)
+          : null;
+        cachedIsolatedTargets2D = cachedSelectedSub2D
+          ? computeIsolatedLayoutTargets(cachedSelectedSub2D)
+          : new Map();
+      }
+
+      const selSub = cachedSelectedSub2D;
+      const isIsolatedMode = Boolean(selSub && selSub.focusNode);
+
+      // Smoothly transition node positions between isolated subgraph radial layout and full graph home positions
+      for (const node of simNodes) {
+        if (isIsolatedMode) {
+          if (selSub?.linkedNodeIds.has(node.id)) {
+            const iso = cachedIsolatedTargets2D.get(node.id);
+            if (iso) {
+              node.x += (iso.x - node.x) * 0.14;
+              node.y += (iso.y - node.y) * 0.14;
+            }
+          }
+        } else {
+          const home = homePositions2D.get(node.id);
+          if (home) {
+            node.x += (home.x - node.x) * 0.14;
+            node.y += (home.y - node.y) * 0.14;
+          }
+        }
+      }
+
       const hovSub =
         activeHover && activeHover !== activeSelected
           ? computeLinkedSubgraph(activeHover, simNodes, linksRef.current)
@@ -2536,18 +2910,18 @@ export function SpatialViewport({
         for (const id of selSub.allIlluminatedLinkIds)
           illuminatedLinkSet.add(id);
         for (const id of selSub.directLinkIds) directLinkSet.add(id);
-      }
-      if (hovSub) {
-        if (!selSub || !selSub.linkedNodeIds.has(activeHover!)) {
-          for (const id of hovSub.linkedNodeIds) highlightedNodeSet.add(id);
-          for (const id of hovSub.allIlluminatedLinkIds)
-            illuminatedLinkSet.add(id);
-          for (const id of hovSub.directLinkIds) directLinkSet.add(id);
-        }
+      } else if (hovSub) {
+        for (const id of hovSub.linkedNodeIds) highlightedNodeSet.add(id);
+        for (const id of hovSub.allIlluminatedLinkIds)
+          illuminatedLinkSet.add(id);
+        for (const id of hovSub.directLinkIds) directLinkSet.add(id);
       }
 
-      // Draw Links
+      // Draw Links (strictly hide unconnected links when a node is selected)
       for (const link of links) {
+        if (isIsolatedMode && !selSub?.allIlluminatedLinkIds.has(link.id)) {
+          continue;
+        }
         const s = nodeMap.get(link.source);
         const t = nodeMap.get(link.target);
         if (!s || !t) continue;
@@ -2575,17 +2949,21 @@ export function SpatialViewport({
         ctx.restore();
       }
 
-      // Draw Nodes with bespoke category geometric silhouettes
+      // Draw Nodes with bespoke category geometric silhouettes (strictly hide unconnected nodes when a node is selected)
       for (const node of simNodes) {
+        if (isIsolatedMode && !selSub?.linkedNodeIds.has(node.id)) {
+          continue;
+        }
         const isSelected = node.id === activeSelected;
         const isHovered = node.id === activeHover;
+        const isFilterMatch = node.isFilterMatch !== false;
         const isNodeLinked =
           !hasActiveFocus ||
           isSelected ||
           isHovered ||
           highlightedNodeSet.has(node.id);
 
-        ctx.globalAlpha = isNodeLinked ? 1 : 0.14;
+        ctx.globalAlpha = !isFilterMatch ? 0.12 : isNodeLinked ? 1 : 0.14;
 
         const rScaled =
           node.radius *
@@ -2641,50 +3019,124 @@ export function SpatialViewport({
           ctx.stroke();
         }
 
-        // Backing vellum halo disc for crisp contrast against links
+        // Stamped Multi-Ring Archival Medallion Plate
+        const nodeAccentColor = node.isFocal ? '#B8292F' : node.color;
+        const isPrimaryMedia =
+          node.type === 'MOVIE' || node.type === 'TV' || node.isFocal;
+
+        // 1. Directional offset paper shadow + outer pigment bezel ring
         ctx.save();
         ctx.beginPath();
-        ctx.arc(node.x, node.y, rScaled * 1.12, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(251, 248, 242, 0.94)';
+        ctx.arc(node.x, node.y, rScaled * 1.24, 0, Math.PI * 2);
+        ctx.fillStyle = nodeAccentColor;
         ctx.shadowColor = 'rgba(23, 20, 18, 0.22)';
         ctx.shadowBlur =
-          isHovered || isSelected || (hasActiveFocus && isNodeLinked) ? 12 : 5;
-        ctx.shadowOffsetY = 2;
+          isHovered || isSelected || (hasActiveFocus && isNodeLinked) ? 14 : 6;
+        ctx.shadowOffsetY = 2.5;
         ctx.fill();
         ctx.restore();
 
+        // 2. Warm museum vellum inner medallion disc
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, rScaled * 1.04, 0, Math.PI * 2);
+        ctx.fillStyle = '#FBF8F2';
+        ctx.fill();
+
+        // 3. Subtle inner engraved hairline & cardinal bezel ticks for primary titles
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, rScaled * 0.9, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(23, 20, 18, 0.12)';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+
+        if (isPrimaryMedia) {
+          ctx.save();
+          ctx.translate(node.x, node.y);
+          ctx.strokeStyle = '#FBF8F2';
+          ctx.lineWidth = 1.4;
+          for (let t = 0; t < 4; t++) {
+            const ang = (t * Math.PI) / 2;
+            ctx.beginPath();
+            ctx.moveTo(
+              Math.cos(ang) * rScaled * 1.06,
+              Math.sin(ang) * rScaled * 1.06
+            );
+            ctx.lineTo(
+              Math.cos(ang) * rScaled * 1.22,
+              Math.sin(ang) * rScaled * 1.22
+            );
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        // 4. Crisp category glyph centered inside the vellum medallion
         drawCategoryGlyph2D(
           ctx,
           node.type,
           node.x,
           node.y,
-          rScaled,
-          node.isFocal ? '#B8292F' : node.color
+          rScaled * 0.66,
+          nodeAccentColor
         );
 
-        // Label
-        ctx.font = `${
-          node.isFocal || isSelected || (hasActiveFocus && isNodeLinked)
-            ? '700 12.5px'
-            : '600 11.5px'
-        } "Spectral", Georgia, serif`;
-        ctx.fillStyle = '#171412';
-        ctx.textAlign = 'center';
-        ctx.fillText(node.label, node.x, node.y + rScaled + 15);
+        // 5. Engraved Vellum Caption Plate below node so links never slice through text
+        if (labelMode === 'OFF' || !isFilterMatch) {
+          continue;
+        }
 
-        if (
+        const showMatchSub =
           (node.type === 'MOVIE' || node.type === 'TV') &&
           node.matchScore !== undefined &&
-          !node.isFocal
-        ) {
-          ctx.font = '600 10px "Source Sans 3", sans-serif';
-          ctx.fillStyle = node.matchScore >= 75 ? '#2A6B53' : '#234B6E';
+          !node.isFocal;
+        const labelTitle =
+          node.label.length > 26 ? node.label.slice(0, 24) + '…' : node.label;
+
+        ctx.font = `${
+          node.isFocal || isSelected || (hasActiveFocus && isNodeLinked)
+            ? '700 12px'
+            : '600 11px'
+        } "Spectral", Georgia, serif`;
+        const textWidth = ctx.measureText(labelTitle).width;
+        const pillPadX = 7;
+        const pillW = Math.max(54, textWidth + pillPadX * 2);
+        const pillH = showMatchSub ? 26 : 16;
+        const pillX = node.x - pillW / 2;
+        const pillY = node.y + rScaled * 1.28 + 3;
+
+        ctx.save();
+        ctx.fillStyle =
+          isSelected || isHovered
+            ? 'rgba(251, 248, 242, 0.98)'
+            : 'rgba(251, 248, 242, 0.92)';
+        ctx.strokeStyle =
+          isSelected || isHovered || node.isFocal
+            ? '#B8292F'
+            : isPrimaryMedia
+              ? 'rgba(181, 168, 146, 0.9)'
+              : 'rgba(213, 204, 185, 0.85)';
+        ctx.lineWidth = isSelected || isHovered || node.isFocal ? 1.4 : 1;
+        ctx.beginPath();
+        ctx.roundRect(pillX, pillY, pillW, pillH, 4);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#171412';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(labelTitle, node.x, pillY + 8.5);
+
+        if (showMatchSub) {
+          ctx.font = '700 11px "Source Sans 3", sans-serif';
+          ctx.fillStyle = (node.matchScore ?? 0) >= 75 ? '#2A6B53' : '#234B6E';
           ctx.fillText(
             `${node.matchScore}% Match`,
             node.x,
-            node.y + rScaled + 26
+            pillY + 20.5
           );
         }
+        ctx.textBaseline = 'alphabetic';
       }
 
       ctx.restore();
@@ -2709,10 +3161,14 @@ export function SpatialViewport({
     onClearSelection,
     onMakeFocal,
     frameNodeAndLinkedCluster,
+    labelMode,
   ]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none">
+    <div
+      ref={rootRef}
+      className="relative w-full h-full overflow-hidden select-none"
+    >
       {/* 3D WebGL Mount Container */}
       {viewMode === '3D' && (
         <div
@@ -2731,7 +3187,7 @@ export function SpatialViewport({
         />
       )}
 
-      {/* Top-Left Curatorial Context Pill (Humanized — no fake coordinates or math formulas) */}
+      {/* Top-Left Curatorial Context Pill */}
       <div className="pointer-events-none absolute top-4 left-4 flex flex-col gap-1.5 z-10">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-[#FBF8F2]/95 border border-[#C8BEAA] shadow-archival-sm text-xs text-[#171412]">
@@ -2741,48 +3197,137 @@ export function SpatialViewport({
               }`}
             />
             <span className="text-[#52483E]">
-              {focalItem ? 'Centered on:' : 'Archive Index:'}
+              {focalItem
+                ? 'Centered on:'
+                : graphScope === 'WATCHED_ONLY'
+                  ? `${activeUser ? `${activeUser.displayName}'s` : 'My'} Watched Graph:`
+                  : graphScope === 'INTERESTED_ONLY'
+                    ? `${activeUser ? `${activeUser.displayName}'s` : 'My'} Interested Graph:`
+                    : graphScope === 'WATCHED_AND_INTERESTED'
+                      ? `${activeUser ? `${activeUser.displayName}'s` : 'My'} Watched + Interested:`
+                      : graphScope === 'WATCHED_PLUS_SUGGESTIONS'
+                        ? `${activeUser ? `${activeUser.displayName}'s` : 'My'} Watched + Suggested:`
+                        : 'Archive Index:'}
             </span>
             <strong className="font-heading font-bold text-[#171412]">
               {focalItem
                 ? `${focalItem.title} (${focalItem.year})`
-                : `All ${nodes.filter((n) => n.type === 'MOVIE' || n.type === 'TV').length} Movies & TV Shows`}
+                : graphScope !== 'FULL_ARCHIVE'
+                  ? `${nodes.filter((n) => n.type === 'MOVIE' || n.type === 'TV').length} Personal Titles · ${nodes.filter((n) => n.type !== 'MOVIE' && n.type !== 'TV').length} Shared Bridges`
+                  : `All ${nodes.filter((n) => n.type === 'MOVIE' || n.type === 'TV').length} Movies & TV Shows`}
             </strong>
           </div>
-          {focalItem && onClearFocal && (
+
+          {activeUser && graphScope !== 'FULL_ARCHIVE' && onGraphScopeChange && (
+            <div className="pointer-events-auto inline-flex items-center gap-1 p-0.5 rounded bg-[#FBF8F2]/95 border border-[#C8BEAA] shadow-archival-sm">
+              <button
+                type="button"
+                onClick={() => onGraphScopeChange('WATCHED_ONLY')}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  graphScope === 'WATCHED_ONLY'
+                    ? 'bg-[#2A6B53] text-[#FBF8F2]'
+                    : 'text-[#52483E] hover:text-[#171412]'
+                }`}
+              >
+                Watched
+              </button>
+              <button
+                type="button"
+                onClick={() => onGraphScopeChange('INTERESTED_ONLY')}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  graphScope === 'INTERESTED_ONLY'
+                    ? 'bg-[#234B6E] text-[#FBF8F2]'
+                    : 'text-[#52483E] hover:text-[#171412]'
+                }`}
+              >
+                Interested
+              </button>
+              <button
+                type="button"
+                onClick={() => onGraphScopeChange('WATCHED_AND_INTERESTED')}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  graphScope === 'WATCHED_AND_INTERESTED'
+                    ? 'bg-[#B8292F] text-[#FBF8F2]'
+                    : 'text-[#52483E] hover:text-[#171412]'
+                }`}
+              >
+                Both
+              </button>
+              <button
+                type="button"
+                onClick={() => onGraphScopeChange('WATCHED_PLUS_SUGGESTIONS')}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  graphScope === 'WATCHED_PLUS_SUGGESTIONS'
+                    ? 'bg-[#2A6B53] text-[#FBF8F2]'
+                    : 'text-[#52483E] hover:text-[#171412]'
+                }`}
+              >
+                + Suggestions
+              </button>
+              {onOpenProfileModal && (
+                <button
+                  type="button"
+                  onClick={onOpenProfileModal}
+                  className="px-2 py-1 rounded text-[11px] font-semibold text-[#B8292F] hover:bg-[#F5E4E4]/60 transition-colors cursor-pointer"
+                >
+                  + Manage Lists
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onGraphScopeChange('FULL_ARCHIVE')}
+                className="px-2 py-1 rounded text-[11px] font-semibold text-[#52483E] hover:text-[#171412] transition-colors cursor-pointer"
+              >
+                Full Archive
+              </button>
+            </div>
+          )}
+
+          {((selectedSubgraph.focusNode &&
+            (selectedSubgraph.focusNode.type === 'MOVIE' ||
+              selectedSubgraph.focusNode.type === 'TV')) ||
+            (focalItem && !selectedSubgraph.focusNode)) && (
             <button
               type="button"
-              onClick={onClearFocal}
-              className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-[#EFE8DA] hover:bg-[#B8292F] text-[#171412] hover:text-[#FBF8F2] border border-[#B5A892] hover:border-[#8C1D22] shadow-archival-sm text-xs font-semibold transition-colors cursor-pointer"
+              onClick={() => {
+                if (onResetEverything) {
+                  onResetEverything();
+                } else {
+                  onClearSelection?.();
+                  onClearFocal?.();
+                }
+              }}
+              className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm text-xs font-semibold transition-colors cursor-pointer"
+              title="Reset view and show full graph (Esc)"
             >
-              <span>Show All Graph Titles</span>
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset (Esc)</span>
             </button>
           )}
         </div>
-        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[#EFE8DA]/90 border border-[#D5CCB9] text-[11px] text-[#52483E]">
-          <span>
-            Click any node to lock &amp; inspect all its linked connections ·
-            Double-click a title to center the map
-          </span>
-        </div>
+        {!selectedSubgraph.focusNode && (
+          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[#EFE8DA]/90 border border-[#D5CCB9] text-[11px] text-[#52483E]">
+            <span>
+              {graphScope !== 'FULL_ARCHIVE'
+                ? 'Personal Watched Constellation active · Showing your watched movies & TV shows and their shared directors, cast & themes'
+                : 'Click any node to isolate & inspect only its connected nodes · Double-click a title to center the map'}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Persistent Linked Constellation Panel (Shown whenever ANY node is clicked/selected) */}
-      {selectedSubgraph.focusNode && (
+      {/* Canonical Isolated-View Surface: Persistent Linked Constellation Panel (Shown for Collaborator & Theme bridge nodes; Film/TV nodes open the Right Monograph Inspector) */}
+      {selectedSubgraph.focusNode &&
+        selectedSubgraph.focusNode.type !== 'MOVIE' &&
+        selectedSubgraph.focusNode.type !== 'TV' && (
         <div
           aria-label="Selected Node Linked Connections"
-          className="pointer-events-auto absolute top-[4.75rem] left-4 z-30 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-11.5rem)] rounded-lg bg-[#FBF8F2]/98 backdrop-blur-sm border border-[#B5A892] shadow-archival flex flex-col overflow-hidden"
+          className="pointer-events-auto absolute top-14 left-4 z-30 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-9.5rem)] rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex flex-col overflow-hidden"
         >
-          {/* Header: Selected Node & Clear Button */}
+          {/* Header: Selected Node (Heading First — no kicker above h3) & Single Canonical Reset Action */}
           <div className="px-3.5 py-2.5 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-start justify-between gap-2">
             <div className="flex items-start gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded flex items-center justify-center shrink-0 border border-[#C8BEAA] bg-[#FBF8F2] mt-0.5">
-                {selectedSubgraph.focusNode.type === 'MOVIE' && (
-                  <Film className="w-4 h-4 text-[#234B6E]" />
-                )}
-                {selectedSubgraph.focusNode.type === 'TV' && (
-                  <Tv className="w-4 h-4 text-[#6B3A6E]" />
-                )}
                 {selectedSubgraph.focusNode.type === 'DIRECTOR' && (
                   <Award className="w-4 h-4 text-[#B8292F]" />
                 )}
@@ -2797,38 +3342,44 @@ export function SpatialViewport({
                 )}
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#B8292F]">
-                    <Link2 className="w-3 h-3" />
-                    Highlighted Node
-                  </span>
-                  <span className="text-[10px] font-semibold text-[#52483E]">
-                    · {getEntityRoleLabel(selectedSubgraph.focusNode.type)}
-                  </span>
-                </div>
                 <h3 className="font-heading text-sm font-bold text-[#171412] truncate">
                   {selectedSubgraph.focusNode.label}
                 </h3>
+                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#B8292F]">
+                    <Link2 className="w-3 h-3" />
+                    <span>Isolated Subgraph</span>
+                  </span>
+                  <span className="text-[11px] text-[#52483E]">
+                    · {getEntityRoleLabel(selectedSubgraph.focusNode.type)}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {onClearSelection && (
-              <button
-                type="button"
-                onClick={onClearSelection}
-                className="p-1 rounded text-[#52483E] hover:text-[#171412] hover:bg-[#E5DEC9] transition-colors shrink-0 cursor-pointer"
-                title="Clear highlight and show all nodes"
-                aria-label="Clear highlight"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (onResetEverything) {
+                  onResetEverything();
+                } else {
+                  onClearSelection?.();
+                  onClearFocal?.();
+                }
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] text-[11px] font-semibold shadow-archival-sm transition-colors shrink-0 cursor-pointer"
+              title="Exit isolated view and restore full graph (Esc)"
+              aria-label="Reset isolated view (Escape)"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset (Esc)</span>
+            </button>
           </div>
 
           {/* Summary Count Strip */}
           <div className="px-3.5 py-2 bg-[#F6F1E7] border-b border-[#D5CCB9] flex items-center justify-between text-[11px]">
             <span className="font-medium text-[#52483E]">
-              Linked in current graph:
+              {selectedSubgraph.linkedNodeIds.size} nodes shown:
             </span>
             <div className="flex items-center gap-1.5 font-tabular font-semibold">
               <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]">
@@ -2850,9 +3401,9 @@ export function SpatialViewport({
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {/* Section 1: Linked Movies & TV Series */}
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#52483E] mb-1.5">
-                Linked Films &amp; Series ({selectedSubgraph.linkedMedia.length})
-              </div>
+              <h4 className="font-heading text-xs font-bold text-[#171412] mb-1.5">
+                Connected Films &amp; Series ({selectedSubgraph.linkedMedia.length})
+              </h4>
               {selectedSubgraph.linkedMedia.length > 0 ? (
                 <div className="space-y-1.5">
                   {selectedSubgraph.linkedMedia.map(
@@ -2891,7 +3442,7 @@ export function SpatialViewport({
                             )}
                           </div>
                           {directScore !== undefined && directScore > 0 && (
-                            <span className="px-1.5 py-0.2 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[10px] font-tabular font-bold shrink-0">
+                            <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[11px] font-tabular font-bold shrink-0">
                               {directScore}%
                             </span>
                           )}
@@ -2901,13 +3452,13 @@ export function SpatialViewport({
                             {sharedReasons.slice(0, 3).map((reason) => (
                               <span
                                 key={reason}
-                                className="px-1.5 py-0.2 rounded bg-[#EFE8DA] text-[#52483E] text-[10px] font-medium truncate max-w-full"
+                                className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#52483E] text-[11px] font-medium truncate max-w-full"
                               >
                                 {reason}
                               </span>
                             ))}
                             {sharedReasons.length > 3 && (
-                              <span className="text-[10px] text-[#6B5E50]">
+                              <span className="text-[11px] text-[#6B5E50]">
                                 +{sharedReasons.length - 3} more
                               </span>
                             )}
@@ -2927,10 +3478,10 @@ export function SpatialViewport({
             {/* Section 2: Linked Collaborator & Theme Nodes */}
             {selectedSubgraph.linkedEntities.length > 0 && (
               <div className="pt-2 border-t border-[#D5CCB9]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[#52483E] mb-1.5">
+                <h4 className="font-heading text-xs font-bold text-[#171412] mb-1.5">
                   Shared Collaborators &amp; Themes (
                   {selectedSubgraph.linkedEntities.length})
-                </div>
+                </h4>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedSubgraph.linkedEntities.map(
                     ({ node: eNode, roleLabel, connectedCount }) => (
@@ -2958,7 +3509,7 @@ export function SpatialViewport({
                         <span className="font-semibold text-[#171412]">
                           {eNode.label}
                         </span>
-                        <span className="text-[10px] text-[#52483E]">
+                        <span className="text-[11px] text-[#52483E]">
                           · {roleLabel} ({connectedCount})
                         </span>
                       </button>
@@ -2971,28 +3522,15 @@ export function SpatialViewport({
         </div>
       )}
 
-      {/* Active Hover or Selected Connection Banner */}
-      {(hoveredNodeId && hoveredTooltip) || selectedSubgraph.focusNode ? (
-        <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex items-center gap-2 text-xs">
+      {/* Top-Center Hover Preview Pill (Strictly for Hover Previews when no node is selected) */}
+      {hoveredNodeId && hoveredTooltip && !selectedSubgraph.focusNode ? (
+        <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex items-center gap-2.5 text-xs">
           <span className="w-2 h-2 rounded-full bg-[#B8292F] animate-pulse" />
-          <span className="text-[#52483E]">
-            {hoveredNodeId && hoveredTooltip
-              ? 'Inspecting threads:'
-              : 'Locked highlight:'}
-          </span>
+          <span className="text-[#52483E]">Inspecting threads:</span>
           <strong className="text-[#B8292F] font-semibold">
-            {hoveredNodeId && hoveredTooltip
-              ? hoveredTooltip.node.label
-              : selectedSubgraph.focusNode?.label}
+            {hoveredTooltip.node.label}
           </strong>
-          {selectedSubgraph.focusNode && !hoveredTooltip && (
-            <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA] font-tabular font-semibold">
-              {selectedSubgraph.linkedMedia.length +
-                selectedSubgraph.linkedEntities.length}{' '}
-              linked nodes highlighted
-            </span>
-          )}
-          {hoveredTooltip?.node.matchScore !== undefined &&
+          {hoveredTooltip.node.matchScore !== undefined &&
             !hoveredTooltip.node.isFocal && (
               <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] font-tabular font-bold">
                 {hoveredTooltip.node.matchScore}% Match
@@ -3002,21 +3540,35 @@ export function SpatialViewport({
       ) : null}
 
       {/* Floating Archival Vellum Cursor Hover Tooltip */}
-      {hoveredTooltip && (
-        <div
-          className="pointer-events-none absolute z-30 w-80 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival p-3.5 transition-opacity duration-150"
-          style={{
-            left: Math.min(
-              (containerRef.current?.clientWidth || 900) - 340,
-              Math.max(16, hoveredTooltip.x + 18)
-            ),
-            top: Math.min(
-              (containerRef.current?.clientHeight || 700) - 220,
-              Math.max(16, hoveredTooltip.y - 24)
-            ),
-          }}
-        >
-          {hoveredTooltip.node.mediaItem ? (
+      {hoveredTooltip && (() => {
+        const viewportWidth =
+          rootRef.current?.clientWidth ||
+          (viewMode === '2D'
+            ? canvas2dRef.current?.clientWidth
+            : containerRef.current?.clientWidth) ||
+          (typeof window !== 'undefined' ? window.innerWidth : 900);
+        const viewportHeight =
+          rootRef.current?.clientHeight ||
+          (viewMode === '2D'
+            ? canvas2dRef.current?.clientHeight
+            : containerRef.current?.clientHeight) ||
+          (typeof window !== 'undefined' ? window.innerHeight : 700);
+
+        return (
+          <div
+            className="pointer-events-none absolute z-30 w-80 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival p-3.5 transition-opacity duration-150"
+            style={{
+              left: Math.min(
+                viewportWidth - 340,
+                Math.max(16, hoveredTooltip.x + 18)
+              ),
+              top: Math.min(
+                viewportHeight - 220,
+                Math.max(16, hoveredTooltip.y - 24)
+              ),
+            }}
+          >
+            {hoveredTooltip.node.mediaItem ? (
             <div className="flex gap-3">
               {/* Poster Thumbnail */}
               <div className="w-16 h-24 rounded-sm overflow-hidden shrink-0 border border-[#C8BEAA] bg-[#EFE8DA] relative">
@@ -3043,15 +3595,15 @@ export function SpatialViewport({
                   </h4>
 
                   {hoveredTooltip.node.isFocal ? (
-                    <span className="px-1.5 py-0.5 rounded bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6] text-[10px] font-semibold shrink-0">
+                    <span className="px-1.5 py-0.5 rounded bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6] text-[11px] font-semibold shrink-0">
                       Selected
                     </span>
                   ) : hoveredTooltip.node.matchScore !== undefined ? (
-                    <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[10px] font-tabular font-bold shrink-0">
+                    <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[11px] font-tabular font-bold shrink-0">
                       {hoveredTooltip.node.matchScore}%
                     </span>
                   ) : (
-                    <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#52483E] border border-[#C8BEAA] text-[10px] font-semibold shrink-0">
+                    <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#52483E] border border-[#C8BEAA] text-[11px] font-semibold shrink-0">
                       {hoveredTooltip.node.mediaItem.primaryGenre}
                     </span>
                   )}
@@ -3154,70 +3706,291 @@ export function SpatialViewport({
               </div>
             )}
         </div>
-      )}
+      );
+      })()}
 
-      {/* Bottom-Left Sleek Category 3D Models Key */}
-      <div className="pointer-events-none hidden xl:flex absolute bottom-5 left-4 z-10 items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#FBF8F2]/92 backdrop-blur-sm border border-[#C8BEAA] shadow-archival-sm text-[11px] text-[#52483E]">
-        <span className="font-bold uppercase tracking-[0.06em] text-[#171412] pr-1 border-r border-[#D5CCB9]">
-          3D Models
-        </span>
-        {/* Film Reel */}
-        <span className="inline-flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5 text-[#234B6E]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="8" cy="8" r="6.5" fill="currentColor" />
-            <circle cx="8" cy="3.8" r="1.25" fill="#FBF8F2" />
-            <circle cx="12" cy="6.7" r="1.25" fill="#FBF8F2" />
-            <circle cx="10.5" cy="11.4" r="1.25" fill="#FBF8F2" />
-            <circle cx="5.5" cy="11.4" r="1.25" fill="#FBF8F2" />
-            <circle cx="4" cy="6.7" r="1.25" fill="#FBF8F2" />
-            <circle cx="8" cy="8" r="1" fill="#FBF8F2" />
-          </svg>
-          <span>Film Reel</span>
-        </span>
-        {/* TV Set */}
-        <span className="inline-flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5 text-[#6B3A6E]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M5.2 1.8L7.3 4.2M10.8 1.8L8.7 4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            <rect x="2" y="4" width="12" height="8.5" rx="2" fill="currentColor" />
-            <rect x="3.6" y="5.4" width="8.8" height="5.7" rx="1" fill="#FBF8F2" />
-            <path d="M5.5 14.2H10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-          </svg>
-          <span>TV Set</span>
-        </span>
-        {/* Director Clapperboard */}
-        <span className="inline-flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5 text-[#B8292F]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect x="2" y="6.2" width="12" height="8" rx="1.5" fill="currentColor" />
-            <path d="M2.2 5.4L13.5 2.4L14.1 4.6L2.8 7.6Z" fill="currentColor" />
-            <path d="M4.5 9.5H11.5M4.5 11.8H9" stroke="#FBF8F2" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-          <span>Clapperboard</span>
-        </span>
-        {/* Cast 5-Point Star */}
-        <span className="inline-flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5 text-[#B86B14]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <polygon points="8,1.3 9.9,5.6 14.6,6.1 11.1,9.3 12.1,13.9 8,11.5 3.9,13.9 4.9,9.3 1.4,6.1 6.1,5.6" fill="currentColor" />
-          </svg>
-          <span>Cast Star</span>
-        </span>
-        {/* Story Book */}
-        <span className="inline-flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5 text-[#2A6B53]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M8 3.6C6.2 2.4 3.5 2.6 1.8 3.6V12.6C3.5 11.6 6.2 11.4 8 12.6C9.8 11.4 12.5 11.6 14.2 12.6V3.6C12.5 2.6 9.8 2.4 8 3.6Z" fill="currentColor" />
-            <path d="M8 3.8V12.4" stroke="#FBF8F2" strokeWidth="1.3" strokeLinecap="round" />
-          </svg>
-          <span>Story Book</span>
-        </span>
-        {/* Score Musical Note */}
-        <span className="inline-flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5 text-[#A63A2B]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="4.8" cy="12" r="2.2" fill="currentColor" />
-            <circle cx="11.5" cy="10.6" r="2.2" fill="currentColor" />
-            <path d="M6.6 12V3.8L13.3 2.4V10.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span>Music Note</span>
-        </span>
+      {/* Bottom-Left Sleek Category Models Key (Collapsible on md/lg, expanded on xl) */}
+      <div className="absolute bottom-5 left-4 z-20 flex flex-col items-start gap-1.5">
+        {/* Expanded Panel for sub-xl screens when toggled */}
+        {isNodeKeyOpen && (
+          <div className="xl:hidden flex flex-col gap-2 p-3 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival text-[11px] text-[#52483E] animate-in fade-in slide-in-from-bottom-2 duration-150">
+            <div className="flex items-center justify-between gap-4 pb-1.5 border-b border-[#D5CCB9]">
+              <span className="font-heading font-bold text-[#171412]">
+                Constellation Key
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsNodeKeyOpen(false)}
+                className="text-[#6B5E50] hover:text-[#171412] text-[10px] font-semibold cursor-pointer"
+                aria-label="Close constellation key"
+              >
+                Close
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              <span className="inline-flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-[#234B6E] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.5" fill="currentColor" />
+                  <circle cx="8" cy="3.8" r="1.25" fill="#FBF8F2" />
+                  <circle cx="12" cy="6.7" r="1.25" fill="#FBF8F2" />
+                  <circle cx="10.5" cy="11.4" r="1.25" fill="#FBF8F2" />
+                  <circle cx="5.5" cy="11.4" r="1.25" fill="#FBF8F2" />
+                  <circle cx="4" cy="6.7" r="1.25" fill="#FBF8F2" />
+                  <circle cx="8" cy="8" r="1" fill="#FBF8F2" />
+                </svg>
+                <span>Film Reel (Movie)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M5.2 1.8L7.3 4.2M10.8 1.8L8.7 4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <rect x="2" y="4" width="12" height="8.5" rx="2" fill="currentColor" />
+                  <rect x="3.6" y="5.4" width="8.8" height="5.7" rx="1" fill="#FBF8F2" />
+                  <path d="M5.5 14.2H10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+                <span>TV Set (Series)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-[#B8292F] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <rect x="2" y="6.2" width="12" height="8" rx="1.5" fill="currentColor" />
+                  <path d="M2.2 5.4L13.5 2.4L14.1 4.6L2.8 7.6Z" fill="currentColor" />
+                  <path d="M4.5 9.5H11.5M4.5 11.8H9" stroke="#FBF8F2" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+                <span>Clapperboard (Director)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-[#B86B14] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <polygon points="8,1.3 9.9,5.6 14.6,6.1 11.1,9.3 12.1,13.9 8,11.5 3.9,13.9 4.9,9.3 1.4,6.1 6.1,5.6" fill="currentColor" />
+                </svg>
+                <span>Star (Cast)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-[#2A6B53] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 3.6C6.2 2.4 3.5 2.6 1.8 3.6V12.6C3.5 11.6 6.2 11.4 8 12.6C9.8 11.4 12.5 11.6 14.2 12.6V3.6C12.5 2.6 9.8 2.4 8 3.6Z" fill="currentColor" />
+                  <path d="M8 3.8V12.4" stroke="#FBF8F2" strokeWidth="1.3" strokeLinecap="round" />
+                </svg>
+                <span>Book (Theme)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-[#A63A2B] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <circle cx="4.8" cy="12" r="2.2" fill="currentColor" />
+                  <circle cx="11.5" cy="10.6" r="2.2" fill="currentColor" />
+                  <path d="M6.6 12V3.8L13.3 2.4V10.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span>Note (Music)</span>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Compact Toggle Pill below xl / Full Legend on xl */}
+        <div className="flex items-center">
+          {/* Sub-xl interactive toggle pill */}
+          <button
+            type="button"
+            onClick={() => setIsNodeKeyOpen((prev) => !prev)}
+            className="xl:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FBF8F2] hover:bg-[#EFE8DA] border border-[#B5A892] shadow-archival-sm text-[11px] font-semibold text-[#171412] transition-colors cursor-pointer"
+            aria-expanded={isNodeKeyOpen}
+            aria-label="Toggle node key legend"
+          >
+            <span className="w-2 h-2 rounded-full bg-[#B8292F]" />
+            <span>Node Key</span>
+            <span className="text-[10px] text-[#52483E]">{isNodeKeyOpen ? '▲' : '▼'}</span>
+          </button>
+
+          {/* Full static strip on xl+ displays */}
+          <div className="hidden xl:flex pointer-events-none items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival-sm text-[11px] text-[#52483E]">
+            <span className="font-heading font-bold text-[#171412] pr-1.5 border-r border-[#D5CCB9]">
+              Node Key
+            </span>
+            {/* Film Reel */}
+            <span className="inline-flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[#234B6E]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.5" fill="currentColor" />
+                <circle cx="8" cy="3.8" r="1.25" fill="#FBF8F2" />
+                <circle cx="12" cy="6.7" r="1.25" fill="#FBF8F2" />
+                <circle cx="10.5" cy="11.4" r="1.25" fill="#FBF8F2" />
+                <circle cx="5.5" cy="11.4" r="1.25" fill="#FBF8F2" />
+                <circle cx="4" cy="6.7" r="1.25" fill="#FBF8F2" />
+                <circle cx="8" cy="8" r="1" fill="#FBF8F2" />
+              </svg>
+              <span>Film Reel</span>
+            </span>
+            {/* TV Set */}
+            <span className="inline-flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[#6B3A6E]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M5.2 1.8L7.3 4.2M10.8 1.8L8.7 4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                <rect x="2" y="4" width="12" height="8.5" rx="2" fill="currentColor" />
+                <rect x="3.6" y="5.4" width="8.8" height="5.7" rx="1" fill="#FBF8F2" />
+                <path d="M5.5 14.2H10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+              <span>TV Set</span>
+            </span>
+            {/* Director Clapperboard */}
+            <span className="inline-flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[#B8292F]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="2" y="6.2" width="12" height="8" rx="1.5" fill="currentColor" />
+                <path d="M2.2 5.4L13.5 2.4L14.1 4.6L2.8 7.6Z" fill="currentColor" />
+                <path d="M4.5 9.5H11.5M4.5 11.8H9" stroke="#FBF8F2" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              <span>Clapperboard</span>
+            </span>
+            {/* Cast 5-Point Star */}
+            <span className="inline-flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[#B86B14]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <polygon points="8,1.3 9.9,5.6 14.6,6.1 11.1,9.3 12.1,13.9 8,11.5 3.9,13.9 4.9,9.3 1.4,6.1 6.1,5.6" fill="currentColor" />
+              </svg>
+              <span>Cast Star</span>
+            </span>
+            {/* Story Book */}
+            <span className="inline-flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[#2A6B53]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 3.6C6.2 2.4 3.5 2.6 1.8 3.6V12.6C3.5 11.6 6.2 11.4 8 12.6C9.8 11.4 12.5 11.6 14.2 12.6V3.6C12.5 2.6 9.8 2.4 8 3.6Z" fill="currentColor" />
+                <path d="M8 3.8V12.4" stroke="#FBF8F2" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+              <span>Story Book</span>
+            </span>
+            {/* Score Musical Note */}
+            <span className="inline-flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[#A63A2B]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="4.8" cy="12" r="2.2" fill="currentColor" />
+                <circle cx="11.5" cy="10.6" r="2.2" fill="currentColor" />
+                <path d="M6.6 12V3.8L13.3 2.4V10.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Music Note</span>
+            </span>
+          </div>
+        </div>
       </div>
+
+      {/* MOVIE MAP REA: TOP-RIGHT DISPLAY & PROJECTION CONTROLS HUD */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 p-1 rounded-full bg-[#FBF8F2]/95 border border-[#B5A892] shadow-archival text-xs font-semibold text-[#171412]">
+        {/* Layout Toggle: Constellation vs Galaxy */}
+        {onLayoutModeChange && (
+          <div className="flex items-center gap-0.5 pr-1 border-r border-[#D5CCB9]">
+            <button
+              type="button"
+              onClick={() => onLayoutModeChange('FORCE_CONSTELLATION')}
+              className={`px-2 py-1 rounded-full text-[11px] transition-colors cursor-pointer ${
+                layoutMode === 'FORCE_CONSTELLATION'
+                  ? 'bg-[#234B6E] text-[#FBF8F2]'
+                  : 'text-[#52483E] hover:text-[#171412]'
+              }`}
+            >
+              Constellation
+            </button>
+            <button
+              type="button"
+              onClick={() => onLayoutModeChange('SEMANTIC_GALAXY')}
+              className={`px-2 py-1 rounded-full text-[11px] transition-colors cursor-pointer ${
+                layoutMode === 'SEMANTIC_GALAXY'
+                  ? 'bg-[#B8292F] text-[#FBF8F2]'
+                  : 'text-[#52483E] hover:text-[#171412]'
+              }`}
+            >
+              Galaxy
+            </button>
+          </div>
+        )}
+
+        {/* Color Mode Switcher */}
+        {onColorModeChange && (
+          <div className="flex items-center gap-0.5 pr-1 border-r border-[#D5CCB9]">
+            {(
+              [
+                { id: 'CLUSTER', label: 'Cluster' },
+                { id: 'GENRE', label: 'Genre' },
+                { id: 'DECADE', label: 'Decade' },
+                { id: 'CATEGORY', label: 'Type' },
+              ] as const
+            ).map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onColorModeChange(c.id)}
+                className={`px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                  colorMode === c.id
+                    ? 'bg-[#EFE8DA] text-[#171412] font-bold border border-[#C8BEAA]'
+                    : 'text-[#6B5E50] hover:text-[#171412]'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Label Mode Toggle (Auto / All / Off) */}
+        {onLabelModeChange && (
+          <button
+            type="button"
+            onClick={() => {
+              const next =
+                labelMode === 'AUTO'
+                  ? 'ALL'
+                  : labelMode === 'ALL'
+                    ? 'OFF'
+                    : 'AUTO';
+              onLabelModeChange(next);
+            }}
+            title="Toggle Labels (or press 'L')"
+            className={`px-2 py-1 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer ${
+              labelMode === 'OFF'
+                ? 'bg-[#EFE8DA] text-[#6B5E50] border-[#D5CCB9]'
+                : labelMode === 'ALL'
+                  ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                  : 'bg-[#FBF8F2] text-[#171412] border-[#C8BEAA]'
+            }`}
+          >
+            L: {labelMode === 'AUTO' ? 'Auto' : labelMode === 'ALL' ? 'All' : 'Off'}
+          </button>
+        )}
+      </div>
+
+      {/* MOVIE MAP REA: INTERACTIVE CLUSTER TERRITORY LEGEND (Bottom-Left) */}
+      {clusters && clusters.length > 0 && (
+        <div className="hidden lg:flex absolute bottom-5 left-4 z-20 flex-col gap-1 p-2.5 rounded-lg bg-[#FBF8F2]/95 border border-[#B5A892] shadow-archival max-w-xs text-xs">
+          <div className="flex items-center justify-between gap-3 pb-1 border-b border-[#D5CCB9]">
+            <span className="font-heading font-bold text-[#171412]">
+              Semantic Galaxy Clusters
+            </span>
+            {graphFilters?.activeClusterId && onSelectCluster && (
+              <button
+                type="button"
+                onClick={() => onSelectCluster(null)}
+                className="text-[10px] text-[#B8292F] font-semibold hover:underline cursor-pointer"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1 pt-1 max-h-36 overflow-y-auto pr-1">
+            {clusters.map((c) => {
+              const isSelected = graphFilters?.activeClusterId === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => onSelectCluster?.(isSelected ? null : c.id)}
+                  className={`text-left flex items-center gap-1.5 py-0.5 px-1 rounded transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#EFE8DA] font-bold text-[#171412]'
+                      : 'hover:bg-[#EFE8DA]/60 text-[#52483E]'
+                  }`}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                    style={{ backgroundColor: c.color }}
+                  />
+                  <span className="truncate text-[10px]">{c.shortLabel}</span>
+                  <span className="text-[9px] font-tabular text-[#8C8070] ml-auto">
+                    {c.mediaIds.length}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Bottom Center Camera Dock */}
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival">
@@ -3292,12 +4065,36 @@ export function SpatialViewport({
             camSphericalRef.current.goalY = 0;
             camSphericalRef.current.goalZ = 0;
             camSphericalRef.current.goalRadius = 265;
+            pan2dRef.current.goalPanX = 0;
+            pan2dRef.current.goalPanY = 0;
+            pan2dRef.current.goalZoom = 1.05;
             onCameraModeChange('ORBIT');
+            if (onResetEverything) {
+              onResetEverything();
+            } else {
+              onClearSelection?.();
+              onClearFocal?.();
+            }
           }}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA] transition-colors"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+            selectedSubgraph.focusNode || focalItem
+              ? 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] shadow-archival-sm'
+              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
+          }`}
+          title="Reset selection, filters, and camera to show the full graph"
         >
-          <RotateCcw className="w-3.5 h-3.5 text-[#8C1D22]" />
-          <span>Center View</span>
+          <RotateCcw
+            className={`w-3.5 h-3.5 ${
+              selectedSubgraph.focusNode || focalItem
+                ? 'text-[#FBF8F2]'
+                : 'text-[#8C1D22]'
+            }`}
+          />
+          <span>
+            {selectedSubgraph.focusNode || focalItem
+              ? 'Reset Everything'
+              : 'Reset View'}
+          </span>
         </button>
 
         <button

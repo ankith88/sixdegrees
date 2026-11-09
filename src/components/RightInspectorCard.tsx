@@ -15,8 +15,11 @@ import {
   X,
   Check,
   Sparkles,
+  RotateCcw,
+  Bookmark,
 } from 'lucide-react';
 import {
+  GraphNode,
   MediaItem,
   RegionCode,
   SimilarityBreakdown,
@@ -27,6 +30,7 @@ import { toEntityNodeId } from '@/lib/similarity';
 
 interface RightInspectorCardProps {
   inspectedItem: MediaItem | null;
+  activeEntityNode?: GraphNode | null;
   focalItem: MediaItem | null;
   allMediaItems: MediaItem[];
   similarity: SimilarityBreakdown | null;
@@ -34,6 +38,7 @@ interface RightInspectorCardProps {
   onMakeFocal: (mediaId: string) => void;
   onClearFocal: () => void;
   onClearInspected: () => void;
+  onResetEverything?: () => void;
   onOrbitNode: (nodeId: string) => void;
   onSelectEntityNode: (entityNodeId: string) => void;
   topRecommendations: Array<{
@@ -43,11 +48,14 @@ interface RightInspectorCardProps {
   onSelectMedia: (item: MediaItem) => void;
   watchedIds?: string[];
   onToggleWatched?: (mediaId: string) => void;
+  interestedIds?: string[];
+  onToggleInterested?: (mediaId: string) => void;
   onSuggestFromMedia?: (mediaId: string) => void;
 }
 
 export function RightInspectorCard({
   inspectedItem,
+  activeEntityNode = null,
   focalItem,
   allMediaItems,
   similarity,
@@ -55,12 +63,15 @@ export function RightInspectorCard({
   onMakeFocal,
   onClearFocal,
   onClearInspected,
+  onResetEverything,
   onOrbitNode,
   onSelectEntityNode,
   topRecommendations,
   onSelectMedia,
   watchedIds = [],
   onToggleWatched,
+  interestedIds = [],
+  onToggleInterested,
   onSuggestFromMedia,
 }: RightInspectorCardProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -71,14 +82,21 @@ export function RightInspectorCard({
   const [catalogSort, setCatalogSort] = useState<
     'CONNECTIVITY' | 'RATING' | 'YEAR' | 'TITLE'
   >('CONNECTIVITY');
+  const [inspectorTab, setInspectorTab] = useState<'OVERVIEW' | 'SIMILAR'>('OVERVIEW');
+
+  const scopedMediaItems = useMemo(() => {
+    if (!activeEntityNode) return allMediaItems;
+    const connectedSet = new Set(activeEntityNode.connectedMediaIds);
+    return allMediaItems.filter((m) => connectedSet.has(m.id));
+  }, [allMediaItems, activeEntityNode]);
 
   const movieCount = useMemo(
-    () => allMediaItems.filter((m) => m.mediaType === 'MOVIE').length,
-    [allMediaItems]
+    () => scopedMediaItems.filter((m) => m.mediaType === 'MOVIE').length,
+    [scopedMediaItems]
   );
   const tvCount = useMemo(
-    () => allMediaItems.filter((m) => m.mediaType === 'TV').length,
-    [allMediaItems]
+    () => scopedMediaItems.filter((m) => m.mediaType === 'TV').length,
+    [scopedMediaItems]
   );
 
   // Build connectivity score map from topRecommendations
@@ -92,7 +110,7 @@ export function RightInspectorCard({
 
   const filteredCatalogItems = useMemo(() => {
     const q = catalogQuery.trim().toLowerCase();
-    const list = allMediaItems.filter((item) => {
+    const list = scopedMediaItems.filter((item) => {
       if (catalogTypeFilter === 'MOVIE' && item.mediaType !== 'MOVIE') {
         return false;
       }
@@ -125,7 +143,7 @@ export function RightInspectorCard({
     });
 
     return list;
-  }, [allMediaItems, catalogTypeFilter, catalogQuery, catalogSort, scoreByMediaId]);
+  }, [scopedMediaItems, catalogTypeFilter, catalogQuery, catalogSort, scoreByMediaId]);
 
   if (collapsed) {
     return (
@@ -163,11 +181,17 @@ export function RightInspectorCard({
         {/* Top Strip */}
         <div className="px-4 py-2.5 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs font-medium text-[#52483E]">
-            <span className="w-2 h-2 rounded-full bg-[#2A6B53]" />
-            <span>Complete Graph Index</span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                activeEntityNode ? 'bg-[#B8292F]' : 'bg-[#2A6B53]'
+              }`}
+            />
+            <span>
+              {activeEntityNode ? 'Isolated Connected Index' : 'Complete Graph Index'}
+            </span>
             <span className="text-[#B5A892]">·</span>
             <span className="font-tabular font-semibold text-[#171412]">
-              {allMediaItems.length} Titles
+              {scopedMediaItems.length} Titles
             </span>
           </div>
           <button
@@ -186,22 +210,25 @@ export function RightInspectorCard({
           <div>
             <div className="flex items-start justify-between gap-2">
               <h1 className="font-heading text-xl font-bold text-[#171412] leading-tight">
-                All Movies &amp; TV Series
+                {activeEntityNode
+                  ? `Connected to ${activeEntityNode.label}`
+                  : 'All Movies & TV Series'}
               </h1>
-              {focalItem && (
+              {(activeEntityNode || focalItem) && (
                 <button
                   type="button"
-                  onClick={onClearFocal}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6] hover:bg-[#B8292F] hover:text-[#FBF8F2] transition-colors shrink-0 cursor-pointer"
+                  onClick={onResetEverything || onClearFocal}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-[#B8292F] text-[#FBF8F2] border border-[#8C1D22] hover:bg-[#8C1D22] transition-colors shrink-0 cursor-pointer"
                 >
-                  <Globe className="w-3 h-3" />
-                  Reset Focal
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset All</span>
                 </button>
               )}
             </div>
             <p className="text-xs text-[#52483E] mt-0.5">
-              Every film and series in the constellation. Select any title to
-              inspect its monograph or center the graph around it.
+              {activeEntityNode
+                ? `Showing only the ${scopedMediaItems.length} films & series linked to ${activeEntityNode.label}. Click Reset All to restore the full archive.`
+                : 'Every film and series in the constellation. Select any title to inspect its monograph or center the graph around it.'}
             </p>
           </div>
 
@@ -217,7 +244,7 @@ export function RightInspectorCard({
                     : 'text-[#52483E] hover:text-[#171412]'
                 }`}
               >
-                All ({allMediaItems.length})
+                All ({scopedMediaItems.length})
               </button>
               <button
                 type="button"
@@ -370,6 +397,32 @@ export function RightInspectorCard({
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
+                      {onToggleInterested && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleInterested(item.id);
+                          }}
+                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
+                            interestedIds.includes(item.id)
+                              ? 'bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
+                              : 'bg-[#F6F1E7] hover:bg-[#EFE8DA] text-[#52483E] border-[#C8BEAA]'
+                          }`}
+                          title={
+                            interestedIds.includes(item.id)
+                              ? 'In Want to Watch / Interested (click to remove)'
+                              : 'Add to Want to Watch / Interested list'
+                          }
+                        >
+                          <Bookmark className="w-2.5 h-2.5" />
+                          <span>
+                            {interestedIds.includes(item.id)
+                              ? 'Interested'
+                              : 'Want'}
+                          </span>
+                        </button>
+                      )}
                       {onToggleWatched && (
                         <button
                           type="button"
@@ -526,21 +579,29 @@ export function RightInspectorCard({
       aria-label="Catalogue Notes & Title Inspector"
       className="fixed right-4 top-[4.5rem] bottom-4 w-[396px] max-w-[calc(100vw-2rem)] z-30 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex flex-col overflow-hidden"
     >
-      {/* Top Strip with Back to All Graph Titles */}
-      <div className="px-4 py-2.5 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-center justify-between gap-2">
+      {/* Top Strip with Back to All Graph Titles & Reset Everything */}
+      <div className="px-4 py-2 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={onClearInspected}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#234B6E] hover:text-[#B8292F] transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>All Graph Titles ({allMediaItems.length})</span>
+          <span>Show All Titles ({allMediaItems.length})</span>
         </button>
 
-        <div className="flex items-center gap-2">
-          <span className="font-tabular text-[11px] text-[#6B5E50]">
-            {inspectedItem.imdbId}
-          </span>
+        <div className="flex items-center gap-1.5">
+          {onResetEverything && (
+            <button
+              type="button"
+              onClick={onResetEverything}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] text-[11px] font-semibold transition-colors cursor-pointer"
+              title="Reset selection, filters, and view back to full archive"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset All</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setCollapsed(true)}
@@ -553,61 +614,186 @@ export function RightInspectorCard({
         </div>
       </div>
 
+      {/* MOVIE MAP REA: INSPECTOR TABS (Overview vs Similar Films) */}
+      <div className="px-4 py-1.5 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setInspectorTab('OVERVIEW')}
+          className={`flex-1 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
+            inspectorTab === 'OVERVIEW'
+              ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+              : 'text-[#52483E] hover:text-[#171412]'
+          }`}
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          onClick={() => setInspectorTab('SIMILAR')}
+          className={`flex-1 py-1 rounded text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+            inspectorTab === 'SIMILAR'
+              ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+              : 'text-[#52483E] hover:text-[#171412]'
+          }`}
+        >
+          <span>Similar Films</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-tabular font-bold bg-[#E4F0EA] text-[#1E563F]">
+            {topRecommendations.slice(0, 20).length}
+          </span>
+        </button>
+      </div>
+
       {/* Scrollable Monograph Sheet Body */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {/* HEADER: Title First (no kicker above heading), Metadata & Match Badge Below */}
-        <div className="pb-4 border-b border-[#D5CCB9]">
-          <div className="flex items-start justify-between gap-2">
-            <h1 className="font-heading text-2xl font-bold text-[#171412] leading-tight">
-              {inspectedItem.title}
-            </h1>
+        {inspectorTab === 'SIMILAR' ? (
+          /* ==================== SIMILAR FILMS TAB (TOP 20 NEAREST NEIGHBORS) ==================== */
+          <div className="space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[#D5CCB9]">
+              <h3 className="font-heading text-base font-bold text-[#171412]">
+                Nearest Semantic Neighbors
+              </h3>
+              <span className="text-xs font-tabular text-[#6B5E50]">
+                Top {topRecommendations.slice(0, 20).length} Films
+              </span>
+            </div>
 
-            {isFocal ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6] shrink-0 mt-0.5">
-                <Crosshair className="w-3 h-3" />
-                Focal Center
-              </span>
-            ) : focalItem && similarity ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-bold font-tabular bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] shrink-0 mt-0.5">
-                {similarity.totalScore}% Match
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-[#EFE8DA] text-[#52483E] border border-[#C8BEAA] shrink-0 mt-0.5">
-                Archive Entry
-              </span>
-            )}
-          </div>
+            <p className="text-xs text-[#52483E] leading-relaxed">
+              Titles in the archive with the closest multi-dimensional craft vector to{' '}
+              <strong className="text-[#171412] font-semibold">{inspectedItem.title}</strong>, ranked by shared narrative tropes, auteurs, cast, and aesthetics.
+            </p>
 
-          <div className="flex items-center flex-wrap gap-2 mt-1.5 text-xs text-[#52483E]">
-            <span
-              className={`inline-flex items-center gap-1 font-semibold ${
-                inspectedItem.mediaType === 'MOVIE'
-                  ? 'text-[#234B6E]'
-                  : 'text-[#6B3A6E]'
-              }`}
-            >
-              {inspectedItem.mediaType === 'MOVIE' ? (
-                <Film className="w-3.5 h-3.5" />
-              ) : (
-                <Tv className="w-3.5 h-3.5" />
+            <div className="space-y-2 pt-1">
+              {topRecommendations
+                .filter((r) => r.item.id !== inspectedItem.id)
+                .slice(0, 20)
+                .map(({ item, similarity: s }, rankIdx) => (
+                  <div
+                    key={item.id}
+                    onClick={() => onSelectMedia(item)}
+                    className="p-2.5 rounded-lg bg-[#EFE8DA]/50 hover:bg-[#EFE8DA] border border-[#D5CCB9] transition-all cursor-pointer flex gap-3 items-center group"
+                  >
+                    <span className="w-5 text-center font-tabular text-xs font-bold text-[#8C8070] shrink-0">
+                      #{rankIdx + 1}
+                    </span>
+
+                    <div className="w-10 h-14 rounded overflow-hidden shrink-0 border border-[#C8BEAA] bg-[#E5DEC9]">
+                      <img
+                        src={item.posterUrl}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = getPosterFallbackDataUri(item);
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-1">
+                        <span className="font-heading text-xs font-bold text-[#171412] truncate group-hover:text-[#B8292F] transition-colors">
+                          {item.title}
+                        </span>
+                        <span className="text-[11px] font-tabular font-bold text-[#2A6B53] shrink-0">
+                          {s.totalScore}%
+                        </span>
+                      </div>
+
+                      <div className="text-[10px] text-[#6B5E50] truncate mt-0.5">
+                        {item.year} · {item.primaryGenre} · IMDb {item.imdbRating.toFixed(1)}
+                      </div>
+
+                      {/* Top shared connection badge */}
+                      {s.sharedConnections[0] && (
+                        <div className="mt-1 flex items-center gap-1">
+                          <span
+                            className="px-1.5 py-0.2 rounded text-[9px] font-semibold truncate max-w-[170px]"
+                            style={{
+                              backgroundColor: `${s.sharedConnections[0].color}15`,
+                              color: s.sharedConnections[0].color,
+                            }}
+                          >
+                            {s.sharedConnections[0].prefix}: {s.sharedConnections[0].value}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMakeFocal(item.id);
+                      }}
+                      title="Center graph around this title"
+                      className="p-1 rounded text-[#52483E] hover:text-[#B8292F] hover:bg-[#FBF8F2] border border-transparent hover:border-[#C8BEAA] transition-colors shrink-0"
+                    >
+                      <Crosshair className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+
+              {topRecommendations.filter((r) => r.item.id !== inspectedItem.id).length === 0 && (
+                <div className="p-4 text-center text-xs text-[#6B5E50]">
+                  No similar titles found in the active scope.
+                </div>
               )}
-              {inspectedItem.mediaType === 'MOVIE' ? 'Feature Film' : 'Series'}
-            </span>
-            <span className="text-[#B5A892]">·</span>
-            <span className="font-tabular font-medium">
-              {inspectedItem.year}
-            </span>
-            <span className="text-[#B5A892]">·</span>
-            <span>
-              {inspectedItem.mediaType === 'MOVIE'
-                ? 'Directed by '
-                : 'Created by '}
-              <strong className="text-[#171412] font-semibold">
-                {inspectedItem.directors.join(', ')}
-              </strong>
-            </span>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* ==================== OVERVIEW TAB ==================== */
+          <>
+            {/* HEADER: Title First (no kicker above heading), Metadata & Match Badge Below */}
+            <div className="pb-4 border-b border-[#D5CCB9]">
+              <div className="flex items-start justify-between gap-2">
+                <h1 className="font-heading text-2xl font-bold text-[#171412] leading-tight">
+                  {inspectedItem.title}
+                </h1>
+
+                {isFocal ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6] shrink-0 mt-0.5">
+                    <Crosshair className="w-3 h-3" />
+                    Focal Center
+                  </span>
+                ) : focalItem && similarity ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-bold font-tabular bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] shrink-0 mt-0.5">
+                    {similarity.totalScore}% Match
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-[#EFE8DA] text-[#52483E] border border-[#C8BEAA] shrink-0 mt-0.5">
+                    Archive Entry
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center flex-wrap gap-2 mt-1.5 text-xs text-[#52483E]">
+                <span
+                  className={`inline-flex items-center gap-1 font-semibold ${
+                    inspectedItem.mediaType === 'MOVIE'
+                      ? 'text-[#234B6E]'
+                      : 'text-[#6B3A6E]'
+                  }`}
+                >
+                  {inspectedItem.mediaType === 'MOVIE' ? (
+                    <Film className="w-3.5 h-3.5" />
+                  ) : (
+                    <Tv className="w-3.5 h-3.5" />
+                  )}
+                  {inspectedItem.mediaType === 'MOVIE' ? 'Feature Film' : 'Series'}
+                </span>
+                <span className="text-[#B5A892]">·</span>
+                <span className="font-tabular font-medium">
+                  {inspectedItem.year}
+                </span>
+                <span className="text-[#B5A892]">·</span>
+                <span>
+                  {inspectedItem.mediaType === 'MOVIE'
+                    ? 'Directed by '
+                    : 'Created by '}
+                  <strong className="text-[#171412] font-semibold">
+                    {inspectedItem.directors.join(', ')}
+                  </strong>
+                </span>
+              </div>
+            </div>
 
         {/* POSTER PLATE & CRITICAL CONSENSUS LEDGER (No nested cards) */}
         <div className="py-4 border-b border-[#D5CCB9] flex gap-4 items-start">
@@ -919,27 +1105,48 @@ export function RightInspectorCard({
             )}
           </div>
         </section>
+        </>
+        )}
       </div>
 
       {/* ACTION BUTTONS FOOTER */}
       <div className="p-3.5 bg-[#EFE8DA] border-t border-[#D5CCB9] space-y-2">
-        {(onToggleWatched || onSuggestFromMedia) && (
-          <div className="grid grid-cols-2 gap-2">
+        {(onToggleWatched || onToggleInterested || onSuggestFromMedia) && (
+          <div className="grid grid-cols-3 gap-1.5">
             {onToggleWatched && (
               <button
                 type="button"
                 onClick={() => onToggleWatched(inspectedItem.id)}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded text-xs font-semibold border transition-colors cursor-pointer ${
+                className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
                   watchedIds.includes(inspectedItem.id)
                     ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
                     : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border border-[#B5A892]'
                 }`}
               >
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-3 h-3" />
                 <span>
                   {watchedIds.includes(inspectedItem.id)
                     ? 'Watched ✓'
-                    : 'Mark Watched'}
+                    : 'Watched'}
+                </span>
+              </button>
+            )}
+
+            {onToggleInterested && (
+              <button
+                type="button"
+                onClick={() => onToggleInterested(inspectedItem.id)}
+                className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                  interestedIds.includes(inspectedItem.id)
+                    ? 'bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
+                    : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border border-[#B5A892]'
+                }`}
+              >
+                <Bookmark className="w-3 h-3" />
+                <span>
+                  {interestedIds.includes(inspectedItem.id)
+                    ? 'Interested ✓'
+                    : 'Want to Watch'}
                 </span>
               </button>
             )}
@@ -948,10 +1155,10 @@ export function RightInspectorCard({
               <button
                 type="button"
                 onClick={() => onSuggestFromMedia(inspectedItem.id)}
-                className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded text-xs font-semibold bg-[#F5E4E4] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#D8B4B6] hover:border-[#8C1D22] transition-colors cursor-pointer"
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded text-[11px] font-semibold bg-[#F5E4E4] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#D8B4B6] hover:border-[#8C1D22] transition-colors cursor-pointer"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Suggest Similar</span>
+                <Sparkles className="w-3 h-3" />
+                <span>Suggest</span>
               </button>
             )}
           </div>

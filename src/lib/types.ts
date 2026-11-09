@@ -104,6 +104,17 @@ export interface GraphNode {
   subLabel?: string;
   type: EntityNodeType;
   isFocal?: boolean;
+  isWatched?: boolean;
+  isInterested?: boolean;
+  isSuggested?: boolean;
+  isFilterMatch?: boolean; // True when matching active Movie Map filters (or when no filters are active)
+  clusterId?: string;
+  clusterLabel?: string;
+  clusterColor?: string;
+  secondaryClusterColor?: string;
+  blendedClusterColor?: string;
+  connectionCount?: number;
+  nearestNeighborIds?: string[]; // Precomputed top 20 nearest neighbor MediaItem IDs
   matchScore?: number; // For MOVIE / TV nodes relative to focal
   similarity?: SimilarityBreakdown;
   mediaItem?: MediaItem;
@@ -216,5 +227,78 @@ export interface WatchSuggestion {
   matchedGenres: string[];
   matchedTropes: string[];
 }
+
+export type GraphScopeMode =
+  | 'FULL_ARCHIVE'
+  | 'WATCHED_ONLY'
+  | 'INTERESTED_ONLY'
+  | 'WATCHED_AND_INTERESTED'
+  | 'WATCHED_PLUS_SUGGESTIONS';
+
+export type UserAuthMode =
+  | 'HANDLE_ONLY'
+  | 'PIN_PROTECTED'
+  | 'FIREBASE_EMAIL'
+  | 'FIREBASE_GOOGLE';
+
+export interface UserProfile {
+  id: string;
+  handle: string;
+  displayName: string;
+  email?: string;
+  bio?: string;
+  avatarColor: string;
+  watchedIds: string[];
+  watchedCustomItems: MediaItem[];
+  interestedIds: string[];
+  interestedCustomItems: MediaItem[];
+  preferredRegion: RegionCode;
+  defaultPreset: GravityPreset;
+  defaultGraphScope: GraphScopeMode;
+  authMode?: UserAuthMode;
+  firebaseUid?: string;
+  hasPinOrPassword?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FilterMatchMode = 'OR' | 'AND';
+
+export type GraphFilterBehavior = 'DIM' | 'HIDE';
+
+export type NodeColorMode = 'CATEGORY' | 'CLUSTER' | 'GENRE' | 'DECADE';
+
+export type NodeSizeMode = 'RATING' | 'CONNECTIONS' | 'UNIFORM';
+
+export type LabelDisplayMode = 'AUTO' | 'ALL' | 'OFF';
+
+export type GraphLayoutMode = 'FORCE_CONSTELLATION' | 'SEMANTIC_GALAXY';
+
+export interface SemanticCluster {
+  id: string;
+  label: string;
+  shortLabel: string;
+  description: string;
+  color: string;
+  glowColor: string;
+  centroid: { x: number; y: number; z: number };
+  keywords: string[];
+  genres: string[];
+  mediaIds: string[];
+}
+
+export interface GraphFilterState {
+  selectedGenres: string[];
+  selectedTropes: string[];
+  matchMode: FilterMatchMode;
+  filterBehavior: GraphFilterBehavior;
+  yearRange: [number, number];
+  minImdbRating: number;
+  watchedFilter: 'ALL' | 'WATCHED' | 'UNWATCHED' | 'INTERESTED';
+  activeClusterId: string | null;
+  searchHighlightQuery: string;
+}
+
+
 
 
