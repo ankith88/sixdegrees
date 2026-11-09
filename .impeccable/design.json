@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-09T10:17:30+11:00",
+  "title": "Design System: SixDegrees",
+  "extensions": {
+    "colorMeta": {
+      "criterion-crimson": {
+        "role": "primary",
+        "displayName": "Criterion Spine Crimson",
+        "canonical": "#B8292F",
+        "tonalRamp": ["#3B0A0D", "#5E1115", "#8C1D22", "#B8292F", "#CD4E53", "#DF7E82", "#EFC0C2", "#F5E4E4"]
+      },
+      "prussian-blue": {
+        "role": "secondary",
+        "displayName": "Prussian Film Blue",
+        "canonical": "#234B6E",
+        "tonalRamp": ["#0E2030", "#17354F", "#234B6E", "#346792", "#5286B0", "#7FA9CA", "#B3CDE0", "#E4EEF6"]
+      },
+      "plum-archive": {
+        "role": "secondary",
+        "displayName": "Archive Plum",
+        "canonical": "#6B3A6E",
+        "tonalRamp": ["#28132A", "#462349", "#6B3A6E", "#88528C", "#A673AA", "#C49EC7", "#DFC8E1", "#F3EAF4"]
+      },
+      "verdigris-teal": {
+        "role": "tertiary",
+        "displayName": "Verdigris Match Teal",
+        "canonical": "#2A6B53",
+        "tonalRamp": ["#0E291F", "#1B4837", "#2A6B53", "#3D8A6E", "#5CA98D", "#89C5AF", "#B4D4C7", "#E3EFEA"]
+      },
+      "nitrate-ochre": {
+        "role": "tertiary",
+        "displayName": "Nitrate Ochre",
+        "canonical": "#B86B14",
+        "tonalRamp": ["#3D2104", "#663909", "#8F510E", "#B86B14", "#D48832", "#E3A864", "#F0CCA0", "#FAF0E1"]
+      },
+      "terracotta-rust": {
+        "role": "tertiary",
+        "displayName": "Terracotta Rust",
+        "canonical": "#A63A2B",
+        "tonalRamp": ["#38110B", "#5E1F16", "#822C20", "#A63A2B", "#C25849", "#D68175", "#E8B3AB", "#F7E4E1"]
+      },
+      "archival-paper": {
+        "role": "neutral",
+        "displayName": "Warm Ivory Paper",
+        "canonical": "#F6F1E7",
+        "tonalRamp": ["#171412", "#332C26", "#52483E", "#6B5E50", "#8F816B", "#C8BEAA", "#EFE8DA", "#F6F1E7"]
+      },
+      "archival-card": {
+        "role": "neutral",
+        "displayName": "Archival Card Stock",
+        "canonical": "#EFE8DA",
+        "tonalRamp": ["#1E1A16", "#3D352E", "#5C5146", "#7D6F61", "#A39684", "#C8BEAA", "#E5DEC9", "#EFE8DA"]
+      },
+      "archival-vellum": {
+        "role": "neutral",
+        "displayName": "Warm Museum Vellum",
+        "canonical": "#FBF8F2",
+        "tonalRamp": ["#24201C", "#474038", "#6B5E50", "#948777", "#B5A892", "#D5CCB9", "#EFE8DA", "#FBF8F2"]
+      },
+      "carbon-ink": {
+        "role": "neutral",
+        "displayName": "Carbon-Sepia Ink",
+        "canonical": "#171412",
+        "tonalRamp": ["#171412", "#2B2622", "#423A34", "#594F47", "#75695E", "#998C7E", "#C4B9AA", "#EBE5DC"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display Serif",
+        "purpose": "Main ledger headers and primary editorial titles."
+      },
+      "headline": {
+        "displayName": "Monograph Headline",
+        "purpose": "Inspected film and television titles in the Right Monograph Inspector."
+      },
+      "title": {
+        "displayName": "Section Title",
+        "purpose": "Sidebar section headers, tooltip headings, and numbered ledger row titles."
+      },
+      "body": {
+        "displayName": "Editorial Body",
+        "purpose": "Synopses, curatorial descriptions, and search input text."
+      },
+      "label": {
+        "displayName": "Tabular Label",
+        "purpose": "Tabular ratings, match percentages, credit pills, and filter buttons."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-archival",
+        "value": "0 12px 32px rgba(23, 20, 18, 0.12), 0 2px 6px rgba(23, 20, 18, 0.06)",
+        "purpose": "Directional warm ink elevation for floating vellum monograph sheets, tooltips, and dialogs."
+      },
+      {
+        "name": "shadow-archival-sm",
+        "value": "0 2px 8px rgba(23, 20, 18, 0.07), 0 1px 2px rgba(23, 20, 18, 0.05)",
+        "purpose": "Subtle lift for active segmented tabs and floating context pills."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-editorial",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Smooth deceleration for inspector sheet collapse/expand and camera orbit transitions."
+      }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Crimson Action Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary action button for centering the constellation around a chosen film or series.",
+      "html": "<button class=\"ds-btn-primary\">Center Map Here</button>",
+      "css": ".ds-btn-primary { background: #B8292F; color: #FBF8F2; padding: 8px 12px; border-radius: 4px; border: 1px solid #8C1D22; font-family: 'Source Sans 3', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s ease; } .ds-btn-primary:hover { background: #8C1D22; } .ds-btn-primary:focus-visible { outline: 2px solid #B8292F; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Archival Card Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Secondary action button used for camera focus, reset actions, and regional toggles.",
+      "html": "<button class=\"ds-btn-secondary\">Focus in Map</button>",
+      "css": ".ds-btn-secondary { background: #EFE8DA; color: #171412; padding: 8px 12px; border-radius: 4px; border: 1px solid #C8BEAA; font-family: 'Source Sans 3', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease; } .ds-btn-secondary:hover { background: #E5DEC9; border-color: #8F816B; } .ds-btn-secondary:focus-visible { outline: 2px solid #B8292F; outline-offset: 2px; }"
+    },
+    {
+      "name": "Catalog Omni-Search Input",
+      "kind": "input",
+      "refersTo": "input-search",
+      "description": "Top navigation search input for querying films, series, directors, actors, or themes.",
+      "html": "<input class=\"ds-input-search\" type=\"text\" placeholder=\"Find a film, series, director, actor, or theme…\" />",
+      "css": ".ds-input-search { width: 100%; max-width: 420px; background: #FBF8F2; color: #171412; padding: 8px 12px; border-radius: 4px; border: 1px solid #C8BEAA; font-family: 'Source Sans 3', sans-serif; font-size: 14px; transition: border-color 0.15s ease, box-shadow 0.15s ease; } .ds-input-search::placeholder { color: #6B5E50; } .ds-input-search:focus { outline: none; border-color: #B8292F; box-shadow: 0 0 0 2px rgba(184, 41, 47, 0.14); }"
+    },
+    {
+      "name": "Shared Credit & Theme Chip",
+      "kind": "chip",
+      "refersTo": "button-secondary",
+      "description": "Interactive collaborator or theme pill linking a monograph entry to shared nodes in the constellation.",
+      "html": "<button class=\"ds-chip-credit\"><strong class=\"ds-chip-prefix\">Director:</strong> Christopher Nolan <span class=\"ds-chip-pts\">+25</span></button>",
+      "css": ".ds-chip-credit { display: inline-flex; align-items: center; gap: 4px; background: #EFE8DA; color: #171412; padding: 4px 8px; border-radius: 4px; border: 1px solid #C8BEAA; font-family: 'Source Sans 3', sans-serif; font-size: 11px; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease; } .ds-chip-credit:hover { background: #E5DEC9; border-color: #8F816B; } .ds-chip-prefix { color: #B8292F; font-weight: 700; } .ds-chip-pts { color: #6B5E50; font-variant-numeric: tabular-nums; font-weight: 600; }"
+    },
+    {
+      "name": "Proportional 6-Part Craft Lineage Bar",
+      "kind": "custom",
+      "refersTo": "card-monograph",
+      "description": "Horizontal segmented bar showing the relative contribution of Themes, Director/Writer, Genre, Cast, Score/Camera, and Paired Viewers.",
+      "html": "<div class=\"ds-craft-bar\"><div style=\"width:36%;background:#2A6B53\"></div><div style=\"width:28%;background:#B8292F\"></div><div style=\"width:16%;background:#234B6E\"></div><div style=\"width:12%;background:#B86B14\"></div><div style=\"width:8%;background:#A63A2B\"></div></div>",
+      "css": ".ds-craft-bar { display: flex; width: 100%; height: 8px; border-radius: 2px; overflow: hidden; background: #E5DEC9; border: 1px solid #C8BEAA; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Repertory Film Monograph & Archival Folio",
+    "overview": "SixDegrees treats cinema and television discovery as a tactile, sunlit archival experience rather than a sci-fi telemetry console. Inspired by Criterion Collection booklet essays, BFI Sight & Sound indices, and Cinematheque festival programmes, the interface pairs an interactive 3D/2D constellation with editorial programme notes on warm, uncoated cotton paper stock.\n\nEvery surface favors human curatorial language (\"Centered on\", \"Shared Credits & Themes\", \"Director & Craft\", \"Where to Watch\") over synthetic algorithmic jargon. Posters, collaborator credits, and proportional 6-part craft bars sit inside crisp 1px engraved stone hairlines, allowing film artwork and literary typography to carry the visual weight.",
+    "keyCharacteristics": [
+      "Daylight-first Warm Archival Celluloid & Paper palette grounded in uncoated ivory stock, card stock, and museum vellum.",
+      "Literary serif display typography (Spectral) paired with humanist sans-serif body and tabular numerals (Source Sans 3).",
+      "Semantic archival pigment coding across all 6 graph entity types (Prussian blue, archive plum, Criterion crimson, nitrate ochre, verdigris teal, and terracotta rust).",
+      "Zero nested cards, zero kickers/eyebrows above headings, zero neon glow halos, and zero monospace costume typography."
+    ],
+    "rules": [
+      {
+        "name": "The Sunlight Paper Rule",
+        "body": "Never introduce #0a0e14 obsidian dark backgrounds, neon cyan (#38bdf8), or neon purple (#c084fc) anywhere in the DOM, SVG fallbacks, or WebGL canvas.",
+        "section": "colors"
+      },
+      {
+        "name": "The Semantic Pigment Rule",
+        "body": "Every graph entity color must map consistently across the 3D constellation, 2D map, sidebar legend, and 6-part Craft Lineage Bar.",
+        "section": "colors"
+      },
+      {
+        "name": "The Heading-First Rule",
+        "body": "Never stack an uppercase kicker or eyebrow label above a heading (h1, h2, h3, h4). Headings lead their block; badges or format tags sit inline beside the heading or below it.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Monospace-Costume Rule",
+        "body": "Numeric ratings, years, and match percentages use Source Sans 3 with tabular-nums (.font-tabular), never a monospace coding font.",
+        "section": "typography"
+      },
+      {
+        "name": "The Zero-Blur-Soup Rule",
+        "body": "Never use backdrop-blur glassmorphism or zero-offset neon box-shadow glows. Floating elements rely on opaque or 95% warm vellum (#FBF8F2) with a crisp 1px solid #B5A892 border and directional shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do lead every card, drawer, tooltip, and ledger header directly with its semantic heading (h1–h4) in Spectral serif.",
+      "Do use 1px solid #D5CCB9 hairline dividers (divide-y) and definition lists (dl) to organize metadata inside panels instead of nesting bordered cards inside cards.",
+      "Do use warm human curatorial language (\"Centered on\", \"Curatorial Lens\", \"Minimum Match\", \"Visible Threads\", \"Where to Watch\").",
+      "Do apply .font-tabular (font-variant-numeric: tabular-nums) to all ratings, years, point breakdowns, and match percentages."
+    ],
+    "donts": [
+      "Don't place uppercase kickers or eyebrow labels above headings.",
+      "Don't use dark-mode cyber-telemetry colors (#0a0e14, #38bdf8, #c084fc), neon glow shadows, or Sparkles icons.",
+      "Don't expose raw physics engine sliders (sphericalForce, linkDistanceMultiplier, zRepulsion) or math formulas in the UI.",
+      "Don't use emoji (★, 🍅) as rating icons; use clean typographic labels (IMDb, Critics, Metacritic) with tabular numerals."
+    ]
+  }
+}
