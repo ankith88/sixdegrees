@@ -305,6 +305,13 @@ export async function fetchAutoExpandBatch(
     const res = await fetch(`/api/live-media?${params.toString()}`);
     if (!res.ok) return null;
     const data = await res.json();
+    if (Array.isArray(data.crawledCollaborators)) {
+      for (const name of data.crawledCollaborators) {
+        if (typeof name === 'string' && name) {
+          markCollaboratorQueried(name);
+        }
+      }
+    }
     return {
       collaborator: data.collaborator || collaborator,
       items: Array.isArray(data.items) ? data.items : [],

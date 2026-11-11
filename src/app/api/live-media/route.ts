@@ -20,6 +20,7 @@ import {
   loadCatalogFromFirestore,
   saveCatalogToFirestore,
 } from '@/lib/firestore-cache';
+import { SEED_MEDIA_ITEMS } from '@/lib/seed-data';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const OMDB_BASE = 'https://www.omdbapi.com/';
@@ -1088,7 +1089,7 @@ async function fetchWikidataClusterByImdbId(
 }
 
 /**
- * Collaborator-Driven TMDB Auto-Discovery (0 OMDb calls, paced TMDB calls).
+ * Collaborator-Driven TMDB + OMDb Auto-Discovery (paced TMDB calls + OMDb enrichment within 750/day safe budget).
  * Queries /search/person -> /person/{id}/combined_credits to find top Movies & TV Shows
  * connected to an existing director, creator, actor, or composer in the graph.
  */
@@ -1097,7 +1098,8 @@ async function discoverByCollaboratorTmdb(
   excludeKeys: Set<string>,
   batchSize: number,
   tmdbKey: string,
-  tmdbReadToken?: string
+  tmdbReadToken?: string,
+  omdbKey?: string
 ): Promise<MediaItem[]> {
   try {
     const searchRes = await fetchTmdb(
@@ -1230,14 +1232,17 @@ async function discoverByCollaboratorTmdb(
 
     const items: MediaItem[] = [];
     for (const cand of picked) {
-      // skipOmdb = true so automatic background expansion uses 0 OMDb calls
+      // Automatically enrich with OMDb (IMDb/RT/Metascore) while under the 750/day free-tier ceiling
+      const canUseOmdb =
+        Boolean(omdbKey) &&
+        getServerCache().omdbCallsToday < OMDB_DAILY_SAFE_LIMIT;
       const enriched = await fetchFullTmdbMediaItem(
         cand.id,
         cand.mediaType,
         tmdbKey,
-        undefined,
+        canUseOmdb ? omdbKey : undefined,
         tmdbReadToken,
-        true
+        !canUseOmdb
       );
       if (enriched?.item) {
         items.push(enriched.item);
@@ -1248,6 +1253,59 @@ async function discoverByCollaboratorTmdb(
   } catch {
     return [];
   }
+}
+
+/**
+ * Selects uncrawled collaborators (directors, creators, lead actors, writers, composers)
+ * from the server cache + seed catalog so server-side cron & auto-expand never run dry.
+ */
+function getUncrawledServerCollaborators(preferred?: string): string[] {
+  const cache = getServerCache();
+  const queried = new Set(cache.crawledCollaborators.map((c) => c.toLowerCase()));
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  const pushCandidate = (name?: string) => {
+    if (!name || !isValidPersonName(name)) return;
+    const trimmed = name.trim();
+    const lower = trimmed.toLowerCase();
+    if (seen.has(lower) || queried.has(lower)) return;
+    seen.add(lower);
+    result.push(trimmed);
+  };
+
+  if (preferred && preferred !== '__AUTO__') {
+    pushCandidate(preferred);
+  }
+
+  const allItems: MediaItem[] = [
+    ...SEED_MEDIA_ITEMS,
+    ...Object.values(cache.items),
+  ];
+
+  // Priority 1: Directors & Creators
+  for (const item of allItems) {
+    for (const d of item.directors || []) pushCandidate(d);
+  }
+  // Priority 2: Lead Cast
+  for (const item of allItems) {
+    for (const c of item.cast || []) {
+      if (c.billing === 'LEAD') pushCandidate(c.name);
+    }
+  }
+  // Priority 3: Writers & Composers
+  for (const item of allItems) {
+    for (const w of item.writers || []) pushCandidate(w);
+    for (const comp of item.composers || []) pushCandidate(comp);
+  }
+  // Priority 4: Supporting Cast
+  for (const item of allItems) {
+    for (const c of item.cast || []) {
+      if (c.billing === 'SUPPORTING') pushCandidate(c.name);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -1498,8 +1556,8 @@ export async function GET(req: NextRequest) {
 
   // ==================== ACTION 0C: AUTOMATIC QUOTA-SAFE CATALOG EXPANSION ====================
   if (action === 'auto-expand') {
-    const collaborator =
-      searchParams.get('collaborator')?.trim() || 'Christopher Nolan';
+    const requestedCollaborator =
+      searchParams.get('collaborator')?.trim() || '__AUTO__';
     const batchSize = Math.min(
       8,
       Math.max(1, parseInt(searchParams.get('batchSize') || '5', 10))
@@ -1512,42 +1570,73 @@ export async function GET(req: NextRequest) {
         .filter(Boolean)
     );
 
-    let discovered: MediaItem[] = [];
-    let source = 'PUBLIC_LIVE_GRAPH';
-
-    if (hasTmdbAuth) {
-      discovered = await discoverByCollaboratorTmdb(
-        collaborator,
-        excludeKeys,
-        batchSize,
-        tmdbKey,
-        tmdbReadToken
-      );
-      source = 'TMDB_AUTO_EXPAND';
+    // Always exclude all titles already in SEED_MEDIA_ITEMS + serverCache.items
+    for (const m of [...SEED_MEDIA_ITEMS, ...Object.values(serverCache.items)]) {
+      if (m.tmdbId > 0) excludeKeys.add(`tmdb:${m.mediaType}:${m.tmdbId}`);
+      if (m.imdbId?.startsWith('tt')) excludeKeys.add(`imdb:${m.imdbId}`);
+      if (m.title) excludeKeys.add(`title:${m.title.toLowerCase()}`);
     }
 
-    if (discovered.length === 0) {
-      discovered = await discoverByCollaboratorWikidata(
-        collaborator,
-        excludeKeys,
-        batchSize
-      );
-      source = 'WIKIDATA_AUTO_EXPAND';
+    const candidateQueue = getUncrawledServerCollaborators(
+      requestedCollaborator
+    );
+    const collaboratorsToTry =
+      candidateQueue.length > 0
+        ? candidateQueue.slice(0, 4)
+        : [
+            requestedCollaborator !== '__AUTO__'
+              ? requestedCollaborator
+              : 'Denis Villeneuve',
+          ];
+
+    let discovered: MediaItem[] = [];
+    let activeCollaborator = collaboratorsToTry[0];
+    let source = 'PUBLIC_LIVE_GRAPH';
+
+    for (const candidateCollab of collaboratorsToTry) {
+      activeCollaborator = candidateCollab;
+      if (hasTmdbAuth) {
+        discovered = await discoverByCollaboratorTmdb(
+          candidateCollab,
+          excludeKeys,
+          batchSize,
+          tmdbKey,
+          tmdbReadToken,
+          omdbKey
+        );
+        source = omdbKey ? 'TMDB_OMDB_AUTO_EXPAND' : 'TMDB_AUTO_EXPAND';
+      }
+
+      if (discovered.length === 0) {
+        discovered = await discoverByCollaboratorWikidata(
+          candidateCollab,
+          excludeKeys,
+          batchSize
+        );
+        source = 'WIKIDATA_AUTO_EXPAND';
+      }
+
+      const updated = getServerCache();
+      const collabLower = candidateCollab.toLowerCase();
+      if (!updated.crawledCollaborators.includes(collabLower)) {
+        updated.crawledCollaborators.push(collabLower);
+      }
+
+      if (discovered.length > 0) {
+        break;
+      }
     }
 
     const updatedCache = getServerCache();
-    const collabLower = collaborator.toLowerCase();
-    if (!updatedCache.crawledCollaborators.includes(collabLower)) {
-      updatedCache.crawledCollaborators.push(collabLower);
-      saveServerCache();
-    }
+    saveServerCache();
 
     // Persist the newly discovered batch + collaborator state to Cloud Firestore (1-2 writes total)
     await syncServerCacheToFirestore(firebaseProjectId, firebaseApiKey);
 
     return NextResponse.json({
-      collaborator,
+      collaborator: activeCollaborator,
       items: discovered,
+      crawledCollaborators: updatedCache.crawledCollaborators,
       source,
       firestore: getFirestoreTelemetry(firebaseProjectId, firebaseApiKey),
       quota: {

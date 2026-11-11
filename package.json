@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "expand-catalog": "node scripts/auto-expand-catalog.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

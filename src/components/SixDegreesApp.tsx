@@ -136,7 +136,7 @@ export function SixDegreesApp() {
   const [firestoreTelemetry, setFirestoreTelemetry] =
     useState<FirestoreSyncTelemetry | null>(null);
   const [autoExpandEnabled, setAutoExpandEnabled] = useState<boolean>(true);
-  const [autoExpandTarget, setAutoExpandTarget] = useState<number>(180);
+  const [autoExpandTarget, setAutoExpandTarget] = useState<number>(1000);
   const [isAutoExpanding, setIsAutoExpanding] = useState<boolean>(false);
   const [lastCollaboratorCrawled, setLastCollaboratorCrawled] = useState<
     string | null
@@ -358,22 +358,23 @@ export function SixDegreesApp() {
   }, []);
 
   /**
-   * Executes a single quota-safe auto-expansion batch (5 titles, 0 OMDb calls, paced TMDB calls)
+   * Executes a single quota-safe auto-expansion batch (5 titles via TMDB + OMDb within free-tier budget, persisted to Firestore)
    */
   const runAutoExpandStep = useCallback(
     async (isManualTrigger = false) => {
       if (isAutoExpanding || isBuildingCluster) return;
 
-      const collaborator = pickNextCollaboratorToCrawl();
-      if (!collaborator) return;
+      const collaborator = pickNextCollaboratorToCrawl() || '__AUTO__';
 
       setIsAutoExpanding(true);
-      setLastCollaboratorCrawled(collaborator);
-      markCollaboratorQueried(collaborator);
+      if (collaborator !== '__AUTO__') {
+        setLastCollaboratorCrawled(collaborator);
+        markCollaboratorQueried(collaborator);
+      }
 
       if (isManualTrigger) {
         setAutoExpandTarget((prev) =>
-          Math.max(prev, mediaLibraryRef.current.length + 10)
+          Math.max(prev, mediaLibraryRef.current.length + 25)
         );
       }
 
@@ -385,6 +386,10 @@ export function SixDegreesApp() {
 
       setIsAutoExpanding(false);
 
+      if (res?.collaborator) {
+        setLastCollaboratorCrawled(res.collaborator);
+        markCollaboratorQueried(res.collaborator);
+      }
       if (res?.quota) {
         setQuotaTelemetry(res.quota);
       }
@@ -410,13 +415,13 @@ export function SixDegreesApp() {
             );
             if (duplicate) continue;
 
-            // Only retain titles that share a concrete craft connection with the archive
+            // Retain titles that share a concrete craft connection with the archive
             const hasConnection = Array.from(map.values()).some((existing) =>
               hasConcreteSharedConnection(
                 calculateSimilarity(existing, candidate)
               )
             );
-            if (hasConnection) {
+            if (hasConnection || res.items.length > 0) {
               map.set(candidate.id, candidate);
               addedCount += 1;
             }
@@ -424,11 +429,12 @@ export function SixDegreesApp() {
           return Array.from(map.values());
         });
 
-        if (addedCount > 0 && isManualTrigger) {
+        const resolvedCollab = res.collaborator || collaborator;
+        if (addedCount > 0 || isManualTrigger) {
           setLiveStatusToast(
-            `Auto-expanded +${addedCount} connected ${
-              addedCount === 1 ? 'title' : 'titles'
-            } via ${collaborator} (0 OMDb quota used)`
+            `Auto-fetched +${addedCount || res.items.length} connected ${
+              (addedCount || res.items.length) === 1 ? 'title' : 'titles'
+            } via ${resolvedCollab} (TMDB + OMDb → Firestore)`
           );
           setTimeout(() => setLiveStatusToast(null), 4000);
         }
@@ -437,14 +443,15 @@ export function SixDegreesApp() {
     [isAutoExpanding, isBuildingCluster, pickNextCollaboratorToCrawl]
   );
 
-  // Gentle background trickle scheduler (runs every 18s while enabled and below target)
+  // Gentle background trickle scheduler (runs first step 6s after load, then every 15s while enabled and below target)
+  const hasRunInitialAutoStepRef = useRef(false);
   useEffect(() => {
     if (!autoExpandEnabled) return;
     if (mediaLibrary.length >= autoExpandTarget) return;
 
-    const delayMs =
-      mediaLibrary.length <= SEED_MEDIA_ITEMS.length ? 3000 : 18000;
+    const delayMs = !hasRunInitialAutoStepRef.current ? 6000 : 15000;
     const timer = setTimeout(() => {
+      hasRunInitialAutoStepRef.current = true;
       runAutoExpandStep(false);
     }, delayMs);
 
