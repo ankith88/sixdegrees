@@ -340,11 +340,12 @@ export const SEMANTIC_CLUSTER_DEFINITIONS: Array<{
     glowColor: '#3D78A8',
     centroid: { x: -140, y: -30, z: 20 },
     keywords: [
-      'time travel', 'artificial intelligence', 'existential dread', 'dystopia',
+      'time travel', 'time loop', 'non-linear time', 'artificial intelligence', 'existential dread', 'dystopia',
       'cyborg', 'space exploration', 'virtual reality', 'parallel dimensions',
-      'cyberpunk', 'simulation hypothesis', 'mind games', 'quantum mechanics',
+      'cyberpunk', 'simulation hypothesis', 'mind games', 'quantum mechanics', 'quantum multiverse',
+      'alien contact', 'dream manipulation', 'multiverse', 'subconscious labyrinth', 'simulation'
     ],
-    genres: ['Science Fiction', 'Thriller'],
+    genres: ['Science Fiction', 'Sci-Fi'],
   },
   {
     id: 'kinetic-action-spectacle',
@@ -448,6 +449,28 @@ export function getDecadeColor(year: number): string {
 }
 
 /**
+ * Standard canonical genre names so "Science Fiction" and "Sci-Fi" unify cleanly.
+ */
+export function normalizeGenreName(raw: string): string {
+  const clean = (raw || '').trim();
+  const lower = clean.toLowerCase();
+  if (
+    lower === 'science fiction' ||
+    lower === 'sci-fi' ||
+    lower === 'sci-fi & fantasy'
+  ) {
+    return 'Sci-Fi';
+  }
+  if (lower === 'action & adventure') {
+    return 'Action';
+  }
+  if (lower === 'mystery & thriller') {
+    return 'Mystery';
+  }
+  return clean;
+}
+
+/**
  * Assigns a MediaItem to its primary and secondary semantic clusters based on
  * thematic keywords, tropes, and broad genres.
  */
@@ -459,10 +482,13 @@ export function assignItemSemanticCluster(
   secondary: typeof SEMANTIC_CLUSTER_DEFINITIONS[0];
   blendRatio: number; // 0.0 (pure primary) to 0.5 (equal split)
 } {
+  const normPrimary = normalizeGenreName(item.primaryGenre || '').toLowerCase();
+  const normItemGenres = (item.genres || []).map((g) => normalizeGenreName(g).toLowerCase());
+
   const itemKeywords = [
     ...item.tropes.map((t) => t.toLowerCase()),
-    ...item.genres.map((g) => g.toLowerCase()),
-    item.primaryGenre.toLowerCase(),
+    ...normItemGenres,
+    normPrimary,
   ];
 
   const scores = SEMANTIC_CLUSTER_DEFINITIONS.map((cluster) => {
@@ -474,13 +500,14 @@ export function assignItemSemanticCluster(
         score += 8;
       }
     }
-    // Broad genre match
+    // Broad genre match with normalization
     for (const g of cluster.genres) {
-      if (item.genres.some((ig) => ig.toLowerCase() === g.toLowerCase())) {
+      const normG = normalizeGenreName(g).toLowerCase();
+      if (normItemGenres.includes(normG)) {
         score += 4;
       }
-      if (item.primaryGenre.toLowerCase() === g.toLowerCase()) {
-        score += 6;
+      if (normPrimary === normG) {
+        score += 8;
       }
     }
     return { cluster, score };
@@ -575,13 +602,17 @@ export function evaluateMediaItemFilterMatch(
     return true;
   }
 
-  const itemGenresLower = item.genres.map((g) => g.toLowerCase());
+  const normSelectedGenres = filters.selectedGenres.map((g) => normalizeGenreName(g).toLowerCase());
+  const normItemGenres = item.genres.map((g) => normalizeGenreName(g).toLowerCase());
+  if (item.primaryGenre) {
+    normItemGenres.push(normalizeGenreName(item.primaryGenre).toLowerCase());
+  }
   const itemTropesLower = item.tropes.map((t) => t.toLowerCase());
 
   if (filters.matchMode === 'AND') {
     // Every selected genre must be present
-    for (const g of filters.selectedGenres) {
-      if (!itemGenresLower.includes(g.toLowerCase())) return false;
+    for (const g of normSelectedGenres) {
+      if (!normItemGenres.includes(g)) return false;
     }
     // Every selected trope must be present
     for (const t of filters.selectedTropes) {
@@ -590,8 +621,8 @@ export function evaluateMediaItemFilterMatch(
     return true;
   } else {
     // Match ANY (OR) of the selected genres or tropes
-    const matchedGenre = filters.selectedGenres.some((g) =>
-      itemGenresLower.includes(g.toLowerCase())
+    const matchedGenre = normSelectedGenres.some((g) =>
+      normItemGenres.includes(g)
     );
     const matchedTrope = filters.selectedTropes.some((t) =>
       itemTropesLower.some((it) => it.includes(t.toLowerCase()))
@@ -1095,12 +1126,6 @@ export function buildSpatialGraph({
     item: MediaItem,
     isFilterMatch: boolean
   ): { color: string; glowColor: string } => {
-    if (!isFilterMatch && graphFilters.filterBehavior === 'DIM') {
-      return theme === 'MOVIE_MAP_DARK'
-        ? { color: '#131A26', glowColor: '#1A2436' }
-        : { color: '#C8BEAA', glowColor: '#D5CCB9' };
-    }
-
     const clusterInfo = itemClusterMap.get(item.id);
     const blended = clusterInfo
       ? blendHexColors(
@@ -1122,6 +1147,32 @@ export function buildSpatialGraph({
     } else if (colorMode === 'DECADE') {
       baseColor = getDecadeColor(item.year);
       baseGlow = baseColor;
+    } else if (colorMode === 'WATCH_STATUS') {
+      const isWatched = watchedSet.has(item.id);
+      const isInterested = interestedSet.has(item.id);
+      const isDarkTheme = theme === 'MOVIE_MAP_DARK';
+      if (isWatched) {
+        baseColor = isDarkTheme ? '#10B981' : '#2A6B53'; // Emerald Green
+        baseGlow = isDarkTheme ? '#34D399' : '#3D9970';
+      } else if (isInterested) {
+        baseColor = isDarkTheme ? '#F59E0B' : '#B45309'; // Electric Amber Gold
+        baseGlow = isDarkTheme ? '#FBBF24' : '#D97706';
+      } else {
+        baseColor = isDarkTheme ? '#475569' : '#8C827A'; // Muted Celestial Slate / Archival Taupe
+        baseGlow = isDarkTheme ? '#1E293B' : '#C8BEAA';
+      }
+    }
+
+    if (!isFilterMatch && graphFilters.filterBehavior === 'DIM') {
+      // In DIM mode, preserve the node's visual color identity but softly mute it
+      // so it remains clearly visible and grounded against the background
+      const isDarkTheme = theme === 'MOVIE_MAP_DARK';
+      return {
+        color: isDarkTheme
+          ? blendHexColors(baseColor, '#131A26', 0.55)
+          : blendHexColors(baseColor, '#B5A892', 0.42),
+        glowColor: isDarkTheme ? '#1A2436' : '#D5CCB9',
+      };
     }
 
     return { color: baseColor, glowColor: baseGlow };
@@ -1437,10 +1488,10 @@ export function buildSpatialGraph({
 
       const statusSuffix = isSuggested
         ? ' · Suggested Match'
-        : isPersonalGraph && isInterested && !isWatched
-          ? ' · Want to Watch'
-          : isPersonalGraph && isWatched
-            ? ' · Watched'
+        : isWatched
+          ? ' · ✓ Watched'
+          : isInterested
+            ? ' · ★ Want to Watch'
             : '';
 
       const blendedColor = clusterInfo
@@ -1828,7 +1879,7 @@ export function buildSpatialGraph({
     nodesMap.set(item.id, {
       id: item.id,
       label: item.title,
-      subLabel: `${item.year} · ${similarity.totalScore}% Match`,
+      subLabel: `${item.year} · ${similarity.totalScore}% Match${isWatched ? ' · ✓ Watched' : isInterested ? ' · ★ Want to Watch' : ''}`,
       type: item.mediaType,
       isFocal: false,
       isWatched,

@@ -266,7 +266,7 @@ export type FilterMatchMode = 'OR' | 'AND';
 
 export type GraphFilterBehavior = 'DIM' | 'HIDE';
 
-export type NodeColorMode = 'CATEGORY' | 'CLUSTER' | 'GENRE' | 'DECADE';
+export type NodeColorMode = 'CATEGORY' | 'CLUSTER' | 'GENRE' | 'DECADE' | 'WATCH_STATUS';
 
 export type NodeSizeMode = 'RATING' | 'CONNECTIONS' | 'UNIFORM';
 

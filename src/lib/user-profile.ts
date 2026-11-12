@@ -97,6 +97,10 @@ export function getSavedUserProfiles(): UserProfile[] {
       )
       .map((p) => ({
         ...p,
+        defaultGraphScope:
+          p.defaultGraphScope === 'WATCHED_ONLY' || !p.defaultGraphScope
+            ? 'FULL_ARCHIVE'
+            : p.defaultGraphScope,
         watchedIds: Array.isArray(p.watchedIds) ? p.watchedIds : [],
         watchedCustomItems: Array.isArray(p.watchedCustomItems)
           ? p.watchedCustomItems
@@ -237,8 +241,9 @@ export function createOrUpdateUserProfile(input: {
       input.defaultPreset || existing?.defaultPreset || 'VIBE_TROPES',
     defaultGraphScope:
       input.defaultGraphScope ||
-      existing?.defaultGraphScope ||
-      'WATCHED_ONLY',
+      (existing?.defaultGraphScope && existing.defaultGraphScope !== 'WATCHED_ONLY'
+        ? existing.defaultGraphScope
+        : 'FULL_ARCHIVE'),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };

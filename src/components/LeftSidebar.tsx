@@ -4,20 +4,15 @@ import React, { useState } from 'react';
 import {
   Check,
   RotateCcw,
-  Crosshair,
   Film,
   Tv,
   Layers,
   Award,
   UserCheck,
   Compass,
-  Bookmark,
   PanelLeftClose,
   PanelLeftOpen,
   X,
-  User,
-  Orbit,
-  Sparkles,
   ChevronDown,
   ChevronUp,
   SlidersHorizontal,
@@ -26,9 +21,7 @@ import {
   AppTheme,
   EntityNodeType,
   EntityVisibility,
-  FilterMatchMode,
   ForceSettings,
-  GraphFilterBehavior,
   GraphFilterState,
   GraphLayoutMode,
   GraphNode,
@@ -44,9 +37,9 @@ import {
 import {
   SEMANTIC_CLUSTER_DEFINITIONS,
   MOVIE_MAP_DARK_CLUSTER_COLORS,
+  normalizeGenreName,
 } from '@/lib/similarity';
 import { FirestoreSyncTelemetry, QuotaTelemetry } from '@/lib/api';
-import { PwaInstallButton } from './PwaInstallButton';
 
 interface LeftSidebarProps {
   focalItem: MediaItem | null;
@@ -146,7 +139,7 @@ export function LeftSidebar({
   theme = 'MOVIE_MAP_DARK',
 }: LeftSidebarProps) {
   const isDark = theme === 'MOVIE_MAP_DARK';
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [keywordSearch, setKeywordSearch] = useState('');
   const [filtersExpanded, setFiltersExpanded] = useState(false);
 
@@ -180,24 +173,12 @@ export function LeftSidebar({
     },
   ];
 
-  const entityToggles: Array<{
+  const collaboratorToggles: Array<{
     type: EntityNodeType;
     label: string;
     shapeLabel: string;
     color: string;
   }> = [
-    {
-      type: 'MOVIE',
-      label: 'Feature Films',
-      shapeLabel: '35mm Film Reel',
-      color: '#234B6E',
-    },
-    {
-      type: 'TV',
-      label: 'TV Series',
-      shapeLabel: 'Broadcast Monitor',
-      color: '#6B3A6E',
-    },
     {
       type: 'DIRECTOR',
       label: 'Directors & Writers',
@@ -435,18 +416,18 @@ export function LeftSidebar({
     return counts;
   }, [nodes]);
 
-  const activeLayersCount = entityToggles.filter((item) => visibility[item.type]).length;
+  const activeCollaboratorsCount = collaboratorToggles.filter((item) => visibility[item.type]).length;
   const isCustomVisibility =
-    !visibility.MOVIE ||
-    !visibility.TV ||
     Boolean(visibility.DIRECTOR) ||
     Boolean(visibility.ACTOR);
-  const hasAnyHiddenLayer = isCustomVisibility;
   const allGenresList = React.useMemo(() => {
     const set = new Set<string>();
     for (const n of nodes) {
       if (n.mediaItem?.genres) {
-        for (const g of n.mediaItem.genres) set.add(g);
+        for (const g of n.mediaItem.genres) set.add(normalizeGenreName(g));
+      }
+      if (n.mediaItem?.primaryGenre) {
+        set.add(normalizeGenreName(n.mediaItem.primaryGenre));
       }
     }
     return Array.from(set).sort();
@@ -485,11 +466,10 @@ export function LeftSidebar({
   );
 
   const hasCustomSettings =
-    Boolean(focalItem) ||
     mediaFilter !== 'ALL' ||
     preset !== 'VIBE_TROPES' ||
     forceSettings.matchThreshold !== 15 ||
-    hasAnyHiddenLayer ||
+    isCustomVisibility ||
     hasMovieMapFilters ||
     layoutMode !== 'FORCE_CONSTELLATION' ||
     colorMode !== 'CATEGORY' ||
@@ -550,25 +530,45 @@ export function LeftSidebar({
           <PanelLeftOpen className={`w-4 h-4 ${isDark ? 'text-[#00D2FF]' : 'text-[#52483E]'}`} aria-hidden="true" />
         </button>
 
-        {focalItem && (
-          <button
-            type="button"
-            onClick={onClearFocal}
-            className={`w-8 h-8 rounded flex items-center justify-center transition-colors cursor-pointer ${
-              isDark
-                ? 'bg-[#FF3366]/20 hover:bg-[#FF3366] text-[#FF3366] hover:text-[#0A0E17] border border-[#FF3366]/40'
-                : 'bg-[#F5E4E4] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#D8B4B6]'
-            }`}
-            title={`Centered on "${focalItem.title}" — Click to show all titles`}
-            aria-label={`Clear focal title ${focalItem.title}`}
-          >
-            <Crosshair className="w-4 h-4" aria-hidden="true" />
-          </button>
-        )}
+        <div className={`w-6 h-px my-0.5 ${isDark ? 'bg-[#1C273C]' : 'bg-[#D5CCB9]'}`} aria-hidden="true" />
+
+        {/* Format switchers in collapsed rail */}
+        {(
+          [
+            { id: 'ALL', label: 'All Formats', icon: Layers },
+            { id: 'MOVIE', label: 'Feature Films', icon: Film },
+            { id: 'TV', label: 'TV Series', icon: Tv },
+          ] as const
+        ).map((fmt) => {
+          const active = mediaFilter === fmt.id;
+          const Icon = fmt.icon;
+          return (
+            <button
+              key={fmt.id}
+              type="button"
+              onClick={() => onMediaFilterChange(fmt.id)}
+              aria-pressed={active}
+              className={`w-8 h-8 rounded border flex items-center justify-center transition-all cursor-pointer ${
+                active
+                  ? isDark
+                    ? 'bg-[#162035] border-[#00D2FF]/50 text-[#00D2FF] shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                    : 'bg-[#FBF8F2] border-[#C8BEAA] text-[#B8292F] shadow-archival-sm'
+                  : isDark
+                    ? 'bg-[#121A2B]/40 border-transparent text-[#64748B] hover:text-[#94A3B8]'
+                    : 'bg-[#E5DEC9]/45 border-transparent text-[#6B5E50] hover:text-[#171412]'
+              }`}
+              title={`Format: ${fmt.label}`}
+              aria-label={fmt.label}
+            >
+              <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+            </button>
+          );
+        })}
 
         <div className={`w-6 h-px my-0.5 ${isDark ? 'bg-[#1C273C]' : 'bg-[#D5CCB9]'}`} aria-hidden="true" />
 
-        {entityToggles.map((item) => {
+        {/* Collaborator layer toggles in collapsed rail */}
+        {collaboratorToggles.map((item) => {
           const active = visibility[item.type];
           const count = nodeCountsByType[item.type] || 0;
           return (
@@ -692,39 +692,6 @@ export function LeftSidebar({
       <div className={`divide-y overflow-y-auto flex-1 ${
         isDark ? 'divide-[#1C273C]' : 'divide-[#D5CCB9]'
       }`}>
-        {/* 0. Focal Title Anchor (when active) */}
-        {focalItem && (
-          <section className={`px-4 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
-            isDark ? 'bg-[#FF3366]/10 border-[#1C273C]' : 'bg-[#F5E4E4]/60 border-[#D5CCB9]'
-          }`}>
-            <div className="flex items-center gap-2 min-w-0">
-              <Crosshair
-                className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`}
-                aria-hidden="true"
-              />
-              <div className="min-w-0">
-                <div className={`font-heading text-xs font-bold truncate ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-                  {focalItem.title}
-                </div>
-                <div className={`text-[10px] ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                  Focal anchor ({focalItem.year})
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClearFocal}
-              className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer shrink-0 border ${
-                isDark
-                  ? 'bg-[#121A2B] hover:bg-[#FF3366] text-[#94A3B8] hover:text-[#0A0E17] border-[#1C273C]'
-                  : 'bg-[#FBF8F2] hover:bg-[#B8292F] text-[#52483E] hover:text-[#FBF8F2] border-[#C8BEAA]'
-              }`}
-            >
-              Show All
-            </button>
-          </section>
-        )}
-
         {/* 1. Curatorial Weighting Lens (Primary Control) */}
         <section className="px-4 py-3.5 space-y-2">
           <div className="flex items-baseline justify-between">
@@ -958,23 +925,23 @@ export function LeftSidebar({
           </div>
         </section>
 
-        {/* 4. Visible Sculpture Layers */}
+        {/* 4. Collaborator Threads in Graph */}
         <section className="px-4 py-3 space-y-2">
           <div className="flex items-baseline justify-between">
             <h3 className={`font-heading text-sm font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-              Visible Threads
+              Collaborator Threads
             </h3>
-            {hasAnyHiddenLayer && onResetAllVisibility ? (
+            {isCustomVisibility && onResetAllVisibility ? (
               <button
                 type="button"
                 onClick={onResetAllVisibility}
                 className={`text-[11px] font-semibold hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#8C1D22]'}`}
               >
-                Reset ({activeLayersCount}/{entityToggles.length})
+                Reset ({activeCollaboratorsCount}/{collaboratorToggles.length})
               </button>
             ) : (
               <span className={`text-[11px] font-tabular font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
-                {activeLayersCount}/{entityToggles.length} Active
+                {activeCollaboratorsCount}/{collaboratorToggles.length} Active
               </span>
             )}
           </div>
@@ -982,7 +949,7 @@ export function LeftSidebar({
           <div className={`rounded-lg overflow-hidden border divide-y ${
             isDark ? 'border-[#1C273C] divide-[#1C273C] bg-[#121A2B]' : 'border-[#C8BEAA] divide-[#D5CCB9] bg-[#FBF8F2]'
           }`}>
-            {entityToggles.map((item) => {
+            {collaboratorToggles.map((item) => {
               const checked = visibility[item.type];
               const count = nodeCountsByType[item.type] || 0;
               return (
@@ -991,14 +958,14 @@ export function LeftSidebar({
                   type="button"
                   aria-pressed={checked}
                   onClick={() => onToggleVisibility(item.type)}
-                  className={`w-full flex items-center justify-between gap-2 py-1.5 px-2.5 text-left transition-colors cursor-pointer ${
+                  className={`w-full flex items-center justify-between gap-2 py-2 px-2.5 text-left transition-colors cursor-pointer ${
                     checked
                       ? isDark
                         ? 'bg-[#121A2B] hover:bg-[#162035] text-[#F0F4FC]'
                         : 'bg-[#FBF8F2] hover:bg-[#EFE8DA]/60 text-[#171412]'
                       : isDark
-                        ? 'bg-[#0B101B]/50 text-[#64748B] opacity-50 hover:opacity-80'
-                        : 'bg-[#EFE8DA]/45 text-[#6B5E50] opacity-60 hover:opacity-90'
+                        ? 'bg-[#0B101B]/50 text-[#64748B] opacity-60 hover:opacity-90'
+                        : 'bg-[#EFE8DA]/45 text-[#6B5E50] opacity-70 hover:opacity-95'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -1187,44 +1154,113 @@ export function LeftSidebar({
 
                 {/* 2. Watched / Want to Watch Filter */}
                 <div className="space-y-1">
-                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                    Watched Status
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                      Curation Filter
+                    </label>
+                    {graphFilters.watchedFilter !== 'ALL' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            watchedFilter: 'ALL',
+                          })
+                        }
+                        className={`text-[10px] font-semibold hover:underline cursor-pointer ${
+                          isDark ? 'text-[#00D2FF]' : 'text-[#234B6E]'
+                        }`}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
                   <div className={`grid grid-cols-4 gap-1 p-1 rounded border ${
                     isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
                   }`}>
                     {(
                       [
-                        { id: 'ALL', label: 'All' },
-                        { id: 'WATCHED', label: 'Watched' },
-                        { id: 'UNWATCHED', label: 'Unwatched' },
-                        { id: 'INTERESTED', label: 'Want Watch' },
+                        { id: 'ALL' as const, label: 'All' },
+                        { id: 'WATCHED' as const, label: 'Watched', count: watchedCount },
+                        { id: 'INTERESTED' as const, label: 'Want', count: interestedCount },
+                        { id: 'UNWATCHED' as const, label: 'Unseen' },
                       ] as const
-                    ).map((wf) => (
-                      <button
-                        key={wf.id}
-                        type="button"
-                        onClick={() =>
-                          onGraphFiltersChange({
-                            ...graphFilters,
-                            watchedFilter: wf.id,
-                          })
-                        }
-                        className={`py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
-                          graphFilters.watchedFilter === wf.id
-                            ? isDark
-                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
-                              : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                            : isDark
-                              ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
-                              : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                        }`}
-                      >
-                        {wf.label}
-                      </button>
-                    ))}
+                    ).map((wf) => {
+                      const active = graphFilters.watchedFilter === wf.id;
+                      return (
+                        <button
+                          key={wf.id}
+                          type="button"
+                          onClick={() =>
+                            onGraphFiltersChange({
+                              ...graphFilters,
+                              watchedFilter: wf.id,
+                            })
+                          }
+                          className={`py-1 px-1 rounded text-[10px] font-semibold transition-all cursor-pointer truncate ${
+                            active
+                              ? wf.id === 'WATCHED'
+                                ? isDark
+                                  ? 'bg-[#10B981]/25 text-[#10B981] border border-[#10B981]/50 shadow-xs'
+                                  : 'bg-[#2A6B53] text-[#FBF8F2] shadow-archival-sm'
+                                : wf.id === 'INTERESTED'
+                                  ? isDark
+                                    ? 'bg-[#F59E0B]/25 text-[#F59E0B] border border-[#F59E0B]/50 shadow-xs'
+                                    : 'bg-[#B45309] text-[#FBF8F2] shadow-archival-sm'
+                                  : isDark
+                                    ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
+                                    : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                              : isDark
+                                ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                                : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                          }`}
+                        >
+                          {wf.label}
+                          {typeof (wf as any).count === 'number' && (wf as any).count > 0 && (
+                            <span className="ml-0.5 opacity-75 font-tabular text-[9px]">
+                              ({(wf as any).count})
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
+
+                {/* 2b. Color Nodes By Selector */}
+                {onColorModeChange && (
+                  <div className="space-y-1 pt-1 border-t border-white/5">
+                    <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                      Color Nodes By
+                    </label>
+                    <div className="grid grid-cols-2 gap-1">
+                      {[
+                        { id: 'CLUSTER', label: 'Theme Worlds' },
+                        { id: 'WATCH_STATUS', label: 'My Curation' },
+                        { id: 'GENRE', label: 'Genre' },
+                        { id: 'DECADE', label: 'Release Era' },
+                        { id: 'CATEGORY', label: 'Format' },
+                      ].map((cm) => (
+                        <button
+                          key={cm.id}
+                          type="button"
+                          onClick={() => onColorModeChange(cm.id as NodeColorMode)}
+                          className={`py-1 px-1.5 rounded text-[10px] font-semibold border text-left transition-all cursor-pointer truncate ${
+                            colorMode === cm.id
+                              ? isDark
+                                ? 'bg-white/15 border-white/30 text-white font-bold shadow-xs'
+                                : 'bg-[#171412] text-white border-[#171412] font-bold shadow-archival-sm'
+                              : isDark
+                                ? 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                                : 'bg-[#EFE8DA] border-[#D5CCB9] text-[#52483E] hover:bg-[#FBF8F2]'
+                          }`}
+                        >
+                          {cm.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* 3. Genre Filter */}
                 <div className="space-y-1">
@@ -1386,7 +1422,7 @@ export function LeftSidebar({
                   {/* Decade / Year Range Sliders */}
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div className="space-y-0.5">
-                      <div className="flex justify-between text-[9px] font-tabular">
+                      <div className="flex justify-between text-[10px] font-tabular">
                         <span className={isDark ? 'text-[#64748B]' : 'text-[#8C8070]'}>Min Year</span>
                         <span className={`font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>{graphFilters.yearRange[0]}</span>
                       </div>
@@ -1409,7 +1445,7 @@ export function LeftSidebar({
                       />
                     </div>
                     <div className="space-y-0.5">
-                      <div className="flex justify-between text-[9px] font-tabular">
+                      <div className="flex justify-between text-[10px] font-tabular">
                         <span className={isDark ? 'text-[#64748B]' : 'text-[#8C8070]'}>Max Year</span>
                         <span className={`font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>{graphFilters.yearRange[1]}</span>
                       </div>
@@ -1467,56 +1503,6 @@ export function LeftSidebar({
             )}
           </section>
         )}
-
-        {/* 6. Personal Profile & Watchlist */}
-        {onOpenProfileModal && (
-          <section className="px-4 py-3 space-y-2">
-            <button
-              type="button"
-              onClick={onOpenProfileModal}
-              className={`w-full py-2 px-2.5 rounded-lg border flex items-center justify-between gap-2 text-left transition-colors cursor-pointer ${
-                isDark
-                  ? 'bg-[#121A2B] hover:bg-[#162035] border-[#1C273C]'
-                  : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] border-[#C8BEAA]'
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                {activeUser ? (
-                  <span
-                    className="w-5 h-5 rounded-full text-[10px] font-bold text-[#FBF8F2] flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: activeUser.avatarColor }}
-                  >
-                    {activeUser.displayName.slice(0, 1).toUpperCase()}
-                  </span>
-                ) : (
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-[#00D2FF]/20 text-[#00D2FF]' : 'bg-[#B8292F]/15 text-[#B8292F]'
-                  }`}>
-                    <User className="w-3 h-3" aria-hidden="true" />
-                  </span>
-                )}
-                <div className="min-w-0">
-                  <div className={`text-xs font-bold truncate ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-                    {activeUser ? activeUser.displayName : 'Sign In for Lists'}
-                  </div>
-                  <div className={`text-[10px] font-tabular truncate ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                    {activeUser
-                      ? `${watchedCount} Watched · ${interestedCount} Want Watch`
-                      : 'Sync personal watchlist'}
-                  </div>
-                </div>
-              </div>
-              <span className={`text-[10px] font-semibold shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'}`}>
-                {activeUser ? 'Manage' : 'Sign In'}
-              </span>
-            </button>
-          </section>
-        )}
-
-        {/* 7. Install Desktop / Mobile PWA App */}
-        <section className="px-4 py-3">
-          <PwaInstallButton variant="sidebar" />
-        </section>
       </div>
     </>
   );

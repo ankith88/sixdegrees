@@ -42,5 +42,12 @@
     - [x] `07-01-PLAN.md` — Core Theme Engine (`AppTheme`), Luminous Cluster Definitions, CSS Variables, and 3D/2D Dark Canvas/Shader Overhaul (`src/lib/types.ts`, `src/lib/similarity.ts`, `src/app/globals.css`, `src/components/SpatialViewport.tsx`).
     - [x] `07-02-PLAN.md` — Floating Glassmorphic UI Overhaul: TopNavBar with Theme Toggle, LeftSidebar Filter Drawer, and RightInspectorCard Similar Films Cards (`src/components/TopNavBar.tsx`, `src/components/LeftSidebar.tsx`, `src/components/RightInspectorCard.tsx`, `src/components/SixDegreesApp.tsx`).
 
+- [x] **Phase 8: Logged-in Full Archive Constellation, Watched/Interested Node Styling & Curation Filters** — Completed
+  - **Goal:** Ensure logged-in users see the full cosmic archive of all movies and TV shows exactly like guest users, while visually distinguishing Watched (emerald green) and Interested/Want to Watch (amber gold) titles via concentric status rings, glows, a dedicated 'WATCH_STATUS' color mode, and a floating glassmorphic curation filter HUD bar.
+  - **Plans:**
+    - [x] `08-01-PLAN.md` — Full Archive Scope Fix for Auth & Users, WATCH_STATUS Color Mode, and Emerald/Amber Palette Tokens (`src/lib/types.ts`, `src/lib/user-profile.ts`, `src/lib/similarity.ts`, `src/components/SixDegreesApp.tsx`).
+    - [x] `08-02-PLAN.md` — Concentric Status Rings in 2D & 3D, Floating Glassmorphic Curation Filter HUD, and Drawer Curation Controls (`src/components/SpatialViewport.tsx`, `src/components/LeftSidebar.tsx`, `src/components/TopNavBar.tsx`).
+
+
 
 

@@ -12,8 +12,11 @@ import {
   ENTITY_COLORS,
   isSpecificNarrativeTrope,
   isValidPersonName,
+  normalizeGenreName,
   toEntityNodeId,
 } from './similarity';
+
+export { normalizeGenreName };
 
 export interface CuratedCategoryDefinition {
   id: CuratedCategoryId;
@@ -104,27 +107,6 @@ export const DEFAULT_SUGGESTION_FILTERS: SuggestionFilterState = {
   preset: 'VIBE_TROPES',
 };
 
-/**
- * Standard canonical genre names so "Science Fiction" and "Sci-Fi" unify cleanly
- */
-export function normalizeGenreName(raw: string): string {
-  const clean = raw.trim();
-  const lower = clean.toLowerCase();
-  if (
-    lower === 'science fiction' ||
-    lower === 'sci-fi' ||
-    lower === 'sci-fi & fantasy'
-  ) {
-    return 'Sci-Fi';
-  }
-  if (lower === 'action & adventure') {
-    return 'Action';
-  }
-  if (lower === 'mystery & thriller') {
-    return 'Mystery';
-  }
-  return clean;
-}
 
 export function getMediaGenres(item: MediaItem): string[] {
   const set = new Set<string>();

@@ -86,7 +86,7 @@ import {
 } from 'lucide-react';
 
 export function SixDegreesApp() {
-  const [theme, setTheme] = useState<AppTheme>('ARCHIVAL_FOLIO');
+  const [theme, setTheme] = useState<AppTheme>('MOVIE_MAP_DARK');
 
   useEffect(() => {
     try {
@@ -98,7 +98,7 @@ export function SixDegreesApp() {
           savedTheme === 'MOVIE_MAP_DARK' ? 'movie-map-dark' : 'archival-folio'
         );
       } else {
-        document.documentElement.setAttribute('data-theme', 'archival-folio');
+        document.documentElement.setAttribute('data-theme', 'movie-map-dark');
       }
     } catch {
       // localStorage may fail in restricted environments
@@ -190,7 +190,8 @@ export function SixDegreesApp() {
   const [isSyncingProfile, setIsSyncingProfile] = useState<boolean>(false);
   const [graphScope, setGraphScope] = useState<GraphScopeMode>(() => {
     const initialUser = getInitialActiveUserProfile();
-    return initialUser?.defaultGraphScope || 'FULL_ARCHIVE';
+    const rawScope = initialUser?.defaultGraphScope;
+    return rawScope && rawScope !== 'WATCHED_ONLY' ? rawScope : 'FULL_ARCHIVE';
   });
 
   // Watched & Interested Lists + Smart Suggestion Studio State (Only populated for logged-in users)
@@ -1137,7 +1138,11 @@ export function SixDegreesApp() {
         setInterestedIds(loaded.interestedIds || []);
         setRegion(loaded.preferredRegion || 'AU');
         setPreset(loaded.defaultPreset || 'VIBE_TROPES');
-        setGraphScope(loaded.defaultGraphScope || 'WATCHED_ONLY');
+        setGraphScope(
+          loaded.defaultGraphScope && loaded.defaultGraphScope !== 'WATCHED_ONLY'
+            ? loaded.defaultGraphScope
+            : 'FULL_ARCHIVE'
+        );
         setLiveStatusToast(
           `Signed in as @${loaded.handle} (${loaded.watchedIds?.length || 0} Watched · ${loaded.interestedIds?.length || 0} Interested)`
         );
@@ -1222,7 +1227,11 @@ export function SixDegreesApp() {
         if (nextUser) {
           setWatchedIds(nextUser.watchedIds || []);
           setInterestedIds(nextUser.interestedIds || []);
-          setGraphScope(nextUser.defaultGraphScope || 'WATCHED_ONLY');
+          setGraphScope(
+            nextUser.defaultGraphScope && nextUser.defaultGraphScope !== 'WATCHED_ONLY'
+              ? nextUser.defaultGraphScope
+              : 'FULL_ARCHIVE'
+          );
         } else {
           setWatchedIds([]);
           setInterestedIds([]);
@@ -1259,7 +1268,11 @@ export function SixDegreesApp() {
         setInterestedIds(loaded.interestedIds || []);
         setRegion(loaded.preferredRegion || 'AU');
         setPreset(loaded.defaultPreset || 'VIBE_TROPES');
-        setGraphScope(loaded.defaultGraphScope || 'WATCHED_ONLY');
+        setGraphScope(
+          loaded.defaultGraphScope && loaded.defaultGraphScope !== 'WATCHED_ONLY'
+            ? loaded.defaultGraphScope
+            : 'FULL_ARCHIVE'
+        );
         setLiveStatusToast(
           `Restored @${loaded.handle} (${loaded.watchedIds?.length || 0} Watched · ${loaded.interestedIds?.length || 0} Interested)`
         );
@@ -1560,6 +1573,8 @@ export function SixDegreesApp() {
         layoutMode={layoutMode}
         onLayoutModeChange={setLayoutMode}
         matchingMediaCount={matchingMediaCount}
+        graphFilters={graphFilters}
+        onGraphFiltersChange={setGraphFilters}
         isCatalogOpen={isCatalogOpen}
         onToggleCatalog={() => setIsCatalogOpen((prev) => !prev)}
       />
@@ -1724,6 +1739,7 @@ export function SixDegreesApp() {
               labelMode={labelMode}
               onLabelModeChange={setLabelMode}
               graphFilters={graphFilters}
+              onGraphFiltersChange={setGraphFilters}
               onSelectCluster={(clusterId) =>
                 setGraphFilters((prev) => ({
                   ...prev,

@@ -16,10 +16,9 @@ import {
   CheckCircle2,
   Orbit,
   Network,
-  TableProperties,
   Plus,
   SlidersHorizontal,
-  Sparkles,
+  Compass,
   Check,
   User,
   BookmarkCheck,
@@ -32,6 +31,7 @@ import { SixDegreesLogo } from './SixDegreesLogo';
 import { PwaInstallButton } from './PwaInstallButton';
 import {
   AppTheme,
+  GraphFilterState,
   GraphNode,
   GraphScopeMode,
   MediaItem,
@@ -76,6 +76,8 @@ interface TopNavBarProps {
   onThemeChange?: (theme: AppTheme) => void;
   isCatalogOpen?: boolean;
   onToggleCatalog?: () => void;
+  graphFilters?: GraphFilterState;
+  onGraphFiltersChange?: (next: GraphFilterState) => void;
 }
 
 export function TopNavBar({
@@ -111,6 +113,8 @@ export function TopNavBar({
   onThemeChange,
   isCatalogOpen = false,
   onToggleCatalog,
+  graphFilters,
+  onGraphFiltersChange,
 }: TopNavBarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -242,18 +246,14 @@ export function TopNavBar({
       icon: Network,
     },
     {
-      id: 'MATRIX',
-      label: 'Critical Ledger',
-      shortLabel: 'Ledger',
-      icon: TableProperties,
-    },
-    {
       id: 'SUGGEST',
       label: 'Watch Next',
       shortLabel: 'Suggest',
-      icon: Sparkles,
+      icon: Compass,
     },
   ];
+
+  const isDark = theme === 'MOVIE_MAP_DARK';
 
   return (
     <header
@@ -323,7 +323,9 @@ export function TopNavBar({
                   setQuery('');
                   mobileInputRef.current?.focus();
                 }}
-                className="p-1 rounded text-[#6B5E50] hover:text-[#171412] cursor-pointer shrink-0"
+                className={`p-1 rounded cursor-pointer shrink-0 ${
+                  isDark ? 'text-white/60 hover:text-white' : 'text-[#6B5E50] hover:text-[#171412]'
+                }`}
                 aria-label="Clear search query"
               >
                 <X className="w-3.5 h-3.5" aria-hidden="true" />
@@ -429,13 +431,19 @@ export function TopNavBar({
                   setQuery('');
                   inputRef.current?.focus();
                 }}
-                className="p-0.5 rounded text-[#6B5E50] hover:text-[#171412] cursor-pointer shrink-0"
+                className={`p-0.5 rounded cursor-pointer shrink-0 ${
+                  isDark ? 'text-white/60 hover:text-white' : 'text-[#6B5E50] hover:text-[#171412]'
+                }`}
                 aria-label="Clear search query"
               >
                 <X className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             ) : (
-              <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-tabular text-[#52483E] bg-[#EFE8DA] border border-[#C8BEAA] shrink-0">
+              <kbd className={`hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-tabular border shrink-0 ${
+                isDark
+                  ? 'text-white/50 bg-white/10 border-white/15'
+                  : 'text-[#52483E] bg-[#EFE8DA] border-[#C8BEAA]'
+              }`}>
                 ⌘K
               </kbd>
             )}
@@ -455,18 +463,26 @@ export function TopNavBar({
             <div
               role="region"
               aria-label="Search results"
-              className="fixed sm:absolute inset-x-2 sm:inset-x-auto sm:left-0 sm:right-auto sm:w-[440px] top-[calc(3.5rem+env(safe-area-inset-top,0px)+0.35rem)] sm:top-11 rounded-2xl sm:rounded-xl bg-[#FBF8F2] border border-[#B5A892] shadow-2xl p-2.5 max-h-[calc(85dvh-4rem)] sm:max-h-[440px] overflow-y-auto z-50 space-y-2.5"
+              className={`fixed sm:absolute inset-x-2 sm:inset-x-auto sm:left-0 sm:right-auto sm:w-[440px] top-[calc(3.5rem+env(safe-area-inset-top,0px)+0.35rem)] sm:top-11 rounded-2xl sm:rounded-xl shadow-2xl p-2.5 max-h-[calc(85dvh-4rem)] sm:max-h-[440px] overflow-y-auto z-50 space-y-2.5 border backdrop-blur-md ${
+                isDark
+                  ? 'bg-[#0E1524]/95 border-white/15 text-[#F0F4FC] shadow-black/70'
+                  : 'bg-[#FBF8F2] border-[#B5A892] text-[#171412] shadow-2xl'
+              }`}
             >
               {/* Worldwide Catalog Results */}
               {query.trim().length >= 2 && (
-                <div className="pb-2 border-b border-[#D5CCB9]">
+                <div className={`pb-2 border-b ${isDark ? 'border-white/10' : 'border-[#D5CCB9]'}`}>
                   <div className="flex items-center justify-between px-2 py-1">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#2A6B53]">
+                    <span className={`text-[10px] font-bold uppercase tracking-[0.08em] ${
+                      isDark ? 'text-cyan-400' : 'text-[#2A6B53]'
+                    }`}>
                       Worldwide Catalog
                     </span>
                     {isSearchingLive && (
-                      <span className="text-[11px] text-[#52483E] inline-flex items-center gap-1">
-                        <Loader2 className="w-3 h-3 animate-spin text-[#B8292F]" aria-hidden="true" />
+                      <span className={`text-[11px] inline-flex items-center gap-1 ${
+                        isDark ? 'text-white/60' : 'text-[#52483E]'
+                      }`}>
+                        <Loader2 className={`w-3 h-3 animate-spin ${isDark ? 'text-cyan-400' : 'text-[#B8292F]'}`} aria-hidden="true" />
                         Searching…
                       </span>
                     )}
@@ -489,28 +505,38 @@ export function TopNavBar({
                                 await onBuildLiveCluster(liveItem);
                               }
                             }}
-                            className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-[#EFE8DA] cursor-pointer transition-colors group"
+                            className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors group ${
+                              isDark
+                                ? 'hover:bg-white/10 text-white'
+                                : 'hover:bg-[#EFE8DA] text-[#171412]'
+                            }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
                               {liveItem.posterUrl ? (
                                 <img
                                   src={liveItem.posterUrl}
                                   alt=""
-                                  className="w-7 h-10 rounded object-cover shrink-0 border border-[#C8BEAA]"
+                                  className={`w-7 h-10 rounded object-cover shrink-0 border ${
+                                    isDark ? 'border-white/15' : 'border-[#C8BEAA]'
+                                  }`}
                                 />
                               ) : liveItem.mediaType === 'MOVIE' ? (
-                                <Film className="w-4 h-4 text-[#234B6E] shrink-0" aria-hidden="true" />
+                                <Film className={`w-4 h-4 shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#234B6E]'}`} aria-hidden="true" />
                               ) : (
-                                <Tv className="w-4 h-4 text-[#6B3A6E] shrink-0" aria-hidden="true" />
+                                <Tv className={`w-4 h-4 shrink-0 ${isDark ? 'text-[#FF3366]' : 'text-[#6B3A6E]'}`} aria-hidden="true" />
                               )}
                               <div className="min-w-0">
-                                <div className="text-xs font-semibold text-[#171412] truncate flex items-center gap-1.5">
+                                <div className={`text-xs font-semibold truncate flex items-center gap-1.5 ${
+                                  isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'
+                                }`}>
                                   <span className="truncate">{liveItem.title}</span>
-                                  <span className="text-[#52483E] font-normal font-tabular text-[11px] shrink-0">
+                                  <span className={`font-normal font-tabular text-[11px] shrink-0 ${
+                                    isDark ? 'text-white/60' : 'text-[#52483E]'
+                                  }`}>
                                     ({liveItem.year})
                                   </span>
                                 </div>
-                                <div className="text-[11px] text-[#52483E] truncate">
+                                <div className={`text-[11px] truncate ${isDark ? 'text-white/60' : 'text-[#52483E]'}`}>
                                   {liveItem.mediaType === 'MOVIE' ? 'Film' : 'Series'}
                                   {liveItem.stars ? ` · ${liveItem.stars}` : ''}
                                 </div>
@@ -519,7 +545,11 @@ export function TopNavBar({
 
                             <div className="flex items-center gap-1 shrink-0">
                               {existingMatch ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-[#E4F0EA] text-[#1E563F] border border-[#B3D4C5]">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                  isDark
+                                    ? 'bg-[#1E563F]/40 text-[#8CE8C3] border-[#2A6B53]'
+                                    : 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                                }`}>
                                   <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
                                   In Graph
                                 </span>
@@ -533,7 +563,11 @@ export function TopNavBar({
                                       await onAddLiveMedia(liveItem);
                                     }
                                   }}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-[#FBF8F2] group-hover:bg-[#B8292F] text-[#171412] group-hover:text-[#FBF8F2] border border-[#C8BEAA] group-hover:border-[#8C1D22] transition-colors cursor-pointer"
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer border ${
+                                    isDark
+                                      ? 'bg-white/10 group-hover:bg-cyan-500 text-white group-hover:text-[#0A0E17] border-white/20 group-hover:border-cyan-400'
+                                      : 'bg-[#FBF8F2] group-hover:bg-[#B8292F] text-[#171412] group-hover:text-[#FBF8F2] border-[#C8BEAA] group-hover:border-[#8C1D22]'
+                                  }`}
                                   title="Add only this title to the graph"
                                 >
                                   <Plus className="w-3 h-3" aria-hidden="true" />
@@ -546,7 +580,7 @@ export function TopNavBar({
                       })}
                     </div>
                   ) : !isSearchingLive ? (
-                    <div className="px-2 py-1.5 text-xs text-[#6B5E50]">
+                    <div className={`px-2 py-1.5 text-xs ${isDark ? 'text-white/60' : 'text-[#6B5E50]'}`}>
                       No catalog matches found for &ldquo;{query}&rdquo;.
                     </div>
                   ) : null}
@@ -555,7 +589,9 @@ export function TopNavBar({
 
               {/* In This Collection */}
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#52483E] px-2 py-1">
+                <div className={`text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-1 ${
+                  isDark ? 'text-white/50' : 'text-[#52483E]'
+                }`}>
                   In This Collection ({localResults.media.length})
                 </div>
                 {localResults.media.map((item) => (
@@ -565,22 +601,30 @@ export function TopNavBar({
                       onSelectNodeById(item.id);
                       setSearchOpen(false);
                     }}
-                    className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-[#EFE8DA] cursor-pointer transition-colors"
+                    className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                      isDark ? 'hover:bg-white/10 text-white' : 'hover:bg-[#EFE8DA] text-[#171412]'
+                    }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       {item.mediaType === 'MOVIE' ? (
-                        <Film className="w-3.5 h-3.5 text-[#234B6E] shrink-0" aria-hidden="true" />
+                        <Film className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#234B6E]'}`} aria-hidden="true" />
                       ) : (
-                        <Tv className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" aria-hidden="true" />
+                        <Tv className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-[#FF3366]' : 'text-[#6B3A6E]'}`} aria-hidden="true" />
                       )}
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-[#171412] truncate">
+                        <div className={`text-xs font-semibold truncate ${
+                          isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'
+                        }`}>
                           {item.title}{' '}
-                          <span className="text-[#52483E] font-normal font-tabular">
+                          <span className={`font-normal font-tabular ${
+                            isDark ? 'text-white/50' : 'text-[#52483E]'
+                          }`}>
                             ({item.year})
                           </span>
                         </div>
-                        <div className="text-[11px] text-[#52483E] truncate">
+                        <div className={`text-[11px] truncate ${
+                          isDark ? 'text-white/60' : 'text-[#52483E]'
+                        }`}>
                           {item.directors[0] || item.primaryGenre} · IMDb{' '}
                           {item.imdbRating.toFixed(1)}
                         </div>
@@ -596,8 +640,12 @@ export function TopNavBar({
                           }}
                           className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
                             interestedIds.includes(item.id)
-                              ? 'bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
-                              : 'bg-[#FBF8F2] text-[#52483E] border-[#C8BEAA] hover:text-[#171412]'
+                              ? isDark
+                                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                : 'bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
+                              : isDark
+                                ? 'bg-white/5 text-white/70 border-white/10 hover:text-white hover:bg-white/10'
+                                : 'bg-[#FBF8F2] text-[#52483E] border-[#C8BEAA] hover:text-[#171412]'
                           }`}
                           title={
                             interestedIds.includes(item.id)
@@ -622,8 +670,12 @@ export function TopNavBar({
                           }}
                           className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
                             watchedIds.includes(item.id)
-                              ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
-                              : 'bg-[#FBF8F2] text-[#52483E] border-[#C8BEAA] hover:text-[#171412]'
+                              ? isDark
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                              : isDark
+                                ? 'bg-white/5 text-white/70 border-white/10 hover:text-white hover:bg-white/10'
+                                : 'bg-[#FBF8F2] text-[#52483E] border-[#C8BEAA] hover:text-[#171412]'
                           }`}
                           title={
                             watchedIds.includes(item.id)
@@ -644,7 +696,11 @@ export function TopNavBar({
                           onMakeFocal(item.id);
                           setSearchOpen(false);
                         }}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA] hover:bg-[#B8292F] hover:text-[#FBF8F2] hover:border-[#8C1D22] transition-colors shrink-0 cursor-pointer"
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border shrink-0 transition-colors cursor-pointer ${
+                          isDark
+                            ? 'bg-white/10 hover:bg-cyan-500 text-white hover:text-[#0A0E17] border-white/15 hover:border-cyan-400'
+                            : 'bg-[#EFE8DA] text-[#171412] border-[#C8BEAA] hover:bg-[#B8292F] hover:text-[#FBF8F2] hover:border-[#8C1D22]'
+                        }`}
                       >
                         <Crosshair className="w-2.5 h-2.5" aria-hidden="true" />
                         Center
@@ -656,8 +712,10 @@ export function TopNavBar({
 
               {/* Shared Collaborators */}
               {localResults.entities.length > 0 && (
-                <div className="pt-1.5 border-t border-[#D5CCB9]">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#52483E] px-2 py-1">
+                <div className={`pt-1.5 border-t ${isDark ? 'border-white/10' : 'border-[#D5CCB9]'}`}>
+                  <div className={`text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-1 ${
+                    isDark ? 'text-white/50' : 'text-[#52483E]'
+                  }`}>
                     Collaborators ({localResults.entities.length})
                   </div>
                   {localResults.entities.map((ent) => (
@@ -667,20 +725,26 @@ export function TopNavBar({
                         onSelectNodeById(ent.id);
                         setSearchOpen(false);
                       }}
-                      className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-[#EFE8DA] cursor-pointer transition-colors"
+                      className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                        isDark ? 'hover:bg-white/10 text-white' : 'hover:bg-[#EFE8DA] text-[#171412]'
+                      }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         {ent.type === 'DIRECTOR' && (
-                          <Award className="w-3.5 h-3.5 text-[#B8292F] shrink-0" aria-hidden="true" />
+                          <Award className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`} aria-hidden="true" />
                         )}
                         {ent.type === 'ACTOR' && (
-                          <UserCheck className="w-3.5 h-3.5 text-[#B86B14] shrink-0" aria-hidden="true" />
+                          <UserCheck className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#B86B14]'}`} aria-hidden="true" />
                         )}
-                        <span className="text-xs font-medium text-[#171412] truncate">
+                        <span className={`text-xs font-medium truncate ${
+                          isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'
+                        }`}>
                           {ent.label}
                         </span>
                       </div>
-                      <span className="text-[11px] font-tabular text-[#52483E] shrink-0">
+                      <span className={`text-[11px] font-tabular shrink-0 ${
+                        isDark ? 'text-white/50' : 'text-[#52483E]'
+                      }`}>
                         {ent.subLabel}
                       </span>
                     </div>
@@ -695,7 +759,11 @@ export function TopNavBar({
       {/* CENTER: Minimal View Mode Switcher */}
       <nav
         aria-label="View Modes"
-        className="hidden md:flex items-center gap-1 p-1 rounded-lg bg-[#E5DEC9] border border-[#C8BEAA] shrink-0"
+        className={`hidden md:flex items-center gap-1 p-1 rounded-lg border shrink-0 transition-colors ${
+          theme === 'MOVIE_MAP_DARK'
+            ? 'bg-[#101624] border-white/10'
+            : 'bg-[#E5DEC9] border-[#C8BEAA]'
+        }`}
       >
         {viewModes.map((mode) => {
           const Icon = mode.icon;
@@ -708,13 +776,23 @@ export function TopNavBar({
               onClick={() => onViewModeChange(mode.id)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B8292F] ${
                 active
-                  ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                  : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                  ? theme === 'MOVIE_MAP_DARK'
+                    ? 'bg-[#162035] text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                    : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                  : theme === 'MOVIE_MAP_DARK'
+                    ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                    : 'text-[#52483E] hover:text-[#171412] border border-transparent'
               }`}
             >
               <Icon
                 className={`w-3.5 h-3.5 shrink-0 ${
-                  active ? 'text-[#B8292F]' : 'text-[#6B5E50]'
+                  active
+                    ? theme === 'MOVIE_MAP_DARK'
+                      ? 'text-[#00D2FF]'
+                      : 'text-[#B8292F]'
+                    : theme === 'MOVIE_MAP_DARK'
+                      ? 'text-[#64748B]'
+                      : 'text-[#6B5E50]'
                 }`}
                 aria-hidden="true"
               />
@@ -725,8 +803,8 @@ export function TopNavBar({
         })}
       </nav>
 
-      {/* RIGHT: Search Trigger (Mobile) + Personal Lists + Profile + Theme + Catalogue + Reset */}
-      <div className={`${searchOpen ? 'hidden sm:flex' : 'flex'} items-center gap-1.5 shrink-0`}>
+      {/* RIGHT: Grouped into Context & Discovery, Curator & Lists, and App Utilities */}
+      <div className={`${searchOpen ? 'hidden sm:flex' : 'flex'} items-center gap-2 sm:gap-2.5 shrink-0`}>
         {/* Mobile Search Trigger Icon Button */}
         <button
           type="button"
@@ -745,10 +823,78 @@ export function TopNavBar({
           <Search className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
 
-        {/* Compact Personal Watched & Interested Segmented Pill */}
-        {activeUser && onGraphScopeChange && (
+        {/* 1. Context & Discovery Group: Focal Pill + Reset */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Active Focal Filter Pill */}
+          {focalItem && (
+            <button
+              type="button"
+              onClick={onClearFocal}
+              className={`inline-flex items-center gap-1 sm:gap-1.5 h-8 px-2 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
+                theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#FF3366]/20 text-[#FF3366] border-[#FF3366]/40 hover:bg-[#FF3366]/30'
+                  : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6] hover:bg-[#B8292F] hover:text-[#FBF8F2]'
+              }`}
+              title={`Centered on "${focalItem.title}" — Click to clear and show full archive`}
+            >
+              <Crosshair className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span className="max-w-[70px] sm:max-w-[110px] truncate">{focalItem.title}</span>
+              <X className="w-3 h-3 shrink-0 opacity-70 hover:opacity-100" aria-hidden="true" />
+            </button>
+          )}
+
+          {/* Reset Action */}
+          <button
+            type="button"
+            onClick={() => {
+              if (onResetEverything) {
+                onResetEverything();
+              } else {
+                onClearFocal();
+                onResetPitch();
+              }
+            }}
+            className={`group inline-flex items-center justify-center sm:gap-1.5 h-8 w-8 sm:w-auto px-0 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] ${
+              hasActiveSelection ||
+              focalItem ||
+              activeFilterCount > 0 ||
+              graphScope !== 'FULL_ARCHIVE'
+                ? theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#FF3366] text-[#0A0E17] border-[#FF3366] font-bold shadow-[0_0_10px_rgba(255,51,102,0.3)]'
+                  : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22] shadow-archival-sm'
+                : theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] hover:text-[#F0F4FC] border-white/10'
+                  : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
+            }`}
+            title="Reset selection, filters, and camera to show the full graph"
+          >
+            <RotateCcw
+              className="w-3.5 h-3.5 group-hover:-rotate-45 transition-transform duration-200"
+              aria-hidden="true"
+            />
+            <span className="hidden md:inline">
+              {hasActiveSelection ||
+              focalItem ||
+              activeFilterCount > 0 ||
+              graphScope !== 'FULL_ARCHIVE'
+                ? 'Reset All'
+                : 'Reset'}
+            </span>
+          </button>
+        </div>
+
+        {/* Vertical Separator */}
+        <div
+          className={`hidden sm:block h-4 w-px ${
+            theme === 'MOVIE_MAP_DARK' ? 'bg-white/15' : 'bg-[#D5CCB9]'
+          }`}
+          aria-hidden="true"
+        />
+
+        {/* 2. Curator & Personal Lists Group */}
+        {activeUser && onGraphScopeChange ? (
           <div
-            className={`hidden sm:inline-flex items-center p-0.5 rounded-lg border ${
+            className={`hidden sm:inline-flex items-center p-0.5 rounded-lg border gap-0.5 ${
               theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#101624] border-white/10'
                 : 'bg-[#E5DEC9]/70 border-[#C8BEAA]'
@@ -757,22 +903,39 @@ export function TopNavBar({
             <button
               type="button"
               onClick={() => {
-                const nextScope: GraphScopeMode =
-                  graphScope === 'WATCHED_ONLY' ? 'FULL_ARCHIVE' : 'WATCHED_ONLY';
-                onGraphScopeChange(nextScope);
+                if (onGraphFiltersChange && graphFilters) {
+                  onGraphFiltersChange({
+                    ...graphFilters,
+                    watchedFilter:
+                      graphFilters.watchedFilter === 'WATCHED' ? 'ALL' : 'WATCHED',
+                  });
+                  if (graphScope !== 'FULL_ARCHIVE' && onGraphScopeChange) {
+                    onGraphScopeChange('FULL_ARCHIVE');
+                  }
+                } else if (onGraphScopeChange) {
+                  const nextScope: GraphScopeMode =
+                    graphScope === 'WATCHED_ONLY' ? 'FULL_ARCHIVE' : 'WATCHED_ONLY';
+                  onGraphScopeChange(nextScope);
+                }
                 if (viewMode === 'SUGGEST') {
                   onViewModeChange('3D');
                 }
               }}
-              aria-pressed={graphScope === 'WATCHED_ONLY'}
-              className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+              aria-pressed={
+                graphFilters?.watchedFilter === 'WATCHED' ||
                 graphScope === 'WATCHED_ONLY'
-                  ? 'bg-[#2A6B53] text-[#FBF8F2] shadow-xs'
+              }
+              className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                graphFilters?.watchedFilter === 'WATCHED' ||
+                graphScope === 'WATCHED_ONLY'
+                  ? theme === 'MOVIE_MAP_DARK'
+                    ? 'bg-[#10B981]/25 text-[#10B981] border border-[#10B981]/50 shadow-xs'
+                    : 'bg-[#2A6B53] text-[#FBF8F2] shadow-xs'
                   : theme === 'MOVIE_MAP_DARK'
                     ? 'text-[#94A3B8] hover:text-[#F0F4FC] hover:bg-white/5'
                     : 'text-[#1E563F] hover:bg-[#FBF8F2]'
               }`}
-              title="Filter graph to Watched titles"
+              title="Highlight Watched titles"
             >
               <BookmarkCheck className="w-3 h-3" aria-hidden="true" />
               <span className="font-tabular">{watchedIds.length}</span>
@@ -781,189 +944,133 @@ export function TopNavBar({
             <button
               type="button"
               onClick={() => {
-                const nextScope: GraphScopeMode =
-                  graphScope === 'INTERESTED_ONLY'
-                    ? 'FULL_ARCHIVE'
-                    : 'INTERESTED_ONLY';
-                onGraphScopeChange(nextScope);
+                if (onGraphFiltersChange && graphFilters) {
+                  onGraphFiltersChange({
+                    ...graphFilters,
+                    watchedFilter:
+                      graphFilters.watchedFilter === 'INTERESTED'
+                        ? 'ALL'
+                        : 'INTERESTED',
+                  });
+                  if (graphScope !== 'FULL_ARCHIVE' && onGraphScopeChange) {
+                    onGraphScopeChange('FULL_ARCHIVE');
+                  }
+                } else if (onGraphScopeChange) {
+                  const nextScope: GraphScopeMode =
+                    graphScope === 'INTERESTED_ONLY'
+                      ? 'FULL_ARCHIVE'
+                      : 'INTERESTED_ONLY';
+                  onGraphScopeChange(nextScope);
+                }
                 if (viewMode === 'SUGGEST') {
                   onViewModeChange('3D');
                 }
               }}
-              aria-pressed={graphScope === 'INTERESTED_ONLY'}
-              className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+              aria-pressed={
+                graphFilters?.watchedFilter === 'INTERESTED' ||
                 graphScope === 'INTERESTED_ONLY'
-                  ? 'bg-[#234B6E] text-[#FBF8F2] shadow-xs'
+              }
+              className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                graphFilters?.watchedFilter === 'INTERESTED' ||
+                graphScope === 'INTERESTED_ONLY'
+                  ? theme === 'MOVIE_MAP_DARK'
+                    ? 'bg-[#F59E0B]/25 text-[#F59E0B] border border-[#F59E0B]/50 shadow-xs'
+                    : 'bg-[#B45309] text-[#FBF8F2] shadow-xs'
                   : theme === 'MOVIE_MAP_DARK'
                     ? 'text-[#94A3B8] hover:text-[#F0F4FC] hover:bg-white/5'
                     : 'text-[#234B6E] hover:bg-[#FBF8F2]'
               }`}
-              title="Filter graph to Want to Watch titles"
+              title="Highlight Want to Watch titles"
             >
               <Bookmark className="w-3 h-3" aria-hidden="true" />
               <span className="font-tabular">{interestedIds.length}</span>
             </button>
-          </div>
-        )}
 
-        {/* User Profile Button */}
-        {onOpenProfileModal && (
-          <button
-            type="button"
-            onClick={onOpenProfileModal}
-            className={`inline-flex items-center justify-center sm:gap-1.5 h-8 w-8 sm:w-auto px-0 sm:px-2 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
-              activeUser
-                ? theme === 'MOVIE_MAP_DARK'
-                  ? 'bg-[#141C2C] hover:bg-[#1C263A] text-[#F0F4FC] border-white/15'
-                  : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#171412] border-[#B5A892] shadow-archival-sm'
-                : theme === 'MOVIE_MAP_DARK'
-                  ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] border-white/10'
-                  : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
-            }`}
-            title={
-              activeUser
-                ? `Signed in as ${activeUser.displayName} (@${activeUser.handle}) — Click to manage profile & lists`
-                : 'Sign in to access your Watchlist and personal graphs'
-            }
-          >
-            {activeUser ? (
-              <>
+            {onOpenProfileModal && (
+              <button
+                type="button"
+                onClick={onOpenProfileModal}
+                className={`inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                  theme === 'MOVIE_MAP_DARK'
+                    ? 'text-[#F0F4FC] hover:bg-white/10'
+                    : 'text-[#171412] hover:bg-[#FBF8F2]'
+                }`}
+                title={`Signed in as ${activeUser.displayName} (@${activeUser.handle}) — Click to manage profile & lists`}
+              >
                 <span
                   className="w-4 h-4 rounded-full text-[10px] font-bold text-[#FBF8F2] flex items-center justify-center shrink-0"
                   style={{ backgroundColor: activeUser.avatarColor }}
                 >
                   {activeUser.displayName.slice(0, 1).toUpperCase()}
                 </span>
-                <span className="max-w-[80px] truncate hidden md:inline">
+                <span className="max-w-[80px] truncate hidden xl:inline">
                   {activeUser.displayName}
                 </span>
-              </>
-            ) : (
-              <>
-                <User className="w-3.5 h-3.5 text-[#B8292F] shrink-0" aria-hidden="true" />
-                <span className="hidden md:inline">Sign In</span>
-              </>
+              </button>
             )}
-          </button>
-        )}
-
-        {/* Theme Toggle (Tactile Icon Button) */}
-        {onThemeChange && (
+          </div>
+        ) : onOpenProfileModal ? (
           <button
             type="button"
-            onClick={() =>
-              onThemeChange(
-                theme === 'MOVIE_MAP_DARK' ? 'ARCHIVAL_FOLIO' : 'MOVIE_MAP_DARK'
-              )
-            }
-            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-semibold border transition-all cursor-pointer shrink-0 ${
+            onClick={onOpenProfileModal}
+            className={`inline-flex items-center justify-center sm:gap-1.5 h-8 px-2 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
               theme === 'MOVIE_MAP_DARK'
-                ? 'bg-[#141C2C] hover:bg-[#1C263A] text-[#00D2FF] border-[#00D2FF]/30 shadow-sm'
-                : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#B8292F] border-[#C8BEAA]'
-            }`}
-            aria-label={
-              theme === 'MOVIE_MAP_DARK'
-                ? 'Switch to Archival Folio light theme'
-                : 'Switch to Movie Map dark theme'
-            }
-            title={
-              theme === 'MOVIE_MAP_DARK'
-                ? 'Switch to Archival Folio theme'
-                : 'Switch to Movie Map Dark theme'
-            }
-          >
-            {theme === 'MOVIE_MAP_DARK' ? (
-              <Moon className="w-3.5 h-3.5 text-[#00D2FF]" aria-hidden="true" />
-            ) : (
-              <Sun className="w-3.5 h-3.5 text-[#B8292F]" aria-hidden="true" />
-            )}
-          </button>
-        )}
-
-        {/* Browse All Titles Catalogue Toggle Button */}
-        {onToggleCatalog && (
-          <button
-            type="button"
-            onClick={onToggleCatalog}
-            className={`inline-flex items-center justify-center gap-1.5 h-8 px-2 sm:px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer shrink-0 ${
-              isCatalogOpen
-                ? theme === 'MOVIE_MAP_DARK'
-                  ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40 shadow-[0_0_10px_rgba(0,210,255,0.2)]'
-                  : 'bg-[#FBF8F2] text-[#171412] border-[#171412]'
-                : theme === 'MOVIE_MAP_DARK'
-                  ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] hover:text-[#F0F4FC] border-white/10'
-                  : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border-[#C8BEAA]'
-            }`}
-            title={isCatalogOpen ? 'Close Catalogue (Esc)' : 'Browse Complete Catalogue'}
-          >
-            <Film className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-            <span className="hidden xl:inline">Catalogue</span>
-            <span className="font-tabular text-[11px] opacity-75">
-              ({matchingMediaCount ?? allMediaItems.length})
-            </span>
-          </button>
-        )}
-
-        {/* Active Focal Filter Pill */}
-        {focalItem && (
-          <button
-            type="button"
-            onClick={onClearFocal}
-            className={`hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
-              theme === 'MOVIE_MAP_DARK'
-                ? 'bg-[#FF3366]/20 text-[#FF3366] border-[#FF3366]/40 hover:bg-[#FF3366]/30'
-                : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6] hover:bg-[#B8292F] hover:text-[#FBF8F2]'
-            }`}
-            title="Clear focal filter and return to full archive"
-          >
-            <Crosshair className="w-3 h-3 shrink-0" aria-hidden="true" />
-            <span className="max-w-[100px] truncate">{focalItem.title}</span>
-            <X className="w-3 h-3 shrink-0" aria-hidden="true" />
-          </button>
-        )}
-
-        {/* Reset Action */}
-        <button
-          type="button"
-          onClick={() => {
-            if (onResetEverything) {
-              onResetEverything();
-            } else {
-              onClearFocal();
-              onResetPitch();
-            }
-          }}
-          className={`group inline-flex items-center justify-center sm:gap-1.5 h-8 w-8 sm:w-auto px-0 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] ${
-            hasActiveSelection ||
-            focalItem ||
-            activeFilterCount > 0 ||
-            graphScope !== 'FULL_ARCHIVE'
-              ? theme === 'MOVIE_MAP_DARK'
-                ? 'bg-[#FF3366] text-[#0A0E17] border-[#FF3366] font-bold shadow-[0_0_10px_rgba(255,51,102,0.3)]'
-                : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22] shadow-archival-sm'
-              : theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] hover:text-[#F0F4FC] border-white/10'
-                : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border-[#C8BEAA]'
-          }`}
-          title="Reset selection, filters, and camera to show the full graph"
-        >
-          <RotateCcw
-            className="w-3.5 h-3.5 group-hover:-rotate-45 transition-transform duration-200"
-            aria-hidden="true"
-          />
-          <span className="hidden md:inline">
-            {hasActiveSelection ||
-            focalItem ||
-            activeFilterCount > 0 ||
-            graphScope !== 'FULL_ARCHIVE'
-              ? 'Reset All'
-              : 'Reset'}
-          </span>
-        </button>
+                : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
+            }`}
+            title="Sign in to access your Watchlist and personal graphs"
+          >
+            <User className="w-3.5 h-3.5 text-[#B8292F] shrink-0" aria-hidden="true" />
+            <span className="hidden sm:inline">Sign In</span>
+          </button>
+        ) : null}
 
-        {/* PWA Install Button (Compact on Desktop) */}
-        <div className="hidden xl:inline-flex shrink-0">
-          <PwaInstallButton variant="topbar" />
+        {/* Vertical Separator */}
+        <div
+          className={`hidden sm:block h-4 w-px ${
+            theme === 'MOVIE_MAP_DARK' ? 'bg-white/15' : 'bg-[#D5CCB9]'
+          }`}
+          aria-hidden="true"
+        />
+
+        {/* 3. Global App Utilities Group: Theme + Install */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onThemeChange && (
+            <button
+              type="button"
+              onClick={() =>
+                onThemeChange(
+                  theme === 'MOVIE_MAP_DARK' ? 'ARCHIVAL_FOLIO' : 'MOVIE_MAP_DARK'
+                )
+              }
+              className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-semibold border transition-all cursor-pointer shrink-0 ${
+                theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#141C2C] hover:bg-[#1C263A] text-[#00D2FF] border-[#00D2FF]/30 shadow-sm'
+                  : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#B8292F] border-[#C8BEAA]'
+              }`}
+              aria-label={
+                theme === 'MOVIE_MAP_DARK'
+                  ? 'Switch to Archival Folio light theme'
+                  : 'Switch to Movie Map dark theme'
+              }
+              title={
+                theme === 'MOVIE_MAP_DARK'
+                  ? 'Switch to Archival Folio theme'
+                  : 'Switch to Movie Map Dark theme'
+              }
+            >
+              {theme === 'MOVIE_MAP_DARK' ? (
+                <Moon className="w-3.5 h-3.5 text-[#00D2FF]" aria-hidden="true" />
+              ) : (
+                <Sun className="w-3.5 h-3.5 text-[#B8292F]" aria-hidden="true" />
+              )}
+            </button>
+          )}
+
+          {/* PWA Install Button (Compact on Desktop) */}
+          <div className="hidden xl:inline-flex shrink-0">
+            <PwaInstallButton variant="topbar" />
+          </div>
         </div>
       </div>
     </header>

@@ -3,13 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import {
-  Compass,
-  Eye,
-  Navigation,
-  ZoomIn,
-  ZoomOut,
   RotateCcw,
-  RefreshCw,
   Film,
   Tv,
   UserCheck,
@@ -80,6 +74,7 @@ interface SpatialViewportProps {
   labelMode?: LabelDisplayMode;
   onLabelModeChange?: (mode: LabelDisplayMode) => void;
   graphFilters?: GraphFilterState;
+  onGraphFiltersChange?: (next: GraphFilterState) => void;
   onSelectCluster?: (clusterId: string | null) => void;
   onToggleTerritories?: () => void;
   theme?: AppTheme;
@@ -810,6 +805,8 @@ interface NodeAssemblyRecord {
   selectionHaloMat: THREE.MeshBasicMaterial;
   outerRingHalo: THREE.Mesh;
   outerRingHaloMat: THREE.MeshBasicMaterial;
+  statusRing?: THREE.Mesh | null;
+  statusRingMat?: THREE.MeshBasicMaterial | null;
   labelSprite: THREE.Sprite | null;
   baseLabelScale: number;
 }
@@ -954,6 +951,25 @@ function createCategoryNodeAssembly(
   const outerRingHalo = new THREE.Mesh(outerHaloGeo, outerRingHaloMat);
   group.add(outerRingHalo);
 
+  // Concentric personal status halo ring for Watched / Interested nodes
+  let statusRing: THREE.Mesh | null = null;
+  let statusRingMat: THREE.MeshBasicMaterial | null = null;
+  if (node.isWatched || node.isInterested) {
+    const isWatched = Boolean(node.isWatched);
+    const statusColorHex = isWatched ? '#10B981' : '#F59E0B';
+    const statusGeo = new THREE.RingGeometry(r * 1.45, r * 1.68, 36);
+    statusRingMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(statusColorHex),
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.88,
+      depthWrite: false,
+    });
+    accentMaterials.push(statusRingMat);
+    statusRing = new THREE.Mesh(statusGeo, statusRingMat);
+    group.add(statusRing);
+  }
+
   // Generous invisible raycast hit-sphere so sleek dots are effortless to click & hover
   const hitGeo = new THREE.SphereGeometry(Math.max(r * 1.8, 5.5), 14, 14);
   const hitMat = new THREE.MeshBasicMaterial({
@@ -986,6 +1002,8 @@ function createCategoryNodeAssembly(
       selectionHaloMat,
       outerRingHalo,
       outerRingHaloMat,
+      statusRing,
+      statusRingMat,
       labelSprite: null,
       baseLabelScale,
     },
@@ -997,7 +1015,7 @@ function createCategoryNodeAssembly(
  * Creates a high-DPI 3D Sprite label texture for a GraphNode styled as an engraved Criterion/museum vellum plate
  * with a category medallion emblem, double-hairline border, and downward pointer nib.
  */
-function createLabelSprite(node: GraphNode): THREE.Sprite {
+function createLabelSprite(node: GraphNode, isDark = true): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 480;
   canvas.height = 96;
@@ -1012,7 +1030,7 @@ function createLabelSprite(node: GraphNode): THREE.Sprite {
         ? `${node.mediaItem.year} · ★ ${node.mediaItem.imdbRating.toFixed(1)}`
         : getEntityRoleLabel(node.type);
 
-    ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.font = '600 22px "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     const textWidth = ctx.measureText(titleText).width;
     const pillW = Math.min(440, Math.max(160, textWidth + 40));
     const pillH = 68;
@@ -1020,22 +1038,36 @@ function createLabelSprite(node: GraphNode): THREE.Sprite {
     const pillY = 14;
 
     ctx.save();
-    ctx.fillStyle = 'rgba(14, 21, 36, 0.90)';
-    ctx.strokeStyle = node.isFocal ? '#FF3366' : 'rgba(255, 255, 255, 0.16)';
-    ctx.lineWidth = node.isFocal ? 2.5 : 1.2;
+    ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.65)' : 'rgba(23, 20, 18, 0.10)';
+    ctx.shadowBlur = isDark ? 12 : 8;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = isDark ? 3 : 2;
+
+    ctx.fillStyle = isDark
+      ? 'rgba(14, 21, 36, 0.94)'
+      : 'rgba(251, 248, 242, 0.96)';
     ctx.beginPath();
     ctx.roundRect(pillX, pillY, pillW, pillH, 12);
     ctx.fill();
-    ctx.stroke();
     ctx.restore();
 
-    ctx.fillStyle = '#F0F4FC';
-    ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.lineWidth = node.isFocal ? 2.0 : 1.0;
+    ctx.strokeStyle = node.isFocal
+      ? (isDark ? '#FF3366' : '#B8292F')
+      : (isDark ? 'rgba(255, 255, 255, 0.18)' : '#D5CCB9');
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, 12);
+    ctx.stroke();
+
+    ctx.fillStyle = isDark ? '#F0F4FC' : '#171412';
+    ctx.font = '600 22px "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(titleText, canvas.width / 2, pillY + 28);
 
-    ctx.fillStyle = node.isFocal ? '#FF3366' : '#94A3B8';
-    ctx.font = '500 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = node.isFocal
+      ? (isDark ? '#FF3366' : '#B8292F')
+      : (isDark ? '#94A3B8' : '#6B5E50');
+    ctx.font = '500 15px "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillText(subText, canvas.width / 2, pillY + 50);
   }
 
@@ -1055,169 +1087,159 @@ function createLabelSprite(node: GraphNode): THREE.Sprite {
 }
 
 /**
- * Creates a bold, high-contrast, crystal-clear 3D territory billboard for each genre.
- * Specifically engineered for effortless legibility across the entire galaxy:
- * - High-impact, heavy-stroke grotesque typography (font-weight 900)
- * - Pure white high-contrast text on deep obsidian card with vibrant neon perimeter
- * - Bold astronomical pip marker
- * - Integrated title count badge
- * - Large world scale (baseH: 74, baseW: up to 340) with dynamic orbital scaling up to 1.85x
+ * Creates a reusable radial gradient texture for soft archival watercolor territory washes.
+ * Eliminates harsh geometric boundaries and donut holes, producing authentic diffuse density halos.
+ */
+function createRadialWashTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.76)');
+    grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.48)');
+    grad.addColorStop(0.68, 'rgba(255, 255, 255, 0.20)');
+    grad.addColorStop(0.90, 'rgba(255, 255, 255, 0.04)');
+    grad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  return tex;
+}
+
+/**
+ * Creates an exquisite, architectural 3D territory cartouche for each genre/theme.
+ * Follows celestial star atlas and Criterion archival design principles:
+ * - Refined Title Case typography on translucent museum vellum or obsidian card
+ * - Prominent world dimensions (baseH: 46, baseW: ~170-220) scaled for effortless legibility across the galaxy
+ * - Discreet tabular title count tag
+ * - Delicate hairline border tinted in semantic cluster pigment
+ * - Soft atmospheric elevation shadow
  */
 function createClusterBannerSprite(
   cluster: SemanticCluster,
   isDark = true
 ): { sprite: THREE.Sprite; baseW: number; baseH: number } {
   const canvas = document.createElement('canvas');
-  canvas.width = 1280;
-  canvas.height = 280;
+  canvas.width = 640;
+  canvas.height = 160;
   const ctx = canvas.getContext('2d');
 
-  let baseW = 260;
-  const baseH = 74;
+  let baseW = 180;
+  const baseH = 46;
 
   if (ctx) {
     const labelText = cluster.shortLabel || cluster.label;
     const count = cluster.mediaIds ? cluster.mediaIds.length : 0;
     const countText = count > 0 ? `${count} TITLES` : '';
 
-    // 1. High-impact bold typography engineered for distance legibility
-    ctx.font =
-      '900 86px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
-    const labelMetrics = ctx.measureText(labelText);
-    const labelW = labelMetrics.width;
+    // Set up canvas fonts for high-DPI rendering
+    ctx.font = '700 32px "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const labelW = ctx.measureText(labelText).width;
 
-    ctx.font =
-      '700 38px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    const countMetrics = ctx.measureText(countText);
-    const countW = count > 0 ? countMetrics.width : 0;
+    ctx.font = '600 20px "Source Sans 3", monospace';
+    const countW = count > 0 ? ctx.measureText(countText).width : 0;
 
-    const padX = 46;
-    const pipSpace = 72;
-    const gap = count > 0 ? 44 : 0;
-    const countBadgeW = count > 0 ? countW + 38 : 0;
+    const padX = 24;
+    const pipSpace = 24;
+    const gap = count > 0 ? 18 : 0;
+    const countBadgeW = count > 0 ? countW + 20 : 0;
     const totalContentW = pipSpace + labelW + gap + countBadgeW;
 
-    const pillW = Math.max(460, Math.min(1210, totalContentW + padX * 2));
-    const pillH = 176;
-    const pillX = (1280 - pillW) / 2;
-    const pillY = (280 - pillH) / 2;
-    const pillRadius = 38;
+    const pillW = Math.max(220, Math.min(600, totalContentW + padX * 2));
+    const pillH = 76;
+    const pillX = (canvas.width - pillW) / 2;
+    const pillY = (canvas.height - pillH) / 2;
+    const pillRadius = 18;
 
-    // 2. High-contrast ambient shadow for depth separation against stars & lines
+    // 1. Soft atmospheric elevation shadow (gentle warm paper lift)
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
-    ctx.shadowBlur = 32;
+    ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.65)' : 'rgba(23, 20, 18, 0.12)';
+    ctx.shadowBlur = isDark ? 16 : 10;
     ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 10;
+    ctx.shadowOffsetY = isDark ? 4 : 2;
+
+    // 2. Translucent museum vellum / obsidian fill
     ctx.fillStyle = isDark
-      ? 'rgba(7, 10, 19, 0.98)'
-      : 'rgba(251, 248, 242, 0.98)';
+      ? 'rgba(10, 14, 23, 0.94)'
+      : 'rgba(251, 248, 242, 0.96)';
     ctx.beginPath();
     ctx.roundRect(pillX, pillY, pillW, pillH, pillRadius);
     ctx.fill();
     ctx.restore();
 
-    // 3. Opaque obsidian card stock fill with subtle contrast gradient
-    const bgGrad = ctx.createLinearGradient(pillX, pillY, pillX, pillY + pillH);
-    if (isDark) {
-      bgGrad.addColorStop(0, 'rgba(16, 23, 42, 0.98)');
-      bgGrad.addColorStop(0.5, 'rgba(10, 15, 29, 0.98)');
-      bgGrad.addColorStop(1, 'rgba(6, 9, 18, 0.99)');
-    } else {
-      bgGrad.addColorStop(0, 'rgba(255, 253, 249, 0.99)');
-      bgGrad.addColorStop(0.5, 'rgba(248, 244, 236, 0.98)');
-      bgGrad.addColorStop(1, 'rgba(239, 232, 218, 0.99)');
-    }
-    ctx.fillStyle = bgGrad;
+    // 3. Delicate hairline border tinted with cluster pigment
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = isDark
+      ? `${cluster.color}99`
+      : `${cluster.color}88`;
     ctx.beginPath();
     ctx.roundRect(pillX, pillY, pillW, pillH, pillRadius);
-    ctx.fill();
-
-    // 4. Vibrant 4.5px perimeter border in semantic cluster pigment
-    ctx.lineWidth = 4.5;
-    ctx.strokeStyle = cluster.color;
     ctx.stroke();
 
-    // Fine inner specular bevel
-    ctx.lineWidth = 1.5;
+    // Subtle inner bevel line
+    ctx.lineWidth = 1;
     ctx.strokeStyle = isDark
-      ? 'rgba(255, 255, 255, 0.32)'
-      : 'rgba(23, 20, 18, 0.20)';
+      ? 'rgba(255, 255, 255, 0.12)'
+      : 'rgba(23, 20, 18, 0.06)';
     ctx.beginPath();
-    ctx.roundRect(
-      pillX + 3.5,
-      pillY + 3.5,
-      pillW - 7,
-      pillH - 7,
-      pillRadius - 3.5
-    );
+    ctx.roundRect(pillX + 2, pillY + 2, pillW - 4, pillH - 4, pillRadius - 2);
     ctx.stroke();
 
-    // 5. High-visibility celestial beacon pip on the left
-    const pipX = pillX + padX + 22;
+    // 4. Subtle celestial pip
+    const pipX = pillX + padX + 4;
     const pipY = pillY + pillH / 2;
 
-    // Glowing pigment aura
+    // Soft pigment aura
     ctx.beginPath();
-    ctx.arc(pipX, pipY, 24, 0, Math.PI * 2);
-    ctx.fillStyle = `${cluster.color}45`;
+    ctx.arc(pipX, pipY, 11, 0, Math.PI * 2);
+    ctx.fillStyle = `${cluster.color}33`;
     ctx.fill();
 
     // Solid core
     ctx.beginPath();
-    ctx.arc(pipX, pipY, 15, 0, Math.PI * 2);
+    ctx.arc(pipX, pipY, 5.5, 0, Math.PI * 2);
     ctx.fillStyle = cluster.color;
     ctx.fill();
 
-    // Pure white center star
+    // Center white/ivory pin
     ctx.beginPath();
-    ctx.arc(pipX, pipY, 6, 0, Math.PI * 2);
-    ctx.fillStyle = '#FFFFFF';
+    ctx.arc(pipX, pipY, 2, 0, Math.PI * 2);
+    ctx.fillStyle = isDark ? '#FFFFFF' : '#FFFDF9';
     ctx.fill();
 
-    // 6. Crisp bold primary genre headline
-    const textStartX = pipX + 38;
+    // 5. Crisp, tracked-out primary genre title in Title Case
+    const textStartX = pipX + 16;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.font =
-      '900 86px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
-    ctx.fillStyle = isDark ? '#FFFFFF' : '#171412';
-    ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.95)' : 'rgba(255, 255, 255, 0.6)';
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 3;
+    ctx.font = '700 32px "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = isDark ? '#F0F4FC' : '#171412';
     ctx.fillText(labelText, textStartX, pipY);
 
-    // 7. Right-side Title Count Capsule
+    // 6. Refined tabular title count
     if (count > 0) {
       const countBadgeX = pillX + pillW - padX - countBadgeW;
-      const countBadgeY = pipY - 30;
-      const countBadgeH = 60;
+      const countBadgeY = pipY - 17;
+      const countBadgeH = 34;
 
       ctx.fillStyle = isDark
-        ? 'rgba(255, 255, 255, 0.12)'
-        : 'rgba(23, 20, 18, 0.08)';
+        ? 'rgba(255, 255, 255, 0.08)'
+        : 'rgba(23, 20, 18, 0.06)';
       ctx.beginPath();
-      ctx.roundRect(countBadgeX, countBadgeY, countBadgeW, countBadgeH, 30);
+      ctx.roundRect(countBadgeX, countBadgeY, countBadgeW, countBadgeH, 10);
       ctx.fill();
-
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = isDark
-        ? 'rgba(255, 255, 255, 0.28)'
-        : 'rgba(23, 20, 18, 0.22)';
-      ctx.stroke();
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font =
-        '700 36px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillStyle = isDark ? '#F1F5F9' : '#334155';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-      ctx.shadowBlur = 6;
-      ctx.fillText(countText, countBadgeX + countBadgeW / 2, pipY);
+      ctx.font = '600 20px "Source Sans 3", monospace';
+      ctx.fillStyle = isDark ? '#9DAEC7' : '#6B5E50';
+      ctx.fillText(countText, countBadgeX + countBadgeW / 2, pipY + 0.5);
     }
 
-    // World scale: baseH is 74, width is proportional to content
+    // World scale: baseH is 46, width is proportional to content
     baseW = Math.round((pillW / pillH) * baseH);
   }
 
@@ -1398,6 +1420,7 @@ export function SpatialViewport({
   labelMode = 'AUTO',
   onLabelModeChange,
   graphFilters,
+  onGraphFiltersChange,
   onSelectCluster,
   onToggleTerritories,
   theme = 'MOVIE_MAP_DARK',
@@ -1431,6 +1454,10 @@ export function SpatialViewport({
   layoutModeRef.current = layoutMode;
   const colorModeRef = useRef<NodeColorMode>(colorMode);
   colorModeRef.current = colorMode;
+  const graphFiltersRef = useRef<GraphFilterState | undefined>(graphFilters);
+  graphFiltersRef.current = graphFilters;
+  const onSelectClusterRef = useRef(onSelectCluster);
+  onSelectClusterRef.current = onSelectCluster;
 
   // Stable structural identity keys to prevent costly WebGL canvas destructions on color/layout/label toggles
   const nodeStructureKey = useMemo(() => {
@@ -1489,6 +1516,24 @@ export function SpatialViewport({
       pan2dRef.current.goalZoom = autoZoom;
     }
   }, [selectedNodeId, clusters]);
+
+  // Curation counts for personal HUD and quick filters
+  const mediaNodes = useMemo(
+    () => nodes.filter((n) => n.type === 'MOVIE' || n.type === 'TV'),
+    [nodes]
+  );
+  const watchedNodesCount = useMemo(
+    () => mediaNodes.filter((n) => n.isWatched).length,
+    [mediaNodes]
+  );
+  const interestedNodesCount = useMemo(
+    () => mediaNodes.filter((n) => n.isInterested).length,
+    [mediaNodes]
+  );
+  const unwatchedNodesCount = useMemo(
+    () => mediaNodes.filter((n) => !n.isWatched).length,
+    [mediaNodes]
+  );
 
   // Allow pressing Escape at any time to exit the isolated subgraph view / reset selection
   // Allow pressing 'L' to toggle label display mode (Auto -> All -> Off)
@@ -1802,7 +1847,7 @@ export function SpatialViewport({
         record.accentMaterials.push(orb2Mat);
       }
 
-      const labelSprite = createLabelSprite(node);
+      const labelSprite = createLabelSprite(node, isDark);
       record.labelSprite = labelSprite;
       record.group.add(labelSprite);
 
@@ -1876,9 +1921,13 @@ export function SpatialViewport({
       cluster: SemanticCluster;
       haloRadius: number;
       boundaryRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+      washMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
     }
     const clusterBannerRecords: ClusterBannerRecord[] = [];
     const pickableBannerSprites: THREE.Sprite[] = [];
+
+    // Shared smooth radial gradient texture for soft archival watercolor washes
+    const washTexture = createRadialWashTexture();
 
     if (clusters && clusters.length > 0) {
       interface BannerSlot {
@@ -1891,8 +1940,23 @@ export function SpatialViewport({
       }
       const bannerSlots: BannerSlot[] = [];
 
+      // 1. Calculate overall galaxy center
+      let galaxyCenterX = 0;
+      let galaxyCenterY = 0;
+      let galaxyCenterZ = 0;
       for (const c of clusters) {
-        let maxDist = 80;
+        galaxyCenterX += c.centroid.x;
+        galaxyCenterY += c.centroid.y;
+        galaxyCenterZ += c.centroid.z;
+      }
+      galaxyCenterX /= clusters.length;
+      galaxyCenterY /= clusters.length;
+      galaxyCenterZ /= clusters.length;
+
+      // 2. Compute halo radius and radial outer frontier placement for each cluster
+      for (let idx = 0; idx < clusters.length; idx++) {
+        const c = clusters[idx];
+        let maxDist = 70;
         const mediaSet = new Set(c.mediaIds || []);
         for (const mId of mediaSet) {
           const n = nodeIndexMap.get(mId);
@@ -1902,12 +1966,28 @@ export function SpatialViewport({
           }
         }
 
-        const haloRadius = Math.max(90, Math.min(260, maxDist + 24));
-        // Place banner cleanly above the cluster centroid based on its local radius
-        const bannerY =
-          c.centroid.y + Math.min(90, Math.max(55, haloRadius * 0.45 + 32));
-        const bannerX = c.centroid.x;
-        const bannerZ = c.centroid.z + 14;
+        const haloRadius = Math.max(80, Math.min(240, maxDist + 20));
+
+        let dirX = c.centroid.x - galaxyCenterX;
+        let dirY = c.centroid.y - galaxyCenterY;
+        const distFromCenter = Math.hypot(dirX, dirY);
+
+        if (distFromCenter < 12) {
+          // If cluster is at the exact center, radiate outwards by slice index
+          const angle = (idx / clusters.length) * Math.PI * 2;
+          dirX = Math.cos(angle);
+          dirY = Math.sin(angle);
+        } else {
+          dirX /= distFromCenter;
+          dirY /= distFromCenter;
+        }
+
+        // Anchor banner along the outward frontier perimeter of the territory
+        // Fans out around the constellation so central stars remain completely visible
+        const radialOffset = haloRadius * 0.74 + 14;
+        const bannerX = c.centroid.x + dirX * radialOffset;
+        const bannerY = c.centroid.y + dirY * radialOffset;
+        const bannerZ = c.centroid.z + 8;
 
         bannerSlots.push({
           cluster: c,
@@ -1919,22 +1999,42 @@ export function SpatialViewport({
         });
       }
 
-      // De-collision relaxation pass: ensure no two plaques overlap in 3D projection
-      for (let iter = 0; iter < 4; iter++) {
+      // 3. Multi-pass 2D spring relaxation de-collision pass (ensures zero overlap)
+      const minGapX = 180;
+      const minGapY = 52;
+      for (let iter = 0; iter < 12; iter++) {
         for (let i = 0; i < bannerSlots.length; i++) {
           for (let j = i + 1; j < bannerSlots.length; j++) {
             const bA = bannerSlots[i];
             const bB = bannerSlots[j];
-            const dx = Math.abs(bA.x - bB.x);
-            const dy = Math.abs(bA.y - bB.y);
-            if (dx < 260 && dy < 95) {
-              const pushY = (95 - dy) / 2 + 10;
-              if (bA.y >= bB.y) {
-                bA.y += pushY;
-                bB.y -= pushY;
+            let dx = bA.x - bB.x;
+            let dy = bA.y - bB.y;
+            const absDx = Math.abs(dx);
+            const absDy = Math.abs(dy);
+
+            if (absDx < minGapX && absDy < minGapY) {
+              const overlapX = (minGapX - absDx) / 2;
+              const overlapY = (minGapY - absDy) / 2;
+
+              if (absDx === 0 && absDy === 0) {
+                dx = (Math.random() - 0.5) * 2;
+                dy = (Math.random() - 0.5) * 2;
+              }
+
+              if (dx >= 0) {
+                bA.x += overlapX * 0.7;
+                bB.x -= overlapX * 0.7;
               } else {
-                bA.y -= pushY;
-                bB.y += pushY;
+                bA.x -= overlapX * 0.7;
+                bB.x += overlapX * 0.7;
+              }
+
+              if (dy >= 0) {
+                bA.y += overlapY * 0.8;
+                bB.y -= overlapY * 0.8;
+              } else {
+                bA.y -= overlapY * 0.8;
+                bB.y += overlapY * 0.8;
               }
             }
           }
@@ -1944,16 +2044,16 @@ export function SpatialViewport({
       for (const slot of bannerSlots) {
         const c = slot.cluster;
 
-        // 1. Subtle galactic territory floor wash
-        const washGeo = new THREE.RingGeometry(
-          slot.haloRadius * 0.45,
-          slot.haloRadius,
-          64
+        // 1. Soft galactic territory watercolor floor wash (smooth radial density falloff, no donut hole)
+        const washGeo = new THREE.PlaneGeometry(
+          slot.haloRadius * 2,
+          slot.haloRadius * 2
         );
         const washMat = new THREE.MeshBasicMaterial({
+          map: washTexture,
           color: slot.colorObj,
           transparent: true,
-          opacity: 0.08,
+          opacity: isDark ? 0.45 : 0.32,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
@@ -1961,16 +2061,16 @@ export function SpatialViewport({
         washMesh.position.set(c.centroid.x, c.centroid.y, c.centroid.z - 4);
         territorySpritesGroup.add(washMesh);
 
-        // 2. Refined celestial latitude perimeter boundary ring
+        // 2. Refined celestial latitude perimeter boundary ring (delicate frontier boundary)
         const boundaryGeo = new THREE.RingGeometry(
-          slot.haloRadius - 1.2,
-          slot.haloRadius + 1.2,
-          72
+          slot.haloRadius * 0.85 - 0.9,
+          slot.haloRadius * 0.85 + 0.9,
+          96
         );
         const boundaryMat = new THREE.MeshBasicMaterial({
           color: slot.colorObj,
           transparent: true,
-          opacity: 0.35,
+          opacity: isDark ? 0.35 : 0.28,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
@@ -1982,12 +2082,12 @@ export function SpatialViewport({
         );
         territorySpritesGroup.add(boundaryMesh);
 
-        // 3. Ground meridian beacon ring at the cluster centroid
-        const beaconGeo = new THREE.RingGeometry(4, 8, 32);
+        // 3. Ground meridian beacon point at cluster centroid
+        const beaconGeo = new THREE.RingGeometry(2, 5, 32);
         const beaconMat = new THREE.MeshBasicMaterial({
           color: slot.colorObj,
           transparent: true,
-          opacity: 0.48,
+          opacity: isDark ? 0.40 : 0.30,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
@@ -1999,21 +2099,21 @@ export function SpatialViewport({
         );
         territorySpritesGroup.add(beaconMesh);
 
-        // 4. Hairline vertical anchor tether linking centroid to floating plaque
+        // 4. Hairline anchor tether linking centroid to floating plaque
         const tetherGeo = new THREE.BufferGeometry().setFromPoints([
           new THREE.Vector3(c.centroid.x, c.centroid.y, c.centroid.z - 2),
-          new THREE.Vector3(slot.x, slot.y - 28, slot.z),
+          new THREE.Vector3(slot.x, slot.y - 12, slot.z),
         ]);
         const tetherMat = new THREE.LineBasicMaterial({
           color: slot.colorObj,
           transparent: true,
-          opacity: 0.35,
+          opacity: isDark ? 0.28 : 0.20,
           depthWrite: false,
         });
         const tetherLine = new THREE.Line(tetherGeo, tetherMat);
         territorySpritesGroup.add(tetherLine);
 
-        // 5. Bold high-contrast 3D genre territory plaque
+        // 5. Refined celestial territory plaque
         const { sprite, baseW, baseH } = createClusterBannerSprite(c, isDark);
         sprite.position.set(slot.x, slot.y, slot.z);
         sprite.userData = { isClusterBanner: true, clusterId: c.id };
@@ -2026,6 +2126,7 @@ export function SpatialViewport({
           cluster: c,
           haloRadius: slot.haloRadius,
           boundaryRing: boundaryMesh,
+          washMesh,
         });
         pickableBannerSprites.push(sprite);
       }
@@ -2161,8 +2262,8 @@ export function SpatialViewport({
           const hitClusterId = hitBanner.userData?.clusterId as string;
           const hitCluster = clusters.find((c) => c.id === hitClusterId);
           if (hitCluster) {
-            onSelectCluster?.(
-              graphFilters?.activeClusterId === hitClusterId
+            onSelectClusterRef.current?.(
+              graphFiltersRef.current?.activeClusterId === hitClusterId
                 ? null
                 : hitClusterId
             );
@@ -2178,8 +2279,13 @@ export function SpatialViewport({
             camSphericalRef.current.goalRadius = targetRadius;
             return;
           }
-        } else if (selectedIdRef.current) {
-          onClearSelection?.();
+        } else {
+          if (selectedIdRef.current) {
+            onClearSelection?.();
+          }
+          if (graphFiltersRef.current?.activeClusterId) {
+            onSelectClusterRef.current?.(null);
+          }
         }
       }
     };
@@ -2500,6 +2606,9 @@ export function SpatialViewport({
           // Orient selection & linked-node beacon rings toward camera
           assembly.selectionHalo.lookAt(camera.position);
           assembly.outerRingHalo.lookAt(camera.position);
+          if (assembly.statusRing) {
+            assembly.statusRing.lookAt(camera.position);
+          }
 
           if (!hasActiveFocus) {
             assembly.selectionHaloMat.opacity = 0;
@@ -2605,27 +2714,27 @@ export function SpatialViewport({
 
           for (const mat of assembly.primaryMaterials) {
             if (!isFilterMatch) {
-              // Non-matching filtered node in Dim mode stays at 12% opacity
-              mat.opacity = 0.12;
-              mat.emissiveIntensity = 0.01;
+              // In DIM mode, non-matching nodes remain visibly grounded as a soft celestial field
+              mat.opacity = isDark ? 0.32 : 0.44;
+              mat.emissiveIntensity = isDark ? 0.04 : 0.07;
             } else if (!hasActiveFocus) {
               mat.opacity = 0.98;
-              mat.emissiveIntensity = node.isFocal ? 0.34 : 0.16;
+              mat.emissiveIntensity = node.isFocal ? 0.34 : 0.18;
             } else {
-              mat.opacity = isNodeLinked ? 1.0 : 0.14;
+              mat.opacity = isNodeLinked ? 1.0 : (isDark ? 0.18 : 0.26);
               mat.emissiveIntensity =
                 isNodeSelected || isNodeHovered
-                  ? 0.48
+                  ? 0.52
                   : isNodeLinked
-                    ? 0.36
-                    : 0.02;
+                    ? 0.38
+                    : 0.03;
             }
           }
           for (const accMat of assembly.accentMaterials) {
             if (!isFilterMatch) {
-              accMat.opacity = 0.08;
+              accMat.opacity = isDark ? 0.12 : 0.20;
             } else {
-              accMat.opacity = !hasActiveFocus ? 0.98 : isNodeLinked ? 1.0 : 0.12;
+              accMat.opacity = !hasActiveFocus ? 0.98 : isNodeLinked ? 1.0 : 0.16;
             }
           }
         }
@@ -2657,10 +2766,10 @@ export function SpatialViewport({
         if (!hasActiveFocus) {
           const endpointsMatch = (src.isFilterMatch !== false) && (tgt.isFilterMatch !== false);
           entry.material.opacity = !endpointsMatch
-            ? 0.03
+            ? (isDark ? 0.03 : 0.05)
             : entry.link.kind === 'SIMILARITY_DIRECT'
-              ? 0.5
-              : 0.26;
+              ? 0.52
+              : 0.28;
           entry.beamMesh.visible = false;
         } else {
           const lit = illuminatedLinkSet.has(entry.link.id);
@@ -2703,21 +2812,49 @@ export function SpatialViewport({
       );
       orbitRingsGroup.visible = Boolean(focalItem);
 
-      // Dynamic distance-aware scaling for prominent genre territory badges
+      // Dynamic distance-aware scaling and graceful zoom fading for territory plaques
       const camDist = camState.radius;
-      const bannerScaleFactor = Math.max(0.85, Math.min(1.5, camDist / 920));
+      const bannerScaleFactor = Math.max(0.9, Math.min(1.35, camDist / 780));
+      const zoomOpacity = Math.max(0.45, Math.min(1.0, (camDist - 120) / 200));
+
       for (let i = 0; i < clusterBannerRecords.length; i++) {
         const item = clusterBannerRecords[i];
-        const isSelected = graphFilters?.activeClusterId === item.cluster.id;
+        const isSelected = graphFiltersRef.current?.activeClusterId === item.cluster.id;
         const isHovered = hoveredClusterIdRef.current === item.cluster.id;
-        const highlightMultiplier = isSelected ? 1.18 : isHovered ? 1.09 : 1.0;
+        const hasAnyClusterActive = Boolean(graphFiltersRef.current?.activeClusterId);
+
+        const highlightMultiplier = isSelected ? 1.20 : isHovered ? 1.08 : 1.0;
         item.sprite.scale.set(
           item.baseW * bannerScaleFactor * highlightMultiplier,
           item.baseH * bannerScaleFactor * highlightMultiplier,
           1
         );
+        item.sprite.material.opacity = isSelected
+          ? 1.0
+          : isHovered
+            ? 1.0
+            : hasAnyClusterActive
+              ? zoomOpacity * 0.45
+              : zoomOpacity;
+
         if (item.boundaryRing) {
-          item.boundaryRing.material.opacity = isSelected ? 0.65 : isHovered ? 0.52 : 0.42;
+          (item.boundaryRing.material as THREE.MeshBasicMaterial).opacity = isSelected
+            ? 0.70
+            : isHovered
+              ? 0.50
+              : hasAnyClusterActive
+                ? (isDark ? 0.14 : 0.10)
+                : (isDark ? 0.35 : 0.28);
+        }
+
+        if (item.washMesh) {
+          (item.washMesh.material as THREE.MeshBasicMaterial).opacity = isSelected
+            ? (isDark ? 0.75 : 0.55)
+            : isHovered
+              ? (isDark ? 0.55 : 0.42)
+              : hasAnyClusterActive
+                ? (isDark ? 0.16 : 0.12)
+                : (isDark ? 0.45 : 0.32);
         }
       }
 
@@ -2764,6 +2901,7 @@ export function SpatialViewport({
           obj.material.dispose();
         }
       });
+      washTexture.dispose();
       sharedBeamUnitGeo.dispose();
       envTexture.dispose();
       renderer.dispose();
@@ -2809,6 +2947,7 @@ export function SpatialViewport({
       string,
       { x: number; y: number; z: number }
     >();
+    let clusterCartoucheBoxes: Array<{ id: string; minX: number; maxX: number; minY: number; maxY: number }> = [];
 
     let isDragging = false;
     let dragMoved = false;
@@ -2925,7 +3064,15 @@ export function SpatialViewport({
         setHoveredNodeId(hit.id);
         setHoveredTooltip({ node: hit, x: sx, y: sy });
       } else {
-        canvas.style.cursor = 'grab';
+        const { wx, wy } = screenToWorld(sx, sy);
+        const hitCartouche = clusterCartoucheBoxes.find(
+          (box) => wx >= box.minX && wx <= box.maxX && wy >= box.minY && wy <= box.maxY
+        );
+        if (hitCartouche) {
+          canvas.style.cursor = 'pointer';
+        } else {
+          canvas.style.cursor = 'grab';
+        }
         if (hoveredIdRef.current) {
           hoveredIdRef.current = null;
           setHoveredNodeId(null);
@@ -2939,12 +3086,28 @@ export function SpatialViewport({
       isDragging = false;
       if (dragMoved) return;
       const rect = canvas.getBoundingClientRect();
-      const hit = findNodeAt(e.clientX - rect.left, e.clientY - rect.top);
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const hit = findNodeAt(sx, sy);
       if (hit) {
         onSelectNode(hit);
         frameNodeAndLinkedCluster(hit.id);
-      } else if (selectedIdRef.current) {
-        onClearSelection?.();
+      } else {
+        const { wx, wy } = screenToWorld(sx, sy);
+        const hitCartouche = clusterCartoucheBoxes.find(
+          (box) => wx >= box.minX && wx <= box.maxX && wy >= box.minY && wy <= box.maxY
+        );
+        if (hitCartouche && onSelectClusterRef.current) {
+          const isSelected = graphFiltersRef.current?.activeClusterId === hitCartouche.id;
+          onSelectClusterRef.current(isSelected ? null : hitCartouche.id);
+        } else {
+          if (selectedIdRef.current) {
+            onClearSelection?.();
+          }
+          if (graphFiltersRef.current?.activeClusterId) {
+            onSelectClusterRef.current?.(null);
+          }
+        }
       }
     };
 
@@ -3052,6 +3215,7 @@ export function SpatialViewport({
               mediaIds: [],
             }));
 
+        clusterCartoucheBoxes = [];
         for (const c of activeClusterList) {
           const pts = clusterPoints.get(c.id);
           if (!pts || pts.length === 0) continue;
@@ -3071,6 +3235,7 @@ export function SpatialViewport({
             if (d > maxDist) maxDist = d;
           }
           const haloRadius = Math.max(75, Math.min(240, maxDist + 45));
+          const isSelected = graphFiltersRef.current?.activeClusterId === c.id;
 
           // Soft watercolor gradient
           const grad = ctx.createRadialGradient(
@@ -3081,9 +3246,9 @@ export function SpatialViewport({
             avgY,
             haloRadius
           );
-          grad.addColorStop(0, `${c.color}24`);
-          grad.addColorStop(0.5, `${c.color}10`);
-          grad.addColorStop(0.85, `${c.color}04`);
+          grad.addColorStop(0, `${c.color}${isSelected ? '35' : '22'}`);
+          grad.addColorStop(0.5, `${c.color}${isSelected ? '18' : '0e'}`);
+          grad.addColorStop(0.85, `${c.color}${isSelected ? '08' : '03'}`);
           grad.addColorStop(1, 'transparent');
 
           ctx.fillStyle = grad;
@@ -3091,40 +3256,83 @@ export function SpatialViewport({
           ctx.arc(avgX, avgY, haloRadius, 0, Math.PI * 2);
           ctx.fill();
 
-          // Delicate dashed territory frontier boundary
+          // Delicate territory frontier boundary
           ctx.beginPath();
           ctx.arc(avgX, avgY, haloRadius * 0.85, 0, Math.PI * 2);
-          ctx.strokeStyle = `${c.color}38`;
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 6]);
+          ctx.strokeStyle = isSelected ? `${c.color}65` : `${c.color}28`;
+          ctx.lineWidth = isSelected ? 1.6 : 0.9;
+          if (!isSelected) {
+            ctx.setLineDash([3, 6]);
+          }
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Movie Map Territory Nameplate (Obsidian / Mikey Guinness style)
+          // Celestial Archival Cartouche Nameplate
           ctx.save();
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-
           const labelText = c.shortLabel || c.label;
-          const labelY = avgY - haloRadius * 0.84 - 10;
+          const countText = `${pts.length} TITLES`;
+          const labelY = avgY - haloRadius * 0.85 - 12;
 
-          // Crisp bold typography with deep contrast shadow
-          ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
-          ctx.shadowBlur = 10;
+          ctx.font = '600 12px "Source Sans 3", -apple-system, sans-serif';
+          const titleW = ctx.measureText(labelText).width;
+          ctx.font = '600 9px "Source Sans 3", monospace';
+          const countW = ctx.measureText(countText).width;
+
+          const pillW = titleW + countW + 36;
+          const pillH = 24;
+          const pillX = avgX - pillW / 2;
+          const pillY = labelY - pillH / 2;
+
+          clusterCartoucheBoxes.push({
+            id: c.id,
+            minX: pillX,
+            maxX: pillX + pillW,
+            minY: pillY,
+            maxY: pillY + pillH,
+          });
+
+          // Soft elevation shadow
+          ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.60)' : 'rgba(23, 20, 18, 0.08)';
+          ctx.shadowBlur = isDark ? 8 : 5;
           ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 2;
+          ctx.shadowOffsetY = isDark ? 3 : 1.5;
 
-          ctx.fillStyle = isDark ? '#FFFFFF' : '#171412';
-          ctx.fillText(labelText, avgX, labelY);
-
-          // Glowing accent pip
+          // Vellum card stock
+          ctx.fillStyle = isDark
+            ? (isSelected ? 'rgba(19, 26, 38, 0.98)' : 'rgba(11, 16, 29, 0.94)')
+            : (isSelected ? '#F5EFE6' : 'rgba(251, 248, 242, 0.96)');
           ctx.beginPath();
-          ctx.arc(avgX, labelY + 11, 2.5, 0, Math.PI * 2);
-          ctx.fillStyle = c.color;
-          ctx.shadowBlur = 8;
-          ctx.shadowColor = c.color;
+          ctx.roundRect(pillX, pillY, pillW, pillH, 12);
           ctx.fill();
+
+          // Double/single hairline border
+          ctx.shadowColor = 'transparent';
+          ctx.lineWidth = isSelected ? 1.8 : 1.0;
+          ctx.strokeStyle = isSelected
+            ? c.color
+            : (isDark ? 'rgba(255, 255, 255, 0.16)' : '#D5CCB9');
+          ctx.beginPath();
+          ctx.roundRect(pillX, pillY, pillW, pillH, 12);
+          ctx.stroke();
+
+          // Celestial pip marker
+          ctx.beginPath();
+          ctx.arc(pillX + 11, labelY, 3, 0, Math.PI * 2);
+          ctx.fillStyle = c.color;
+          ctx.fill();
+
+          // Label Title
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.font = '600 12px "Source Sans 3", -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#F0F4FC' : '#171412';
+          ctx.fillText(labelText, pillX + 20, labelY);
+
+          // Tabular count badge
+          ctx.textAlign = 'right';
+          ctx.font = '600 9px "Source Sans 3", monospace';
+          ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.50)' : '#8C8070';
+          ctx.fillText(countText, pillX + pillW - 10, labelY + 0.5);
 
           ctx.restore();
         }
@@ -3215,8 +3423,9 @@ export function SpatialViewport({
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(t.x, t.y);
         ctx.strokeStyle = link.color;
+        const endpointsMatch = (s.isFilterMatch !== false) && (t.isFilterMatch !== false);
         ctx.globalAlpha = !hasActiveFocus
-          ? (isDark ? 0.16 : 0.14)
+          ? (!endpointsMatch ? (isDark ? 0.04 : 0.05) : (isDark ? 0.20 : 0.18))
           : lit
             ? 0.85
             : 0.03;
@@ -3244,7 +3453,11 @@ export function SpatialViewport({
           isHovered ||
           highlightedNodeSet.has(node.id);
 
-        ctx.globalAlpha = !isFilterMatch ? 0.12 : isNodeLinked ? 1 : 0.14;
+        ctx.globalAlpha = !isFilterMatch
+          ? (isDark ? 0.30 : 0.44)
+          : isNodeLinked
+            ? 1
+            : (isDark ? 0.18 : 0.26);
 
         const rScaled =
           node.radius *
@@ -3358,6 +3571,52 @@ export function SpatialViewport({
           ctx.restore();
         }
 
+        // 2b. Personal Watched / Interested Concentric Status Ring & Ambient Aura
+        if (node.isWatched || node.isInterested) {
+          const isW = Boolean(node.isWatched);
+          const statusColor = isW
+            ? isDark
+              ? '#10B981'
+              : '#2A6B53'
+            : isDark
+              ? '#F59E0B'
+              : '#B45309';
+          const statusGlow = isW
+            ? isDark
+              ? '#34D399'
+              : '#3D9970'
+            : isDark
+              ? '#FBBF24'
+              : '#D97706';
+
+          ctx.save();
+          const ringR = rScaled * 1.55 + (isHovered ? 1.5 : 0);
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, ringR, 0, Math.PI * 2);
+          ctx.strokeStyle = statusColor;
+          ctx.lineWidth = isW ? 1.8 : 1.5;
+          if (!isW) {
+            ctx.setLineDash([3, 2]);
+          }
+          ctx.stroke();
+
+          const auraGrad = ctx.createRadialGradient(
+            node.x,
+            node.y,
+            rScaled * 0.8,
+            node.x,
+            node.y,
+            ringR + 4
+          );
+          auraGrad.addColorStop(0, `${statusGlow}33`);
+          auraGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = auraGrad;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, ringR + 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
         // 3. Crisp Border Ring on Focus / Hover / Selection
         if (node.isFocal) {
           ctx.beginPath();
@@ -3456,6 +3715,16 @@ export function SpatialViewport({
           }
           if (assembly.outerRingHaloMat) {
             assembly.outerRingHaloMat.color.set(node.glowColor);
+          }
+          if (assembly.statusRingMat) {
+            const isW = Boolean(node.isWatched);
+            const isI = Boolean(node.isInterested);
+            if (isW || isI) {
+              assembly.statusRingMat.opacity = 0.9;
+              assembly.statusRingMat.color.set(isW ? '#10B981' : '#F59E0B');
+            } else {
+              assembly.statusRingMat.opacity = 0;
+            }
           }
         }
 
@@ -3591,6 +3860,104 @@ export function SpatialViewport({
               <span>Reset (Esc)</span>
             </button>
           )}
+
+          {/* Floating Glassmorphic Curation Filter HUD Bar */}
+          {graphFilters && onGraphFiltersChange && (
+            <div
+              className={`pointer-events-auto inline-flex items-center p-0.5 rounded-lg border backdrop-blur-md shadow-md gap-0.5 ${
+                theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#101624]/90 border-white/10'
+                  : 'bg-[#FBF8F2]/95 border-[#C8BEAA] shadow-archival-sm'
+              }`}
+            >
+              {[
+                { id: 'ALL' as const, label: 'All', count: mediaNodes.length },
+                {
+                  id: 'WATCHED' as const,
+                  label: 'Watched',
+                  count: watchedNodesCount,
+                  indicator: 'bg-[#10B981]',
+                },
+                {
+                  id: 'INTERESTED' as const,
+                  label: 'Want to Watch',
+                  count: interestedNodesCount,
+                  indicator: 'bg-[#F59E0B]',
+                },
+                {
+                  id: 'UNWATCHED' as const,
+                  label: 'Unwatched',
+                  count: unwatchedNodesCount,
+                  indicator: 'bg-slate-400',
+                },
+              ].map((pill) => {
+                const active = graphFilters.watchedFilter === pill.id;
+                return (
+                  <button
+                    key={pill.id}
+                    type="button"
+                    onClick={() =>
+                      onGraphFiltersChange({
+                        ...graphFilters,
+                        watchedFilter: pill.id,
+                      })
+                    }
+                    className={`inline-flex items-center gap-1.5 h-7 px-2 sm:px-2.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                      active
+                        ? pill.id === 'WATCHED'
+                          ? theme === 'MOVIE_MAP_DARK'
+                            ? 'bg-[#10B981]/25 text-[#10B981] border border-[#10B981]/50 shadow-xs'
+                            : 'bg-[#2A6B53] text-[#FBF8F2] shadow-xs'
+                          : pill.id === 'INTERESTED'
+                            ? theme === 'MOVIE_MAP_DARK'
+                              ? 'bg-[#F59E0B]/25 text-[#F59E0B] border border-[#F59E0B]/50 shadow-xs'
+                              : 'bg-[#B45309] text-[#FBF8F2] shadow-xs'
+                            : pill.id === 'UNWATCHED'
+                              ? theme === 'MOVIE_MAP_DARK'
+                                ? 'bg-white/15 text-white border border-white/20 shadow-xs'
+                                : 'bg-[#52483E] text-[#FBF8F2] shadow-xs'
+                              : theme === 'MOVIE_MAP_DARK'
+                                ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
+                                : 'bg-[#171412] text-[#FBF8F2] shadow-xs'
+                        : theme === 'MOVIE_MAP_DARK'
+                          ? 'text-[#94A3B8] hover:text-[#F0F4FC] hover:bg-white/5 border border-transparent'
+                          : 'text-[#52483E] hover:text-[#171412] hover:bg-black/5 border border-transparent'
+                    }`}
+                    title={`Filter graph: ${pill.label}`}
+                  >
+                    {pill.indicator && (
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${pill.indicator}`} />
+                    )}
+                    <span>{pill.label}</span>
+                    <span className="text-[10px] font-tabular opacity-75">
+                      {pill.count}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {graphFilters.watchedFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onGraphFiltersChange({
+                      ...graphFilters,
+                      filterBehavior:
+                        graphFilters.filterBehavior === 'DIM' ? 'HIDE' : 'DIM',
+                    })
+                  }
+                  className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-all cursor-pointer ${
+                    graphFilters.filterBehavior === 'DIM'
+                      ? 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10'
+                      : 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                  }`}
+                  title={`Filter mode: ${graphFilters.filterBehavior} non-matching nodes (Click to toggle DIM/HIDE)`}
+                >
+                  {graphFilters.filterBehavior}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -3655,7 +4022,7 @@ export function SpatialViewport({
                   <div className={`text-[10px] mt-0.5 truncate ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
                     {hoveredTooltip.node.mediaItem.year} · {hoveredTooltip.node.mediaItem.directors?.[0]}
                   </div>
-                  <div className="flex items-center gap-1.5 mt-1 text-[10px]">
+                  <div className="flex items-center gap-1.5 mt-1 text-[10px] flex-wrap">
                     <span className={`px-1.5 py-0.2 rounded font-semibold font-tabular ${isDark ? 'bg-[#00D2FF]/20 text-[#00D2FF]' : 'bg-[#234B6E]/15 text-[#234B6E]'
                       }`}>
                       ★ {hoveredTooltip.node.mediaItem.imdbRating.toFixed(1)}
@@ -3664,6 +4031,18 @@ export function SpatialViewport({
                       }`}>
                       {hoveredTooltip.node.mediaItem.primaryGenre}
                     </span>
+                    {hoveredTooltip.node.isWatched && (
+                      <span className={`px-1.5 py-0.2 rounded font-semibold shrink-0 ${isDark ? 'bg-[#10B981]/25 text-[#10B981] border border-[#10B981]/40' : 'bg-[#2A6B53]/20 text-[#2A6B53] border border-[#2A6B53]/30'
+                        }`}>
+                        ✓ Watched
+                      </span>
+                    )}
+                    {hoveredTooltip.node.isInterested && !hoveredTooltip.node.isWatched && (
+                      <span className={`px-1.5 py-0.2 rounded font-semibold shrink-0 ${isDark ? 'bg-[#F59E0B]/25 text-[#F59E0B] border border-[#F59E0B]/40' : 'bg-[#B45309]/20 text-[#B45309] border border-[#B45309]/30'
+                        }`}>
+                        ★ Want to Watch
+                      </span>
+                    )}
                   </div>
                 </div>
               </>
@@ -3681,146 +4060,7 @@ export function SpatialViewport({
         );
       })()}
 
-      {/* HUD: Graph Projection, Color Coding, and Label Density Controls (Desktop / Tablet) */}
-      <div
-        className={`hidden sm:flex absolute top-4 right-4 z-20 items-center gap-2 p-1.5 rounded-full text-xs font-medium backdrop-blur-md shadow-lg transition-colors ${isDark
-            ? 'bg-[#0E1524]/90 border border-white/10 text-white/90 shadow-black/40'
-            : 'bg-[#FBF8F2]/95 border border-[#B5A892] shadow-archival text-[#171412]'
-          }`}
-      >
-        {/* 1. Spatial Layout Projection */}
-        {onLayoutModeChange && (
-          <div className={`flex items-center gap-1 pr-1.5 border-r ${isDark ? 'border-white/10' : 'border-[#D5CCB9]'}`}>
-            <div className={`flex items-center p-0.5 rounded-full ${isDark ? 'bg-white/5' : 'bg-[#EFE8DA]'}`}>
-              <button
-                type="button"
-                onClick={() => onLayoutModeChange('FORCE_CONSTELLATION')}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none ${layoutMode === 'FORCE_CONSTELLATION'
-                    ? 'bg-[#234B6E] text-white shadow-xs'
-                    : isDark
-                      ? 'text-white/60 hover:text-white'
-                      : 'text-[#52483E] hover:text-[#171412]'
-                  }`}
-                title="Cast & Crew: Lines link movies that share directors, screenwriters, or actors"
-              >
-                Constellation
-              </button>
-              <button
-                type="button"
-                onClick={() => onLayoutModeChange('SEMANTIC_GALAXY')}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none ${layoutMode === 'SEMANTIC_GALAXY'
-                    ? 'bg-[#B8292F] text-white shadow-xs'
-                    : isDark
-                      ? 'text-white/60 hover:text-white'
-                      : 'text-[#52483E] hover:text-[#171412]'
-                  }`}
-                title="Themes & Vibe: Groups movies by shared plot, mood, and storytelling worlds"
-              >
-                Galaxy
-              </button>
-            </div>
 
-            {layoutMode === 'SEMANTIC_GALAXY' && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (onToggleTerritories) {
-                    onToggleTerritories();
-                  } else {
-                    setLocalTerritories((prev) => !prev);
-                  }
-                }}
-                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none flex items-center gap-1.5 ${showTerritories
-                    ? isDark
-                      ? 'bg-[#2A6B53]/40 text-[#8CE8C3] border border-[#2A6B53]/60'
-                      : 'bg-[#E3EFEA] text-[#1E563F] border border-[#B4D4C7]'
-                    : isDark
-                      ? 'text-white/50 hover:text-white bg-white/5'
-                      : 'text-[#6B5E50] hover:text-[#171412] bg-[#EFE8DA]'
-                  }`}
-                title="Theme Zones: Draw boundary outlines and labels around themed movie neighborhoods"
-              >
-                <MapIcon className="w-2.5 h-2.5 opacity-80" />
-                <span>Theme Zones</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* 2. Node Color Coding Scheme */}
-        {onColorModeChange && (
-          <div className={`flex items-center gap-1.5 pr-1.5 border-r ${isDark ? 'border-white/10' : 'border-[#D5CCB9]'}`}>
-            <span
-              className={`hidden sm:flex items-center gap-1 pl-1 text-[10px] font-bold tracking-wide uppercase select-none ${isDark ? 'text-white/40' : 'text-[#8C7E6D]'
-                }`}
-              title="Color movies by attribute"
-            >
-              <Palette className="w-3 h-3 opacity-70" />
-              <span>Color</span>
-            </span>
-
-            <div className={`flex items-center p-0.5 rounded-full ${isDark ? 'bg-white/5' : 'bg-[#EFE8DA]'}`}>
-              {(
-                [
-                  { id: 'CLUSTER', label: 'Theme', desc: 'Color movies by shared story world & theme' },
-                  { id: 'GENRE', label: 'Genre', desc: 'Color by primary genre (Action, Sci-Fi, Drama…)' },
-                  { id: 'DECADE', label: 'Era', desc: 'Color chronologically by release era (Decade)' },
-                  { id: 'CATEGORY', label: 'Format', desc: 'Color by format (Films vs TV Series vs Cast/Crew)' },
-                ] as const
-              ).map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => onColorModeChange(c.id)}
-                  title={c.desc}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none ${colorMode === c.id
-                      ? isDark
-                        ? 'bg-white/20 text-white shadow-xs font-bold'
-                        : 'bg-[#171412] text-[#FBF8F2] shadow-xs font-bold'
-                      : isDark
-                        ? 'text-white/60 hover:text-white'
-                        : 'text-[#6B5E50] hover:text-[#171412]'
-                    }`}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 3. Title Display Density */}
-        {onLabelModeChange && (
-          <button
-            type="button"
-            onClick={() => {
-              const next =
-                labelMode === 'AUTO'
-                  ? 'ALL'
-                  : labelMode === 'ALL'
-                    ? 'OFF'
-                    : 'AUTO';
-              onLabelModeChange(next);
-            }}
-            title="Toggle movie title density (Auto · All · Off). Shortcut: Press 'L'"
-            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none flex items-center gap-1.5 border ${labelMode === 'OFF'
-                ? isDark
-                  ? 'bg-white/5 text-white/40 border-white/10 hover:text-white/70'
-                  : 'bg-[#EFE8DA] text-[#6B5E50] border-[#D5CCB9] hover:text-[#171412]'
-                : labelMode === 'ALL'
-                  ? isDark
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
-                  : isDark
-                    ? 'bg-white/10 text-white/90 border-white/20'
-                    : 'bg-[#FBF8F2] text-[#171412] border-[#C8BEAA]'
-              }`}
-          >
-            <Tag className="w-3 h-3 opacity-70" />
-            <span>Titles: {labelMode === 'AUTO' ? 'Auto' : labelMode === 'ALL' ? 'All' : 'Off'}</span>
-          </button>
-        )}
-      </div>
 
       {/* MOBILE VIEW CONTROLS (Top-Right Action Chip + Secondary Mini-Pills) */}
       <div className="sm:hidden absolute top-3 right-3 z-20 flex items-center gap-1.5 pointer-events-auto">
@@ -3882,7 +4122,13 @@ export function SpatialViewport({
           <button
             type="button"
             onClick={() => {
-              const modes: NodeColorMode[] = ['CLUSTER', 'GENRE', 'DECADE', 'CATEGORY'];
+              const modes: NodeColorMode[] = [
+                'CLUSTER',
+                'WATCH_STATUS',
+                'GENRE',
+                'DECADE',
+                'CATEGORY',
+              ];
               const idx = modes.indexOf(colorMode || 'CLUSTER');
               onColorModeChange(modes[(idx + 1) % modes.length]);
             }}
@@ -3891,7 +4137,17 @@ export function SpatialViewport({
             }`}
           >
             <Palette className="w-3 h-3 opacity-70" />
-            <span>{colorMode === 'CLUSTER' ? 'Theme' : colorMode === 'GENRE' ? 'Genre' : colorMode === 'DECADE' ? 'Era' : 'Format'}</span>
+            <span>
+              {colorMode === 'CLUSTER'
+                ? 'Theme'
+                : colorMode === 'WATCH_STATUS'
+                  ? 'Curation'
+                  : colorMode === 'GENRE'
+                    ? 'Genre'
+                    : colorMode === 'DECADE'
+                      ? 'Era'
+                      : 'Format'}
+            </span>
           </button>
         )}
 
@@ -4024,6 +4280,7 @@ export function SpatialViewport({
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: 'CLUSTER', label: 'Theme Worlds', desc: 'Story universe' },
+                    { id: 'WATCH_STATUS', label: 'Personal Curation', desc: 'Watched vs Want to Watch' },
                     { id: 'GENRE', label: 'Genre', desc: 'Action, Sci-Fi…' },
                     { id: 'DECADE', label: 'Release Era', desc: 'Chronological era' },
                     { id: 'CATEGORY', label: 'Format', desc: 'Film vs TV vs Cast' },
@@ -4136,7 +4393,7 @@ export function SpatialViewport({
         <div
           className={`hidden lg:flex absolute bottom-5 left-4 z-20 flex-col gap-1 p-2.5 rounded-xl border max-w-xs text-xs backdrop-blur-md transition-colors ${isDark
               ? 'bg-[#0B101D]/90 border-cyan-500/20 text-slate-200 shadow-[0_8px_32px_rgba(0,0,0,0.6)]'
-              : 'bg-[#FBF8F2]/95 border-[#B5A892] text-[#171412] shadow-archival'
+              : 'bg-[#FBF8F2]/95 border-[#D5CCB9] text-[#171412] shadow-archival'
             }`}
         >
           <div
@@ -4144,7 +4401,7 @@ export function SpatialViewport({
               }`}
           >
             <span
-              className={`font-heading font-bold ${isDark ? 'text-white' : 'text-[#171412]'
+              className={`font-heading font-bold text-xs tracking-tight ${isDark ? 'text-white' : 'text-[#171412]'
                 }`}
             >
               Semantic Galaxy Clusters
@@ -4171,7 +4428,7 @@ export function SpatialViewport({
                   className={`text-left flex items-center gap-1.5 py-0.5 px-1.5 rounded transition-all cursor-pointer ${isSelected
                       ? isDark
                         ? 'bg-cyan-500/20 font-bold text-cyan-300 ring-1 ring-cyan-500/40 shadow-[0_0_10px_rgba(0,210,255,0.2)]'
-                        : 'bg-[#EFE8DA] font-bold text-[#171412]'
+                        : 'bg-[#EFE8DA] font-bold text-[#171412] ring-1 ring-[#D5CCB9]'
                       : isDark
                         ? 'hover:bg-white/10 text-slate-300'
                         : 'hover:bg-[#EFE8DA]/60 text-[#52483E]'
@@ -4194,319 +4451,6 @@ export function SpatialViewport({
           </div>
         </div>
       )}
-
-      {/* Bottom Center Camera Dock (Desktop / Tablet) */}
-      <div
-        className={`hidden sm:flex absolute bottom-5 left-1/2 -translate-x-1/2 z-20 items-center gap-1 px-2.5 py-1.5 rounded-full backdrop-blur-md transition-colors ${isDark
-            ? 'bg-[#0B101D]/90 border border-white/15 text-slate-200 shadow-[0_8px_32px_rgba(0,0,0,0.6)]'
-            : 'bg-[#FBF8F2] border border-[#B5A892] text-[#52483E] shadow-archival'
-          }`}
-      >
-        <button
-          type="button"
-          onClick={() => onCameraModeChange('ORBIT')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${cameraMode === 'ORBIT'
-              ? isDark
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(0,210,255,0.25)]'
-                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : isDark
-                ? 'text-slate-400 hover:text-white hover:bg-white/10'
-                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-            }`}
-        >
-          <Compass className="w-3.5 h-3.5" />
-          <span>Orbit</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onCameraModeChange('FREE_LOOK')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${cameraMode === 'FREE_LOOK'
-              ? isDark
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(0,210,255,0.25)]'
-                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : isDark
-                ? 'text-slate-400 hover:text-white hover:bg-white/10'
-                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-            }`}
-        >
-          <Eye className="w-3.5 h-3.5" />
-          <span>Pan</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onCameraModeChange('FLY_THROUGH')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${cameraMode === 'FLY_THROUGH'
-              ? isDark
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(0,210,255,0.25)]'
-                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : isDark
-                ? 'text-slate-400 hover:text-white hover:bg-white/10'
-                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-            }`}
-        >
-          <Navigation className="w-3.5 h-3.5" />
-          <span>Guided Tour</span>
-        </button>
-
-        <div
-          className={`h-4 w-px mx-1 ${isDark ? 'bg-white/15' : 'bg-[#D5CCB9]'
-            }`}
-        />
-
-        <button
-          type="button"
-          onClick={() => handleZoomStep(-35)}
-          title="Zoom In (+)"
-          className={`p-1.5 rounded-full transition-colors cursor-pointer ${isDark
-              ? 'text-slate-400 hover:text-white hover:bg-white/10'
-              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-            }`}
-          aria-label="Zoom In"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => handleZoomStep(35)}
-          title="Zoom Out (-)"
-          className={`p-1.5 rounded-full transition-colors cursor-pointer ${isDark
-              ? 'text-slate-400 hover:text-white hover:bg-white/10'
-              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-            }`}
-          aria-label="Zoom Out"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </button>
-
-        <div
-          className={`h-4 w-px mx-1 ${isDark ? 'bg-white/15' : 'bg-[#D5CCB9]'
-            }`}
-        />
-
-        <button
-          type="button"
-          onClick={() => {
-            const bounds = computeGraphBounds(nodesRef.current, clusters);
-            const w =
-              containerRef.current?.clientWidth ||
-              (typeof window !== 'undefined' ? window.innerWidth : 1280);
-            const h =
-              containerRef.current?.clientHeight ||
-              (typeof window !== 'undefined' ? window.innerHeight : 800);
-            const autoDist = computeResponsive3DDistance(w, h, bounds);
-            const autoZoom = computeResponsive2DZoom(w, h, bounds);
-            camSphericalRef.current.phi = 1.44;
-            camSphericalRef.current.theta = 0.05;
-            camSphericalRef.current.goalX = bounds.centerX;
-            camSphericalRef.current.goalY = bounds.centerY;
-            camSphericalRef.current.goalRadius = autoDist;
-            pan2dRef.current.goalPanX = 0;
-            pan2dRef.current.goalPanY = 0;
-            pan2dRef.current.goalZoom = autoZoom;
-            onCameraModeChange('ORBIT');
-            if (onResetEverything) {
-              onResetEverything();
-            } else {
-              onClearSelection?.();
-              onClearFocal?.();
-            }
-          }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${selectedSubgraph.focusNode || focalItem
-              ? isDark
-                ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.35)]'
-                : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] shadow-archival-sm'
-              : isDark
-                ? 'text-slate-400 hover:text-white hover:bg-white/10'
-                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-            }`}
-          title="Reset selection, filters, and camera to show the full graph"
-        >
-          <RotateCcw
-            className={`w-3.5 h-3.5 ${selectedSubgraph.focusNode || focalItem
-                ? isDark
-                  ? 'text-white'
-                  : 'text-[#FBF8F2]'
-                : isDark
-                  ? 'text-cyan-400'
-                  : 'text-[#8C1D22]'
-              }`}
-          />
-          <span>
-            {selectedSubgraph.focusNode || focalItem
-              ? 'Reset Everything'
-              : 'Reset View'}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onAutoRotateChange(!autoRotate)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${autoRotate
-              ? isDark
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
-                : 'bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]'
-              : isDark
-                ? 'text-slate-400 hover:text-white hover:bg-white/10'
-                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-            }`}
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${autoRotate ? 'animate-spin' : ''}`}
-            style={{ animationDuration: '8s' }}
-          />
-          <span>Gentle Spin</span>
-        </button>
-      </div>
-
-      {/* Mobile Bottom Camera Dock */}
-      <div
-        className={`sm:hidden absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 z-20 flex items-center justify-between gap-1 px-2.5 py-1 rounded-full backdrop-blur-md transition-colors max-w-[calc(100vw-1.5rem)] shadow-lg ${
-          isDark
-            ? 'bg-[#0B101D]/92 border border-white/15 text-slate-200 shadow-[0_8px_24px_rgba(0,0,0,0.6)]'
-            : 'bg-[#FBF8F2]/95 border border-[#B5A892] text-[#52483E] shadow-archival'
-        }`}
-      >
-        <button
-          type="button"
-          onClick={() => onCameraModeChange('ORBIT')}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-            cameraMode === 'ORBIT'
-              ? isDark
-                ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-xs'
-                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : isDark
-                ? 'text-slate-400 hover:text-white'
-                : 'text-[#52483E] hover:text-[#171412]'
-          }`}
-          title="Orbit Camera"
-        >
-          <Compass className="w-3.5 h-3.5" />
-          <span className="text-[11px]">Orbit</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onCameraModeChange('FREE_LOOK')}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-            cameraMode === 'FREE_LOOK'
-              ? isDark
-                ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-xs'
-                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : isDark
-                ? 'text-slate-400 hover:text-white'
-                : 'text-[#52483E] hover:text-[#171412]'
-          }`}
-          title="Pan Camera"
-        >
-          <Eye className="w-3.5 h-3.5" />
-          <span className="text-[11px]">Pan</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onCameraModeChange('FLY_THROUGH')}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-            cameraMode === 'FLY_THROUGH'
-              ? isDark
-                ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-xs'
-                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : isDark
-                ? 'text-slate-400 hover:text-white'
-                : 'text-[#52483E] hover:text-[#171412]'
-          }`}
-          title="Guided Tour"
-        >
-          <Navigation className="w-3.5 h-3.5" />
-          <span className="text-[11px]">Tour</span>
-        </button>
-
-        <div className={`h-4 w-px mx-0.5 ${isDark ? 'bg-white/15' : 'bg-[#D5CCB9]'}`} />
-
-        <button
-          type="button"
-          onClick={() => handleZoomStep(35)}
-          className={`p-1.5 rounded-full transition-colors cursor-pointer ${
-            isDark ? 'text-slate-400 hover:text-white' : 'text-[#52483E] hover:text-[#171412]'
-          }`}
-          title="Zoom Out (-)"
-          aria-label="Zoom Out"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleZoomStep(-35)}
-          className={`p-1.5 rounded-full transition-colors cursor-pointer ${
-            isDark ? 'text-slate-400 hover:text-white' : 'text-[#52483E] hover:text-[#171412]'
-          }`}
-          title="Zoom In (+)"
-          aria-label="Zoom In"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-
-        <div className={`h-4 w-px mx-0.5 ${isDark ? 'bg-white/15' : 'bg-[#D5CCB9]'}`} />
-
-        <button
-          type="button"
-          onClick={() => {
-            const bounds = computeGraphBounds(nodesRef.current, clusters);
-            const w = containerRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 390);
-            const h = containerRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 600);
-            const autoDist = computeResponsive3DDistance(w, h, bounds);
-            const autoZoom = computeResponsive2DZoom(w, h, bounds);
-            camSphericalRef.current.phi = 1.44;
-            camSphericalRef.current.theta = 0.05;
-            camSphericalRef.current.goalX = bounds.centerX;
-            camSphericalRef.current.goalY = bounds.centerY;
-            camSphericalRef.current.goalRadius = autoDist;
-            pan2dRef.current.goalPanX = 0;
-            pan2dRef.current.goalPanY = 0;
-            pan2dRef.current.goalZoom = autoZoom;
-            onCameraModeChange('ORBIT');
-            if (onResetEverything) {
-              onResetEverything();
-            } else {
-              onClearSelection?.();
-              onClearFocal?.();
-            }
-          }}
-          className={`p-1.5 rounded-full transition-colors cursor-pointer ${
-            selectedSubgraph.focusNode || focalItem
-              ? isDark
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-[#B8292F] text-white shadow-xs'
-              : isDark
-                ? 'text-cyan-400 hover:text-cyan-300'
-                : 'text-[#8C1D22] hover:text-[#B8292F]'
-          }`}
-          title="Reset View"
-          aria-label="Reset View"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onAutoRotateChange(!autoRotate)}
-          className={`p-1.5 rounded-full transition-colors cursor-pointer ${
-            autoRotate
-              ? isDark
-                ? 'text-emerald-400 bg-emerald-500/20'
-                : 'text-[#2A6B53] bg-[#E3EFEA]'
-              : isDark
-                ? 'text-slate-400 hover:text-white'
-                : 'text-[#52483E] hover:text-[#171412]'
-          }`}
-          title={autoRotate ? 'Stop Gentle Spin' : 'Start Gentle Spin'}
-          aria-label="Gentle Spin"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '8s' }} />
-        </button>
-      </div>
     </div>
   );
 }

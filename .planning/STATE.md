@@ -1,9 +1,9 @@
 # Project State
 
 ## Current Position
-- **Current Phase:** `07-movie-map-ui-ux-and-palette` (Mikey Guinness Movie Map UI, UX & Luminous Dark Palette Transformation)
-- **Status:** Phase 7 Completed & Verified (`07-01-PLAN.md` [x], `07-02-PLAN.md` [x])
-- **Last Action:** Successfully implemented the complete Mikey Guinness Movie Map UI, UX, and luminous dark color palette transformation across the entire application: obsidian void canvas (`#0A0E17`), luminous cluster glowing nodes, floating glassmorphic nav bar with theme toggle (`Movie Map Dark` vs `Archival Folio`), dark glass filter drawer with territory controls, and sleek movie inspector panel with similar films cards. Production build passed cleanly with zero errors.
+- **Current Phase:** `08-logged-in-graph-and-curation-styling` (Logged-in Full Archive Constellation, Watched/Interested Node Styling & Curation Filters)
+- **Status:** Phase 8 Completed & Verified (`08-01-PLAN.md` [x], `08-02-PLAN.md` [x])
+- **Last Action:** Successfully fixed the empty graph issue on login by defaulting user profiles and auth flows to `FULL_ARCHIVE` instead of `WATCHED_ONLY`, added the `WATCH_STATUS` color mode with emerald green (`#10B981`) and amber gold (`#F59E0B`) tokens, implemented concentric status rings and ambient auras in 2D HTML5 canvas and 3D WebGL Three.js, built a floating Glassmorphic Curation Filter HUD bar (`All`, `Watched`, `Want to Watch`, `Unwatched` with DIM/HIDE toggle), and added curation controls to `LeftSidebar` and `TopNavBar`. Production build passed cleanly with zero errors.
 
 ## Key Decisions
 - **User-Level Profile, Dual Auth & Watched/Interested Persistence (`src/lib/user-profile.ts`, `src/app/api/user-profile/route.ts`, `src/lib/firestore-cache.ts`)**:
