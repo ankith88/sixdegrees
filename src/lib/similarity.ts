@@ -563,7 +563,7 @@ export function evaluateMediaItemFilterMatch(
       item.directors.some((d) => d.toLowerCase().includes(q)) ||
       item.cast.some((c) => c.name.toLowerCase().includes(q)) ||
       item.tropes.some((t) => t.toLowerCase().includes(q)) ||
-      item.genres.some((g) => g.toLowerCase().includes(g));
+      item.genres.some((g) => g.toLowerCase().includes(q));
     if (!match) return false;
   }
 
@@ -705,7 +705,6 @@ export function calculateSimilarity(
         value: trope,
         category: 'TROPE',
         entityType: 'TROPE',
-        entityNodeId: toEntityNodeId('TROPE', trope),
         points: added || 12,
         color: ENTITY_COLORS.TROPE.primary,
       });
@@ -806,7 +805,6 @@ export function calculateSimilarity(
         value: comp,
         category: 'SONIC_VISUAL',
         entityType: 'COMPOSER',
-        entityNodeId: toEntityNodeId('COMPOSER', comp),
         points: 6,
         color: ENTITY_COLORS.COMPOSER.primary,
       });
@@ -824,7 +822,6 @@ export function calculateSimilarity(
         value: dp,
         category: 'SONIC_VISUAL',
         entityType: 'COMPOSER',
-        entityNodeId: toEntityNodeId('COMPOSER', dp),
         points: 4,
         color: ENTITY_COLORS.COMPOSER.primary,
       });
@@ -1506,8 +1503,8 @@ export function buildSpatialGraph({
       mediaId: string
     ) => {
       if (!visibility[type]) return;
-      if (type === 'TROPE' && !isSpecificNarrativeTrope(name)) return;
-      if (type !== 'TROPE' && !isValidPersonName(name)) return;
+      if (type === 'TROPE' || type === 'COMPOSER') return;
+      if (!isValidPersonName(name)) return;
       const id = toEntityNodeId(type, name);
       const existing = entityAcc.get(id);
       if (existing) {
@@ -1547,12 +1544,6 @@ export function buildSpatialGraph({
           actor.billing === 'LEAD' ? 'Lead Role' : 'Supporting Role',
           media.id
         );
-      }
-      for (const trope of media.tropes) {
-        registerEntity('TROPE', trope, 'Narrative Theme', media.id);
-      }
-      for (const comp of media.composers) {
-        registerEntity('COMPOSER', comp, 'Original Score', media.id);
       }
     }
 
@@ -1903,8 +1894,8 @@ export function buildSpatialGraph({
     mediaId: string
   ) => {
     if (!visibility[type]) return;
-    if (type === 'TROPE' && !isSpecificNarrativeTrope(name)) return;
-    if (type !== 'TROPE' && !isValidPersonName(name)) return;
+    if (type === 'TROPE' || type === 'COMPOSER') return;
+    if (!isValidPersonName(name)) return;
     const id = toEntityNodeId(type, name);
     const existing = entityAcc.get(id);
     if (existing) {
@@ -1941,12 +1932,6 @@ export function buildSpatialGraph({
         actor.billing === 'LEAD' ? 'Lead Role' : 'Supporting Role',
         media.id
       );
-    }
-    for (const trope of media.tropes) {
-      registerEntity('TROPE', trope, 'Narrative Theme', media.id);
-    }
-    for (const comp of media.composers) {
-      registerEntity('COMPOSER', comp, 'Original Score', media.id);
     }
   }
 

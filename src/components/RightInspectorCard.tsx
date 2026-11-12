@@ -27,7 +27,11 @@ import {
   StreamingOffer,
 } from '@/lib/types';
 import { getPosterFallbackDataUri } from '@/lib/seed-data';
-import { toEntityNodeId } from '@/lib/similarity';
+import {
+  toEntityNodeId,
+  assignItemSemanticCluster,
+  blendHexColors,
+} from '@/lib/similarity';
 
 interface RightInspectorCardProps {
   inspectedItem: MediaItem | null;
@@ -132,6 +136,19 @@ export function RightInspectorCard({
     return map;
   }, [topRecommendations]);
 
+  // Archival Cluster Kinship & Spatial Sector Telemetry
+  const clusterTelemetry = useMemo(() => {
+    if (!inspectedItem) return null;
+    const { primary, secondary, blendRatio } = assignItemSemanticCluster(inspectedItem, theme);
+    const blendedColor = blendHexColors(primary.color, secondary.color, blendRatio);
+    return {
+      primary,
+      secondary,
+      blendRatio,
+      blendedColor,
+    };
+  }, [inspectedItem, theme]);
+
   const filteredCatalogItems = useMemo(() => {
     const q = catalogQuery.trim().toLowerCase();
     const list = scopedMediaItems.filter((item) => {
@@ -180,12 +197,13 @@ export function RightInspectorCard({
     return (
       <aside
         aria-label="Graph Media Catalogue — All Movies and TV Shows"
-        className={`fixed right-4 top-[4.5rem] bottom-4 w-[396px] max-w-[calc(100vw-2rem)] z-30 rounded-xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-6 duration-200 ease-out ${
+        className={`fixed inset-x-0 bottom-0 top-14 sm:top-[4.5rem] sm:right-4 sm:bottom-4 sm:left-auto sm:w-[396px] sm:max-w-[calc(100vw-2rem)] z-40 sm:z-30 sm:rounded-xl rounded-t-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-6 sm:slide-in-from-right-6 duration-200 ease-out ${
           isDark
-            ? 'bg-[#0B101B]/95 border border-[#1C273C] text-[#F0F4FC] shadow-2xl backdrop-blur-xl'
-            : 'bg-[#FBF8F2] border border-[#B5A892] text-[#171412] shadow-archival'
+            ? 'bg-[#0B101B]/95 border-t sm:border border-[#1C273C] text-[#F0F4FC] shadow-2xl backdrop-blur-xl'
+            : 'bg-[#FBF8F2] border-t sm:border border-[#B5A892] text-[#171412] shadow-archival'
         }`}
       >
+        <div className="sm:hidden w-10 h-1 rounded-full bg-white/20 mx-auto my-1.5 shrink-0" />
         {/* Top Strip */}
         <div className={`px-4 py-2.5 border-b flex items-center justify-between ${
           isDark ? 'bg-[#121A2B] border-[#1C273C]' : 'bg-[#EFE8DA] border-[#D5CCB9]'
@@ -578,29 +596,13 @@ export function RightInspectorCard({
             color: '#B8292F',
             entityNodeId: toEntityNodeId('DIRECTOR', d),
           })),
-          ...inspectedItem.cast.slice(0, 2).map((c) => ({
+          ...inspectedItem.cast.slice(0, 3).map((c) => ({
             id: `focal-cast-${c.name}`,
             prefix: 'Starring',
             value: c.name,
             points: 6,
             color: '#B86B14',
             entityNodeId: toEntityNodeId('ACTOR', c.name),
-          })),
-          ...inspectedItem.composers.map((comp) => ({
-            id: `focal-comp-${comp}`,
-            prefix: 'Score',
-            value: comp,
-            points: 6,
-            color: '#A63A2B',
-            entityNodeId: toEntityNodeId('COMPOSER', comp),
-          })),
-          ...inspectedItem.tropes.slice(0, 3).map((t) => ({
-            id: `focal-trope-${t}`,
-            prefix: 'Theme',
-            value: t,
-            points: 12,
-            color: '#2A6B53',
-            entityNodeId: toEntityNodeId('TROPE', t),
           })),
         ];
 
@@ -653,12 +655,13 @@ export function RightInspectorCard({
   return (
     <aside
       aria-label="Catalogue Notes & Title Inspector"
-      className={`fixed right-4 top-[4.5rem] bottom-4 w-[396px] max-w-[calc(100vw-2rem)] z-30 rounded-xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-6 duration-200 ease-out ${
+      className={`fixed inset-x-0 bottom-0 top-14 sm:top-[4.5rem] sm:right-4 sm:bottom-4 sm:left-auto sm:w-[396px] sm:max-w-[calc(100vw-2rem)] z-40 sm:z-30 sm:rounded-xl rounded-t-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-6 sm:slide-in-from-right-6 duration-200 ease-out ${
         isDark
-          ? 'bg-[#0B101B]/95 border border-[#1C273C] text-[#F0F4FC] shadow-2xl backdrop-blur-xl'
-          : 'bg-[#FBF8F2] border border-[#B5A892] text-[#171412] shadow-archival'
+          ? 'bg-[#0B101B]/95 border-t sm:border border-[#1C273C] text-[#F0F4FC] shadow-2xl backdrop-blur-xl'
+          : 'bg-[#FBF8F2] border-t sm:border border-[#B5A892] text-[#171412] shadow-archival'
       }`}
     >
+      <div className="sm:hidden w-10 h-1 rounded-full bg-white/20 mx-auto my-1.5 shrink-0" />
       {/* Top Strip with Badges, Actions, and Close Button */}
       <div className={`px-4 py-2.5 border-b flex items-center justify-between gap-2 ${
         isDark ? 'bg-[#121A2B] border-[#1C273C]' : 'bg-[#EFE8DA] border-[#D5CCB9]'
@@ -836,7 +839,7 @@ export function RightInspectorCard({
                       {s.sharedConnections[0] && (
                         <div className="mt-1 flex items-center gap-1">
                           <span
-                            className="px-1.5 py-0.2 rounded text-[9px] font-semibold truncate max-w-[170px]"
+                            className="px-1.5 py-0.5 rounded text-[10px] font-semibold truncate max-w-[170px]"
                             style={{
                               backgroundColor: `${s.sharedConnections[0].color}15`,
                               color: s.sharedConnections[0].color,
@@ -993,11 +996,92 @@ export function RightInspectorCard({
         </div>
 
         {/* SYNOPSIS */}
-        <div className="py-4 border-b border-[#D5CCB9]">
-          <p className="text-[13px] text-[#2C2620] leading-relaxed">
+        <div className={`py-4 border-b ${isDark ? 'border-[#1C273C]' : 'border-[#D5CCB9]'}`}>
+          <p className={`text-[13px] leading-relaxed ${isDark ? 'text-[#CBD5E1]' : 'text-[#2C2620]'}`}>
             {inspectedItem.synopsis}
           </p>
         </div>
+
+        {/* CLUSTER KINSHIP & SPATIAL SECTOR TELEMETRY */}
+        {clusterTelemetry && (
+          <section className={`py-4 border-b ${isDark ? 'border-[#1C273C]' : 'border-[#D5CCB9]'}`}>
+            <div className="flex items-baseline justify-between mb-2">
+              <h2 className={`font-heading text-xs font-bold uppercase tracking-wider ${
+                isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'
+              }`}>
+                Cluster Kinship & Sector Telemetry
+              </h2>
+              <span className={`text-[10px] font-tabular font-semibold ${
+                isDark ? 'text-[#00D2FF]' : 'text-[#234B6E]'
+              }`}>
+                Sector [X:{clusterTelemetry.primary.centroid.x} Y:{clusterTelemetry.primary.centroid.y}]
+              </span>
+            </div>
+
+            <div className={`p-3 rounded-lg border ${
+              isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#EFE8DA]/60 border-[#D5CCB9]'
+            }`}>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                    style={{ backgroundColor: clusterTelemetry.blendedColor }}
+                  />
+                  <span className={`font-heading text-xs font-bold ${
+                    isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'
+                  }`}>
+                    {clusterTelemetry.primary.label}
+                  </span>
+                </div>
+                <span
+                  className="px-2 py-0.5 rounded text-[10px] font-bold font-tabular border"
+                  style={{
+                    backgroundColor: `${clusterTelemetry.primary.color}18`,
+                    color: clusterTelemetry.primary.color,
+                    borderColor: `${clusterTelemetry.primary.color}35`,
+                  }}
+                >
+                  {clusterTelemetry.blendRatio > 0.04 && clusterTelemetry.secondary.id !== clusterTelemetry.primary.id
+                    ? `${Math.round((1 - clusterTelemetry.blendRatio) * 100)}% Primary Archetype`
+                    : '100% Primary Archetype'}
+                </span>
+              </div>
+
+              <p className={`text-[11px] leading-relaxed mb-2.5 ${
+                isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'
+              }`}>
+                {clusterTelemetry.primary.description}
+              </p>
+
+              {/* Soft Boundary Blending Telemetry Bar */}
+              {clusterTelemetry.blendRatio > 0.04 && clusterTelemetry.secondary.id !== clusterTelemetry.primary.id && (
+                <div className="space-y-1.5 pt-2 border-t border-dashed border-current/15">
+                  <div className="flex items-center justify-between text-[10px] font-tabular">
+                    <span className={isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}>
+                      Soft Boundary Color Interpolation:
+                    </span>
+                    <span className={`font-semibold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+                      {Math.round((1 - clusterTelemetry.blendRatio) * 100)}% {clusterTelemetry.primary.shortLabel} · {Math.round(clusterTelemetry.blendRatio * 100)}% {clusterTelemetry.secondary.shortLabel}
+                    </span>
+                  </div>
+                  <div
+                    className="h-2 w-full rounded-full overflow-hidden border border-current/20 shadow-xs"
+                    style={{
+                      background: `linear-gradient(90deg, ${clusterTelemetry.primary.color} 0%, ${clusterTelemetry.blendedColor} 50%, ${clusterTelemetry.secondary.color} 100%)`,
+                    }}
+                    role="img"
+                    aria-label="Soft boundary cluster kinship gradient"
+                  />
+                  <div className={`flex justify-between text-[9px] font-tabular ${isDark ? 'text-[#64748B]' : 'text-[#8C8070]'}`}>
+                    <span>{clusterTelemetry.primary.shortLabel}</span>
+                    <span>Kinship Blend</span>
+                    <span>{clusterTelemetry.secondary.shortLabel}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* PROPORTIONAL CRAFT LINEAGE BAR (When comparing to a Focal Selection) */}
         {focalItem && !isFocal && similarity && (
@@ -1159,41 +1243,47 @@ export function RightInspectorCard({
           <h2 className={`font-heading text-sm font-bold mb-2 ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
             {focalItem && !isFocal
               ? `Shared Credits & Themes with ${focalItem.title}`
-              : 'Key Collaborators & Themes'}
+              : 'Key Collaborators'}
           </h2>
 
           <div className="flex flex-wrap gap-1.5">
-            {displayPills.map((pill) => (
-              <button
-                key={pill.id}
-                type="button"
-                onClick={() => {
-                  if (pill.entityNodeId) {
-                    onSelectEntityNode(pill.entityNodeId);
-                  }
-                }}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs border transition-colors text-left cursor-pointer ${
-                  isDark
-                    ? 'bg-[#121A2B] hover:bg-[#162035] border-[#1C273C] text-[#F0F4FC]'
-                    : 'bg-[#EFE8DA] hover:bg-[#E5DEC9] border-[#C8BEAA]'
-                }`}
-              >
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: pill.color }}
-                />
-                <span className={isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}>{pill.prefix}:</span>
-                <span className={`font-semibold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-                  {pill.value}
-                </span>
-                <span
-                  className="text-[11px] font-tabular font-bold ml-0.5"
-                  style={{ color: pill.color }}
+            {displayPills.map((pill) => {
+              const isClickable = Boolean(pill.entityNodeId);
+              return (
+                <button
+                  key={pill.id}
+                  type="button"
+                  disabled={!isClickable}
+                  onClick={() => {
+                    if (pill.entityNodeId) {
+                      onSelectEntityNode(pill.entityNodeId);
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs border transition-colors text-left ${
+                    isClickable ? 'cursor-pointer' : 'cursor-default'
+                  } ${
+                    isDark
+                      ? 'bg-[#121A2B] hover:bg-[#162035] border-[#1C273C] text-[#F0F4FC]'
+                      : 'bg-[#EFE8DA] hover:bg-[#E5DEC9] border-[#C8BEAA]'
+                  }`}
                 >
-                  +{pill.points}
-                </span>
-              </button>
-            ))}
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: pill.color }}
+                  />
+                  <span className={isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}>{pill.prefix}:</span>
+                  <span className={`font-semibold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+                    {pill.value}
+                  </span>
+                  <span
+                    className="text-[11px] font-tabular font-bold ml-0.5"
+                    style={{ color: pill.color }}
+                  >
+                    +{pill.points}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Closest Matches in Graph */}

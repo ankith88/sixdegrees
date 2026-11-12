@@ -26,6 +26,7 @@ import {
   Bookmark,
   Sun,
   Moon,
+  ArrowLeft,
 } from 'lucide-react';
 import { SixDegreesLogo } from './SixDegreesLogo';
 import { PwaInstallButton } from './PwaInstallButton';
@@ -117,6 +118,7 @@ export function TopNavBar({
   const [isSearchingLive, setIsSearchingLive] = useState(false);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -135,9 +137,12 @@ export function TopNavBar({
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
       if (
         dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
+        !dropdownRef.current.contains(target) &&
+        !inputRef.current?.contains(target) &&
+        !mobileInputRef.current?.contains(target)
       ) {
         setSearchOpen(false);
       }
@@ -177,7 +182,7 @@ export function TopNavBar({
       return {
         media: allMediaItems.slice(0, 6),
         entities: nodes
-          .filter((n) => n.type !== 'MOVIE' && n.type !== 'TV')
+          .filter((n) => n.type === 'DIRECTOR' || n.type === 'ACTOR')
           .slice(0, 5),
       };
     }
@@ -193,8 +198,7 @@ export function TopNavBar({
 
     const matchedEntities = nodes.filter(
       (n) =>
-        n.type !== 'MOVIE' &&
-        n.type !== 'TV' &&
+        (n.type === 'DIRECTOR' || n.type === 'ACTOR') &&
         n.label.toLowerCase().includes(q)
     );
 
@@ -253,19 +257,89 @@ export function TopNavBar({
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 h-14 z-40 backdrop-blur-md px-4 flex items-center justify-between gap-3 transition-colors ${
+      className={`sticky top-0 left-0 right-0 z-40 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between gap-2 sm:gap-3 transition-colors pt-[env(safe-area-inset-top,0px)] min-h-[calc(3.5rem+env(safe-area-inset-top,0px))] ${
         theme === 'MOVIE_MAP_DARK'
-          ? 'bg-[#0A0E17]/88 border-b border-white/10 text-[#F0F4FC]'
+          ? 'bg-[#0A0E17]/90 border-b border-white/10 text-[#F0F4FC]'
           : 'bg-[#EFE8DA]/95 border-b border-[#D5CCB9] text-[#171412]'
       }`}
     >
-      {/* LEFT: Mobile Menu Trigger + Brand Mark + Search */}
-      <div className="flex items-center gap-3 min-w-0 flex-1 max-w-xl">
+      {/* MOBILE FULL-WIDTH SEARCH BAR (Active on < sm when searchOpen is true) */}
+      {searchOpen && (
+        <div className="sm:hidden flex items-center gap-2 w-full py-1.5 z-50">
+          <button
+            type="button"
+            onClick={() => {
+              setSearchOpen(false);
+              setQuery('');
+            }}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors shrink-0 cursor-pointer ${
+              theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#141C2C] hover:bg-[#1C263A] border-white/10 text-[#F0F4FC]'
+                : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] border-[#C8BEAA] text-[#171412]'
+            }`}
+            aria-label="Back / Close Search"
+          >
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+          </button>
+
+          <div
+            className={`flex-1 flex items-center gap-2 h-9 px-3 rounded-lg border transition-all ${
+              theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#141C2C] border-[#00D2FF] ring-2 ring-[#00D2FF]/20 text-[#F0F4FC]'
+                : 'bg-[#FBF8F2] border-[#B8292F] ring-2 ring-[#B8292F]/15 text-[#171412]'
+            }`}
+          >
+            {isSearchingLive || isBuildingCluster ? (
+              <Loader2
+                className={`w-3.5 h-3.5 animate-spin shrink-0 ${
+                  theme === 'MOVIE_MAP_DARK' ? 'text-[#00D2FF]' : 'text-[#B8292F]'
+                }`}
+                aria-hidden="true"
+              />
+            ) : (
+              <Search
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  theme === 'MOVIE_MAP_DARK' ? 'text-[#00D2FF]' : 'text-[#B8292F]'
+                }`}
+                aria-hidden="true"
+              />
+            )}
+            <input
+              ref={mobileInputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search films, series, creators, themes..."
+              className={`w-full bg-transparent text-xs focus:outline-none font-normal ${
+                theme === 'MOVIE_MAP_DARK'
+                  ? 'text-[#F0F4FC] placeholder:text-[#6C7D99]'
+                  : 'text-[#171412] placeholder:text-[#6B5E50]'
+              }`}
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('');
+                  mobileInputRef.current?.focus();
+                }}
+                className="p-1 rounded text-[#6B5E50] hover:text-[#171412] cursor-pointer shrink-0"
+                aria-label="Clear search query"
+              >
+                <X className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* LEFT: Mobile Menu Trigger + Brand Mark + Desktop Search */}
+      <div className={`${searchOpen ? 'hidden sm:flex' : 'flex'} items-center gap-2 sm:gap-3 min-w-0 flex-1 max-w-xl`}>
         {onToggleMobileMenu && (
           <button
             type="button"
             onClick={onToggleMobileMenu}
-            className={`lg:hidden relative inline-flex items-center justify-center w-8 h-8 rounded-md border transition-colors cursor-pointer shrink-0 ${
+            className={`lg:hidden relative inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors cursor-pointer shrink-0 ${
               theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#141C2C] hover:bg-[#1C263A] border-white/10 text-[#F0F4FC]'
                 : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] border-[#C8BEAA] text-[#171412]'
@@ -274,7 +348,7 @@ export function TopNavBar({
           >
             <SlidersHorizontal className="w-4 h-4 text-inherit opacity-75" aria-hidden="true" />
             {activeFilterCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#FF3366] text-[#FFFFFF] text-[9px] font-tabular font-bold flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#FF3366] text-[#FFFFFF] text-[10px] font-tabular font-bold flex items-center justify-center">
                 {activeFilterCount}
               </span>
             )}
@@ -290,10 +364,10 @@ export function TopNavBar({
           <SixDegreesLogo theme={theme} />
         </button>
 
-        {/* Minimal Command Search Bar */}
+        {/* Minimal Command Search Bar (Tablet / Desktop inline) */}
         <div
           ref={dropdownRef}
-          className="relative flex-1 min-w-[150px] max-w-sm"
+          className="hidden sm:block relative flex-1 min-w-[150px] max-w-sm"
         >
           <div
             onClick={() => {
@@ -367,12 +441,21 @@ export function TopNavBar({
             )}
           </div>
 
+          {/* Mobile Search Backdrop */}
+          {searchOpen && (
+            <div
+              className="sm:hidden fixed inset-0 top-[calc(3.5rem+env(safe-area-inset-top,0px))] bg-[#0A0E17]/60 backdrop-blur-xs z-40"
+              onClick={() => setSearchOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+
           {/* Search Results Popover */}
           {searchOpen && (
             <div
               role="region"
               aria-label="Search results"
-              className="absolute left-0 right-0 sm:w-[440px] top-11 rounded-xl bg-[#FBF8F2] border border-[#B5A892] shadow-archival p-2.5 max-h-[440px] overflow-y-auto z-50 space-y-2.5"
+              className="fixed sm:absolute inset-x-2 sm:inset-x-auto sm:left-0 sm:right-auto sm:w-[440px] top-[calc(3.5rem+env(safe-area-inset-top,0px)+0.35rem)] sm:top-11 rounded-2xl sm:rounded-xl bg-[#FBF8F2] border border-[#B5A892] shadow-2xl p-2.5 max-h-[calc(85dvh-4rem)] sm:max-h-[440px] overflow-y-auto z-50 space-y-2.5"
             >
               {/* Worldwide Catalog Results */}
               {query.trim().length >= 2 && (
@@ -571,11 +654,11 @@ export function TopNavBar({
                 ))}
               </div>
 
-              {/* Shared Collaborators & Themes */}
+              {/* Shared Collaborators */}
               {localResults.entities.length > 0 && (
                 <div className="pt-1.5 border-t border-[#D5CCB9]">
                   <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#52483E] px-2 py-1">
-                    Collaborators &amp; Themes ({localResults.entities.length})
+                    Collaborators ({localResults.entities.length})
                   </div>
                   {localResults.entities.map((ent) => (
                     <div
@@ -592,12 +675,6 @@ export function TopNavBar({
                         )}
                         {ent.type === 'ACTOR' && (
                           <UserCheck className="w-3.5 h-3.5 text-[#B86B14] shrink-0" aria-hidden="true" />
-                        )}
-                        {ent.type === 'TROPE' && (
-                          <Hash className="w-3.5 h-3.5 text-[#2A6B53] shrink-0" aria-hidden="true" />
-                        )}
-                        {ent.type === 'COMPOSER' && (
-                          <Music className="w-3.5 h-3.5 text-[#A63A2B] shrink-0" aria-hidden="true" />
                         )}
                         <span className="text-xs font-medium text-[#171412] truncate">
                           {ent.label}
@@ -648,10 +725,35 @@ export function TopNavBar({
         })}
       </nav>
 
-      {/* RIGHT: Personal Watched / Interested Graph Toggles (Logged-in Users Only) + User Profile + Counts + Reset View */}
-      <div className="flex items-center gap-1.5 shrink-0">
+      {/* RIGHT: Search Trigger (Mobile) + Personal Lists + Profile + Theme + Catalogue + Reset */}
+      <div className={`${searchOpen ? 'hidden sm:flex' : 'flex'} items-center gap-1.5 shrink-0`}>
+        {/* Mobile Search Trigger Icon Button */}
+        <button
+          type="button"
+          onClick={() => {
+            setSearchOpen(true);
+            setTimeout(() => mobileInputRef.current?.focus(), 60);
+          }}
+          className={`sm:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors cursor-pointer shrink-0 ${
+            theme === 'MOVIE_MAP_DARK'
+              ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] border-white/10'
+              : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border-[#C8BEAA]'
+          }`}
+          aria-label="Search"
+          title="Search or add titles (⌘K)"
+        >
+          <Search className="w-3.5 h-3.5" aria-hidden="true" />
+        </button>
+
+        {/* Compact Personal Watched & Interested Segmented Pill */}
         {activeUser && onGraphScopeChange && (
-          <>
+          <div
+            className={`hidden sm:inline-flex items-center p-0.5 rounded-lg border ${
+              theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#101624] border-white/10'
+                : 'bg-[#E5DEC9]/70 border-[#C8BEAA]'
+            }`}
+          >
             <button
               type="button"
               onClick={() => {
@@ -663,19 +765,17 @@ export function TopNavBar({
                 }
               }}
               aria-pressed={graphScope === 'WATCHED_ONLY'}
-              className={`hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
                 graphScope === 'WATCHED_ONLY'
-                  ? 'bg-[#2A6B53] hover:bg-[#1E563F] text-[#FBF8F2] border-[#1E563F] shadow-archival-sm'
-                  : 'bg-[#FBF8F2] hover:bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                  ? 'bg-[#2A6B53] text-[#FBF8F2] shadow-xs'
+                  : theme === 'MOVIE_MAP_DARK'
+                    ? 'text-[#94A3B8] hover:text-[#F0F4FC] hover:bg-white/5'
+                    : 'text-[#1E563F] hover:bg-[#FBF8F2]'
               }`}
-              title={
-                graphScope === 'WATCHED_ONLY'
-                  ? 'Viewing My Watched Graph — click to return to Full Archive'
-                  : 'Switch 3D/2D constellation to only Movies & TV Shows you have watched'
-              }
+              title="Filter graph to Watched titles"
             >
-              <BookmarkCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span>Watched ({watchedIds.length})</span>
+              <BookmarkCheck className="w-3 h-3" aria-hidden="true" />
+              <span className="font-tabular">{watchedIds.length}</span>
             </button>
 
             <button
@@ -691,47 +791,50 @@ export function TopNavBar({
                 }
               }}
               aria-pressed={graphScope === 'INTERESTED_ONLY'}
-              className={`hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
                 graphScope === 'INTERESTED_ONLY'
-                  ? 'bg-[#234B6E] hover:bg-[#193854] text-[#FBF8F2] border-[#193854] shadow-archival-sm'
-                  : 'bg-[#FBF8F2] hover:bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
+                  ? 'bg-[#234B6E] text-[#FBF8F2] shadow-xs'
+                  : theme === 'MOVIE_MAP_DARK'
+                    ? 'text-[#94A3B8] hover:text-[#F0F4FC] hover:bg-white/5'
+                    : 'text-[#234B6E] hover:bg-[#FBF8F2]'
               }`}
-              title={
-                graphScope === 'INTERESTED_ONLY'
-                  ? 'Viewing My Interested / Want to Watch Graph — click to return to Full Archive'
-                  : 'Switch 3D/2D constellation to your Interested / Want to Watch list'
-              }
+              title="Filter graph to Want to Watch titles"
             >
-              <Bookmark className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span>Interested ({interestedIds.length})</span>
+              <Bookmark className="w-3 h-3" aria-hidden="true" />
+              <span className="font-tabular">{interestedIds.length}</span>
             </button>
-          </>
+          </div>
         )}
 
+        {/* User Profile Button */}
         {onOpenProfileModal && (
           <button
             type="button"
             onClick={onOpenProfileModal}
-            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+            className={`inline-flex items-center justify-center sm:gap-1.5 h-8 w-8 sm:w-auto px-0 sm:px-2 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
               activeUser
-                ? 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#171412] border-[#B5A892] shadow-archival-sm'
-                : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
+                ? theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#141C2C] hover:bg-[#1C263A] text-[#F0F4FC] border-white/15'
+                  : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#171412] border-[#B5A892] shadow-archival-sm'
+                : theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] border-white/10'
+                  : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
             }`}
             title={
               activeUser
-                ? `Signed in as ${activeUser.displayName} (@${activeUser.handle}) — Click to manage profile, watchlist & interested graph`
-                : 'Sign in to access your Watchlist, Interested list, and personal graphs'
+                ? `Signed in as ${activeUser.displayName} (@${activeUser.handle}) — Click to manage profile & lists`
+                : 'Sign in to access your Watchlist and personal graphs'
             }
           >
             {activeUser ? (
               <>
                 <span
-                  className="w-4 h-4 rounded-full text-[9px] font-bold text-[#FBF8F2] flex items-center justify-center shrink-0"
+                  className="w-4 h-4 rounded-full text-[10px] font-bold text-[#FBF8F2] flex items-center justify-center shrink-0"
                   style={{ backgroundColor: activeUser.avatarColor }}
                 >
                   {activeUser.displayName.slice(0, 1).toUpperCase()}
                 </span>
-                <span className="max-w-[96px] truncate hidden md:inline">
+                <span className="max-w-[80px] truncate hidden md:inline">
                   {activeUser.displayName}
                 </span>
               </>
@@ -744,7 +847,7 @@ export function TopNavBar({
           </button>
         )}
 
-        {/* Movie Map Dark vs Archival Folio Theme Toggle */}
+        {/* Theme Toggle (Tactile Icon Button) */}
         {onThemeChange && (
           <button
             type="button"
@@ -753,27 +856,26 @@ export function TopNavBar({
                 theme === 'MOVIE_MAP_DARK' ? 'ARCHIVAL_FOLIO' : 'MOVIE_MAP_DARK'
               )
             }
-            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-semibold border transition-all cursor-pointer shrink-0 ${
               theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#141C2C] hover:bg-[#1C263A] text-[#00D2FF] border-[#00D2FF]/30 shadow-sm'
                 : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#B8292F] border-[#C8BEAA]'
             }`}
+            aria-label={
+              theme === 'MOVIE_MAP_DARK'
+                ? 'Switch to Archival Folio light theme'
+                : 'Switch to Movie Map dark theme'
+            }
             title={
               theme === 'MOVIE_MAP_DARK'
-                ? 'Currently in Movie Map Dark Void theme — click to switch to Archival Folio'
-                : 'Currently in Archival Folio theme — click to switch to Movie Map Dark Void'
+                ? 'Switch to Archival Folio theme'
+                : 'Switch to Movie Map Dark theme'
             }
           >
             {theme === 'MOVIE_MAP_DARK' ? (
-              <>
-                <Moon className="w-3.5 h-3.5 text-[#00D2FF]" aria-hidden="true" />
-                <span className="hidden sm:inline">Movie Map</span>
-              </>
+              <Moon className="w-3.5 h-3.5 text-[#00D2FF]" aria-hidden="true" />
             ) : (
-              <>
-                <Sun className="w-3.5 h-3.5 text-[#B8292F]" aria-hidden="true" />
-                <span className="hidden sm:inline">Folio</span>
-              </>
+              <Sun className="w-3.5 h-3.5 text-[#B8292F]" aria-hidden="true" />
             )}
           </button>
         )}
@@ -783,7 +885,7 @@ export function TopNavBar({
           <button
             type="button"
             onClick={onToggleCatalog}
-            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+            className={`inline-flex items-center justify-center gap-1.5 h-8 px-2 sm:px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer shrink-0 ${
               isCatalogOpen
                 ? theme === 'MOVIE_MAP_DARK'
                   ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40 shadow-[0_0_10px_rgba(0,210,255,0.2)]'
@@ -795,18 +897,19 @@ export function TopNavBar({
             title={isCatalogOpen ? 'Close Catalogue (Esc)' : 'Browse Complete Catalogue'}
           >
             <Film className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-            <span className="hidden sm:inline">Titles</span>
+            <span className="hidden xl:inline">Catalogue</span>
             <span className="font-tabular text-[11px] opacity-75">
               ({matchingMediaCount ?? allMediaItems.length})
             </span>
           </button>
         )}
 
+        {/* Active Focal Filter Pill */}
         {focalItem && (
           <button
             type="button"
             onClick={onClearFocal}
-            className={`hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+            className={`hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
               theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#FF3366]/20 text-[#FF3366] border-[#FF3366]/40 hover:bg-[#FF3366]/30'
                 : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6] hover:bg-[#B8292F] hover:text-[#FBF8F2]'
@@ -814,11 +917,12 @@ export function TopNavBar({
             title="Clear focal filter and return to full archive"
           >
             <Crosshair className="w-3 h-3 shrink-0" aria-hidden="true" />
-            <span className="max-w-[110px] truncate">{focalItem.title}</span>
+            <span className="max-w-[100px] truncate">{focalItem.title}</span>
             <X className="w-3 h-3 shrink-0" aria-hidden="true" />
           </button>
         )}
 
+        {/* Reset Action */}
         <button
           type="button"
           onClick={() => {
@@ -829,7 +933,7 @@ export function TopNavBar({
               onResetPitch();
             }
           }}
-          className={`group flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] ${
+          className={`group inline-flex items-center justify-center sm:gap-1.5 h-8 w-8 sm:w-auto px-0 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] ${
             hasActiveSelection ||
             focalItem ||
             activeFilterCount > 0 ||
@@ -857,7 +961,10 @@ export function TopNavBar({
           </span>
         </button>
 
-        <PwaInstallButton variant="topbar" />
+        {/* PWA Install Button (Compact on Desktop) */}
+        <div className="hidden xl:inline-flex shrink-0">
+          <PwaInstallButton variant="topbar" />
+        </div>
       </div>
     </header>
   );

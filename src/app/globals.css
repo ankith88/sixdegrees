@@ -123,3 +123,17 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #8F816B;
 }
+
+/* Hide scrollbar for clean horizontal mobile swipe rows */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Touch safe manipulation */
+.touch-action-manipulation {
+  touch-action: manipulation;
+}

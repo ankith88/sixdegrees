@@ -48,6 +48,7 @@ import { SEED_MEDIA_ITEMS } from '@/lib/seed-data';
 import {
   buildSpatialGraph,
   calculateSimilarity,
+  computeNearestNeighbors,
   hasConcreteSharedConnection,
   isValidPersonName,
 } from '@/lib/similarity';
@@ -85,7 +86,7 @@ import {
 } from 'lucide-react';
 
 export function SixDegreesApp() {
-  const [theme, setTheme] = useState<AppTheme>('MOVIE_MAP_DARK');
+  const [theme, setTheme] = useState<AppTheme>('ARCHIVAL_FOLIO');
 
   useEffect(() => {
     try {
@@ -97,7 +98,7 @@ export function SixDegreesApp() {
           savedTheme === 'MOVIE_MAP_DARK' ? 'movie-map-dark' : 'archival-folio'
         );
       } else {
-        document.documentElement.setAttribute('data-theme', 'movie-map-dark');
+        document.documentElement.setAttribute('data-theme', 'archival-folio');
       }
     } catch {
       // localStorage may fail in restricted environments
@@ -144,10 +145,10 @@ export function SixDegreesApp() {
   const [visibility, setVisibility] = useState<EntityVisibility>({
     MOVIE: true,
     TV: true,
-    DIRECTOR: true,
-    ACTOR: true,
-    TROPE: true,
-    COMPOSER: true,
+    DIRECTOR: false,
+    ACTOR: false,
+    TROPE: false,
+    COMPOSER: false,
   });
 
   const [cameraMode, setCameraMode] = useState<CameraMode>('ORBIT');
@@ -686,30 +687,45 @@ export function SixDegreesApp() {
     );
   }, [focalItem, inspectedItem, preset, rankedMatches]);
 
-  // Recommendations for the right inspector panel — strictly require a concrete shared connection
+  // Precomputed nearest neighbors cache (top 20 nearest neighbors per title in 100-point vector space)
+  const nearestNeighborsMap = useMemo(() => {
+    return computeNearestNeighbors(mediaLibrary, preset);
+  }, [mediaLibrary, preset]);
+
+  // Recommendations for the right inspector panel — top 20 nearest neighbors from 100-point craft rubric
   const inspectorRecommendations = useMemo(() => {
-    if (!focalItem && inspectedItem) {
-      return mediaLibrary
-        .filter((m) => m.id !== inspectedItem.id)
+    const targetItem = inspectedItem || focalItem;
+    if (!targetItem) return [];
+
+    const neighborIds = nearestNeighborsMap.get(targetItem.id) || [];
+    const itemMap = new Map(mediaLibrary.map((m) => [m.id, m]));
+
+    if (neighborIds.length > 0) {
+      return neighborIds
+        .map((id) => itemMap.get(id))
+        .filter((m): m is MediaItem => Boolean(m))
         .map((m) => ({
           item: m,
-          similarity: calculateSimilarity(inspectedItem, m, preset),
+          similarity: calculateSimilarity(targetItem, m, preset),
         }))
-        .filter(
-          ({ similarity }) =>
-            hasConcreteSharedConnection(similarity) &&
-            similarity.totalScore >= forceSettings.matchThreshold
-        )
         .sort((a, b) => b.similarity.totalScore - a.similarity.totalScore);
     }
-    return rankedMatches;
+
+    return mediaLibrary
+      .filter((m) => m.id !== targetItem.id)
+      .map((m) => ({
+        item: m,
+        similarity: calculateSimilarity(targetItem, m, preset),
+      }))
+      .filter((e) => e.similarity.totalScore > 0)
+      .sort((a, b) => b.similarity.totalScore - a.similarity.totalScore)
+      .slice(0, 20);
   }, [
-    focalItem,
     inspectedItem,
+    focalItem,
+    nearestNeighborsMap,
     mediaLibrary,
     preset,
-    rankedMatches,
-    forceSettings.matchThreshold,
   ]);
 
   // Filtered media items for the right catalogue index (respects personal graphScope)
@@ -791,7 +807,12 @@ export function SixDegreesApp() {
     if (mediaFilter !== 'ALL') count += 1;
     if (preset !== 'VIBE_TROPES') count += 1;
     if (forceSettings.matchThreshold !== 15) count += 1;
-    if (Object.values(visibility).some((v) => !v)) count += 1;
+    const isCustomVisibility =
+      !visibility.MOVIE ||
+      !visibility.TV ||
+      Boolean(visibility.DIRECTOR) ||
+      Boolean(visibility.ACTOR);
+    if (isCustomVisibility) count += 1;
     return count;
   }, [focalId, mediaFilter, preset, forceSettings.matchThreshold, visibility]);
 
@@ -834,10 +855,10 @@ export function SixDegreesApp() {
     setVisibility({
       MOVIE: true,
       TV: true,
-      DIRECTOR: true,
-      ACTOR: true,
-      TROPE: true,
-      COMPOSER: true,
+      DIRECTOR: false,
+      ACTOR: false,
+      TROPE: false,
+      COMPOSER: false,
     });
   }, []);
 
@@ -1017,10 +1038,10 @@ export function SixDegreesApp() {
     setVisibility({
       MOVIE: true,
       TV: true,
-      DIRECTOR: true,
-      ACTOR: true,
-      TROPE: true,
-      COMPOSER: true,
+      DIRECTOR: false,
+      ACTOR: false,
+      TROPE: false,
+      COMPOSER: false,
     });
     setGraphFilters({
       selectedGenres: [],
@@ -1496,12 +1517,12 @@ export function SixDegreesApp() {
   }, []);
 
   return (
-    <div className={`relative w-screen h-screen overflow-hidden flex flex-col ${
+    <div className={`relative w-full h-[100dvh] overflow-hidden flex flex-col ${
       theme === 'MOVIE_MAP_DARK'
         ? 'movie-map-dark-surface bg-[#0A0E17] text-[#F0F4FC]'
         : 'archival-folio-surface bg-[#F6F1E7] text-[#171412]'
     }`}>
-      {/* A. Top Navigation Bar (h-14, fixed) */}
+      {/* A. Top Navigation Bar (sticky header with safe-area support) */}
       <TopNavBar
         theme={theme}
         onThemeChange={handleThemeChange}
@@ -1543,8 +1564,8 @@ export function SixDegreesApp() {
         onToggleCatalog={() => setIsCatalogOpen((prev) => !prev)}
       />
 
-      {/* Main Workspace Below Fixed Top Bar */}
-      <div className="pt-14 flex-1 flex overflow-hidden relative">
+      {/* Main Workspace Below Top Bar */}
+      <div className="flex-1 flex overflow-hidden relative">
         {/* B. Left Curatorial Rail */}
         <LeftSidebar
           theme={theme}
@@ -1597,12 +1618,12 @@ export function SixDegreesApp() {
         />
 
         {/* C. Central 3D/2D Constellation, Critical Ledger, or Watch Next Suggestion Studio */}
-        <main className="flex-1 relative h-[calc(100vh-3.5rem)] overflow-hidden">
+        <main className="flex-1 relative h-full overflow-hidden">
           {/* Catalog Update Status Banner */}
           {(isBuildingCluster ||
             isFetchingLiveSuggestions ||
             liveStatusToast) && (
-            <div className={`absolute top-16 right-[424px] z-30 flex items-center gap-2 px-3.5 py-2 rounded-lg border text-xs font-medium ${
+            <div className={`absolute top-4 sm:top-16 right-4 sm:right-[424px] z-30 flex items-center gap-2 px-3.5 py-2 rounded-lg border text-xs font-medium max-w-[calc(100vw-2rem)] truncate ${
               theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#121A2B] border-[#1C273C] text-[#F0F4FC] shadow-2xl backdrop-blur-md'
                 : 'bg-[#FBF8F2] border-[#B5A892] shadow-archival text-[#171412]'

@@ -703,7 +703,6 @@ export function computeWatchSuggestions(
         type: 'TROPE',
         color: ENTITY_COLORS.TROPE.primary,
         points: 24,
-        entityNodeId: toEntityNodeId('TROPE', mt),
       });
     }
 
@@ -755,7 +754,6 @@ export function computeWatchSuggestions(
           type: 'TROPE',
           color: ENTITY_COLORS.TROPE.primary,
           points: 12,
-          entityNodeId: toEntityNodeId('TROPE', trope),
         });
       }
       if (candidate.directors[0]) {

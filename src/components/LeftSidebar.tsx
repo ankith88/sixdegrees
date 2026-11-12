@@ -18,6 +18,9 @@ import {
   User,
   Orbit,
   Sparkles,
+  ChevronDown,
+  ChevronUp,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   AppTheme,
@@ -143,8 +146,9 @@ export function LeftSidebar({
   theme = 'MOVIE_MAP_DARK',
 }: LeftSidebarProps) {
   const isDark = theme === 'MOVIE_MAP_DARK';
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [keywordSearch, setKeywordSearch] = useState('');
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   const presets: Array<{
     id: GravityPreset;
@@ -205,18 +209,6 @@ export function LeftSidebar({
       label: 'Actors & Cast',
       shapeLabel: '5-Point Cast Star',
       color: '#B86B14',
-    },
-    {
-      type: 'TROPE',
-      label: 'Specific Themes',
-      shapeLabel: 'Open Story Tome',
-      color: '#2A6B53',
-    },
-    {
-      type: 'COMPOSER',
-      label: 'Score & Camera',
-      shapeLabel: 'Harmonic Eighth Note',
-      color: '#A63A2B',
     },
   ];
 
@@ -443,8 +435,13 @@ export function LeftSidebar({
     return counts;
   }, [nodes]);
 
-  const activeLayersCount = Object.values(visibility).filter(Boolean).length;
-  const hasAnyHiddenLayer = activeLayersCount < 6;
+  const activeLayersCount = entityToggles.filter((item) => visibility[item.type]).length;
+  const isCustomVisibility =
+    !visibility.MOVIE ||
+    !visibility.TV ||
+    Boolean(visibility.DIRECTOR) ||
+    Boolean(visibility.ACTOR);
+  const hasAnyHiddenLayer = isCustomVisibility;
   const allGenresList = React.useMemo(() => {
     const set = new Set<string>();
     for (const n of nodes) {
@@ -678,14 +675,14 @@ export function LeftSidebar({
             <button
               type="button"
               onClick={onCloseMobile}
-              className={`lg:hidden inline-flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer ${
+              className={`lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors cursor-pointer ${
                 isDark
-                  ? 'text-[#94A3B8] hover:text-[#F0F4FC] hover:bg-[#162035]'
-                  : 'text-[#52483E] hover:text-[#171412] hover:bg-[#E5DEC9]'
+                  ? 'text-[#94A3B8] hover:text-[#F0F4FC] bg-[#141C2C] hover:bg-[#1C263A] border-white/10'
+                  : 'text-[#52483E] hover:text-[#171412] bg-[#FBF8F2] hover:bg-[#E5DEC9] border-[#C8BEAA]'
               }`}
               aria-label="Close Menu"
             >
-              <X className="w-3.5 h-3.5" aria-hidden="true" />
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           )}
         </div>
@@ -695,813 +692,51 @@ export function LeftSidebar({
       <div className={`divide-y overflow-y-auto flex-1 ${
         isDark ? 'divide-[#1C273C]' : 'divide-[#D5CCB9]'
       }`}>
-        {/* 0. Personal Profile & My Watched / Interested Graphs */}
-        <section className={`px-4 py-4 space-y-2.5 ${isDark ? 'bg-[#121A2B]/40' : 'bg-[#FBF8F2]/65'}`}>
-          <div className="flex items-center justify-between gap-2">
-            <h3 className={`font-heading text-[15px] font-bold flex items-center gap-1.5 ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-              <Bookmark
-                className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'}`}
+        {/* 0. Focal Title Anchor (when active) */}
+        {focalItem && (
+          <section className={`px-4 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
+            isDark ? 'bg-[#FF3366]/10 border-[#1C273C]' : 'bg-[#F5E4E4]/60 border-[#D5CCB9]'
+          }`}>
+            <div className="flex items-center gap-2 min-w-0">
+              <Crosshair
+                className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`}
                 aria-hidden="true"
               />
-              <span>Personal Graphs</span>
-            </h3>
-            {activeUser && (
-              <div className="flex items-center gap-1">
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-tabular font-semibold border ${
-                  isDark
-                    ? 'bg-[#00D2FF]/15 text-[#00D2FF] border-[#00D2FF]/30'
-                    : 'bg-[#E3EFEA] text-[#2A6B53] border-[#B4D4C7]'
-                }`}>
-                  {watchedCount}W
-                </span>
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-tabular font-semibold border ${
-                  isDark
-                    ? 'bg-[#FF3366]/15 text-[#FF3366] border-[#FF3366]/30'
-                    : 'bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
-                }`}>
-                  {interestedCount}I
-                </span>
+              <div className="min-w-0">
+                <div className={`font-heading text-xs font-bold truncate ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+                  {focalItem.title}
+                </div>
+                <div className={`text-[10px] ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                  Focal anchor ({focalItem.year})
+                </div>
               </div>
-            )}
-          </div>
-
-          {onOpenProfileModal && (
+            </div>
             <button
               type="button"
-              onClick={onOpenProfileModal}
-              className={`w-full py-2 px-2.5 rounded-lg border flex items-center justify-between gap-2 text-left transition-colors cursor-pointer ${
+              onClick={onClearFocal}
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer shrink-0 border ${
                 isDark
-                  ? 'bg-[#121A2B] hover:bg-[#162035] border-[#1C273C]'
-                  : 'bg-[#EFE8DA] hover:bg-[#E5DEC9] border-[#C8BEAA]'
+                  ? 'bg-[#121A2B] hover:bg-[#FF3366] text-[#94A3B8] hover:text-[#0A0E17] border-[#1C273C]'
+                  : 'bg-[#FBF8F2] hover:bg-[#B8292F] text-[#52483E] hover:text-[#FBF8F2] border-[#C8BEAA]'
               }`}
             >
-              <div className="flex items-center gap-2 min-w-0">
-                {activeUser ? (
-                  <span
-                    className="w-6 h-6 rounded-full text-[10px] font-bold text-[#FBF8F2] flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: activeUser.avatarColor }}
-                  >
-                    {activeUser.displayName.slice(0, 2).toUpperCase()}
-                  </span>
-                ) : (
-                  <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-[#00D2FF]/20 text-[#00D2FF]' : 'bg-[#B8292F]/15 text-[#B8292F]'
-                  }`}>
-                    <User className="w-3.5 h-3.5" aria-hidden="true" />
-                  </span>
-                )}
-                <div className="min-w-0">
-                  <div className={`text-xs font-bold truncate ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-                    {activeUser
-                      ? activeUser.displayName
-                      : 'Sign In to Unlock Lists'}
-                  </div>
-                  <div className={`text-[10px] truncate ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                    {activeUser
-                      ? `@${activeUser.handle} · Watchlist & Interested`
-                      : 'Access Watched & Interested graphs'}
-                  </div>
-                </div>
-              </div>
-              <span className={`text-[10px] font-semibold shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'}`}>
-                {activeUser ? 'Manage' : 'Sign In'}
-              </span>
+              Show All
             </button>
-          )}
+          </section>
+        )}
 
-          {activeUser && onGraphScopeChange && (
-            <div className="space-y-1 pt-0.5">
-              <div className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                Constellation Source
-              </div>
-              <div
-                role="group"
-                aria-label="Constellation graph scope"
-                className={`grid grid-cols-1 gap-1 p-1 rounded border ${
-                  isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
-                }`}
-              >
-                {(
-                  [
-                    {
-                      id: 'FULL_ARCHIVE',
-                      label: 'Full Archive Catalog',
-                      icon: Layers,
-                    },
-                    {
-                      id: 'WATCHED_ONLY',
-                      label: `My Watched Graph (${watchedCount})`,
-                      icon: Orbit,
-                    },
-                    {
-                      id: 'INTERESTED_ONLY',
-                      label: `My Interested Graph (${interestedCount})`,
-                      icon: Bookmark,
-                    },
-                    {
-                      id: 'WATCHED_AND_INTERESTED',
-                      label: `Watched + Interested (${watchedCount + interestedCount})`,
-                      icon: Orbit,
-                    },
-                    {
-                      id: 'WATCHED_PLUS_SUGGESTIONS',
-                      label: 'Watched + Top Suggestions',
-                      icon: Sparkles,
-                    },
-                  ] as const
-                ).map((sc) => {
-                  const Icon = sc.icon;
-                  const active = graphScope === sc.id;
-                  return (
-                    <button
-                      key={sc.id}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => onGraphScopeChange(sc.id)}
-                      className={`flex items-center justify-between gap-2 py-1.5 px-2.5 rounded text-xs font-semibold transition-all cursor-pointer ${
-                        active
-                          ? isDark
-                            ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
-                            : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                          : isDark
-                            ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
-                            : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                      }`}
-                    >
-                      <span className="flex items-center gap-1.5 truncate">
-                        <Icon
-                          className={`w-3.5 h-3.5 shrink-0 ${
-                            active
-                              ? isDark ? 'text-[#00D2FF]' : 'text-[#2A6B53]'
-                              : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
-                          }`}
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{sc.label}</span>
-                      </span>
-                      {active && (
-                        <Check
-                          className={`w-3 h-3 shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#2A6B53]'}`}
-                          aria-hidden="true"
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {onOpenSuggestions && (
-            <button
-              type="button"
-              onClick={onOpenSuggestions}
-              className={`w-full py-2 px-3 rounded text-xs font-semibold border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
-                isSuggestMode
-                  ? isDark
-                    ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
-                    : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
-                  : isDark
-                    ? 'bg-[#00D2FF] hover:bg-[#00B4DB] text-[#0A0E17] font-bold border-[#00D2FF] shadow-[0_0_12px_rgba(0,210,255,0.3)]'
-                    : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22] shadow-archival-sm'
-              }`}
-            >
-              <Bookmark className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>
-                {isSuggestMode
-                  ? 'Suggestion Studio Active'
-                  : 'Open Watch Suggestions'}
-              </span>
-            </button>
-          )}
-
-          {onSuggestByGenre && (
-            <div className="pt-0.5 flex items-center flex-wrap gap-1">
-              {(
-                ['Sci-Fi', 'Thriller', 'Mystery', 'Drama', 'Crime'] as const
-              ).map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => onSuggestByGenre(g)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
-                    isDark
-                      ? 'bg-[#121A2B] hover:bg-[#00D2FF]/20 text-[#94A3B8] hover:text-[#00D2FF] border-[#1C273C] hover:border-[#00D2FF]/40'
-                      : 'bg-[#FBF8F2] hover:bg-[#234B6E] text-[#52483E] hover:text-[#FBF8F2] border border-[#C8BEAA] hover:border-[#234B6E]'
-                  }`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* 1. Scope & Media Format */}
-        <section className="px-4 py-4 space-y-3">
-          {focalItem && (
-            <div className="pb-3 border-b border-[#D5CCB9] flex items-center justify-between gap-2">
-              <div className="flex items-start gap-2 min-w-0">
-                <Crosshair
-                  className="w-3.5 h-3.5 text-[#B8292F] shrink-0 mt-0.5"
-                  aria-hidden="true"
-                />
-                <div className="min-w-0">
-                  <div className="font-heading text-sm font-bold text-[#171412] truncate">
-                    {focalItem.title}
-                  </div>
-                  <div className="text-[11px] text-[#52483E]">
-                    Centered focal title ({focalItem.year})
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onClearFocal}
-                className="px-2 py-1 rounded text-[11px] font-semibold bg-[#FBF8F2] hover:bg-[#B8292F] text-[#171412] hover:text-[#FBF8F2] border border-[#C8BEAA] hover:border-[#8C1D22] transition-colors cursor-pointer shrink-0"
-              >
-                Show All
-              </button>
-            </div>
-          )}
-
-          {/* MOVIE MAP REA: GALAXY & NODE STYLE SECTION */}
-          <div className={`space-y-2.5 pb-3 border-b ${isDark ? 'border-[#1C273C]' : 'border-[#D5CCB9]'}`}>
-            <div className="flex items-baseline justify-between">
-              <h3 className={`font-heading text-[15px] font-bold flex items-center gap-1.5 ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-                <Orbit className={`w-3.5 h-3.5 ${isDark ? 'text-[#00D2FF]' : 'text-[#234B6E]'}`} aria-hidden="true" />
-                <span>Galaxy Projection</span>
-              </h3>
-              <span className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
-                {layoutMode === 'SEMANTIC_GALAXY' ? 'Themes & Vibe' : 'Cast & Crew'}
-              </span>
-            </div>
-
-            {/* Layout Mode: Constellation vs Semantic Galaxy */}
-            <div
-              role="group"
-              aria-label="Graph layout projection"
-              className={`grid grid-cols-2 gap-1 p-1 rounded border ${
-                isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => onLayoutModeChange?.('FORCE_CONSTELLATION')}
-                className={`py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  layoutMode === 'FORCE_CONSTELLATION'
-                    ? isDark
-                      ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
-                      : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                    : isDark
-                      ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
-                      : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                }`}
-              >
-                <Compass className={`w-3 h-3 ${isDark ? 'text-[#00D2FF]' : 'text-[#234B6E]'}`} />
-                <span>Constellation</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onLayoutModeChange?.('SEMANTIC_GALAXY')}
-                className={`py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  layoutMode === 'SEMANTIC_GALAXY'
-                    ? isDark
-                      ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
-                      : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                    : isDark
-                      ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
-                      : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                }`}
-              >
-                <Sparkles className={`w-3 h-3 ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`} />
-                <span>Semantic Galaxy</span>
-              </button>
-            </div>
-
-            {/* Label Display Mode (Auto, All, Off) */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                  Canvas Labels
-                </label>
-                <span className={`text-[10px] font-mono ${isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'}`}>Press 'L'</span>
-              </div>
-              <div className={`grid grid-cols-3 gap-1 p-1 rounded border ${
-                isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
-              }`}>
-                {(
-                  [
-                    { id: 'AUTO', label: 'Auto' },
-                    { id: 'ALL', label: 'All Titles' },
-                    { id: 'OFF', label: 'Hidden' },
-                  ] as const
-                ).map((l) => (
-                  <button
-                    key={l.id}
-                    type="button"
-                    onClick={() => onLabelModeChange?.(l.id)}
-                    className={`py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
-                      labelMode === l.id
-                        ? isDark
-                          ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
-                          : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                        : isDark
-                          ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
-                          : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                    }`}
-                  >
-                    {l.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Territory Contours Toggle for 2D Galaxy Mode */}
-            {graphFilters && onGraphFiltersChange && (
-              <div className="flex items-center justify-between pt-1">
-                <div>
-                  <div className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                    Territory Contours
-                  </div>
-                  <div className={`text-[10px] ${isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'}`}>
-                    Watercolor halos in 2D Galaxy
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onGraphFiltersChange({
-                      ...graphFilters,
-                      showTerritories: graphFilters.showTerritories === false,
-                    })
-                  }
-                  className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
-                    graphFilters.showTerritories !== false
-                      ? isDark
-                        ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
-                        : 'bg-[#E3EFEA] text-[#1E563F] border-[#B4D4C7]'
-                      : isDark
-                        ? 'bg-[#121A2B] text-[#64748B] border-[#1C273C]'
-                        : 'bg-[#E5DEC9] text-[#6B5E50] border-[#C8BEAA]'
-                  }`}
-                >
-                  {graphFilters.showTerritories !== false ? 'On' : 'Off'}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* MOVIE MAP REA: MULTI-FACETED FILTER CONTROLS */}
-          {graphFilters && onGraphFiltersChange && (
-            <div className={`space-y-3 pb-3 border-b ${isDark ? 'border-[#1C273C]' : 'border-[#D5CCB9]'}`}>
-              <div className="flex items-baseline justify-between">
-                <h3 className={`font-heading text-[15px] font-bold flex items-center gap-1.5 ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-                  <Compass className={`w-3.5 h-3.5 ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`} aria-hidden="true" />
-                  <span>Map Filters</span>
-                </h3>
-                <span className={`text-xs font-tabular font-bold ${isDark ? 'text-[#00D2FF]' : 'text-[#2A6B53]'}`}>
-                  {matchingMediaCount !== undefined ? matchingMediaCount : totalMediaCount} of {totalMediaCount}
-                </span>
-              </div>
-
-              {/* Watched / Want to Watch Filter */}
-              <div className="space-y-1">
-                <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                  Watched Status
-                </label>
-                <div className={`grid grid-cols-4 gap-1 p-1 rounded border ${
-                  isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
-                }`}>
-                  {(
-                    [
-                      { id: 'ALL', label: 'All' },
-                      { id: 'WATCHED', label: 'Watched' },
-                      { id: 'UNWATCHED', label: 'Unwatched' },
-                      { id: 'INTERESTED', label: 'Want Watch' },
-                    ] as const
-                  ).map((wf) => (
-                    <button
-                      key={wf.id}
-                      type="button"
-                      onClick={() =>
-                        onGraphFiltersChange({
-                          ...graphFilters,
-                          watchedFilter: wf.id,
-                        })
-                      }
-                      className={`py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
-                        graphFilters.watchedFilter === wf.id
-                          ? isDark
-                            ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
-                            : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                          : isDark
-                            ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
-                            : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                      }`}
-                    >
-                      {wf.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Semantic Cluster Filter Chips */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                    Semantic Cluster Focus
-                  </label>
-                  {graphFilters.activeClusterId && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onGraphFiltersChange({
-                          ...graphFilters,
-                          activeClusterId: null,
-                        })
-                      }
-                      className={`text-[10px] hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`}
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pr-1">
-                  {SEMANTIC_CLUSTER_DEFINITIONS.map((c) => {
-                    const isSelected = graphFilters.activeClusterId === c.id;
-                    const clusterColor = isDark
-                      ? MOVIE_MAP_DARK_CLUSTER_COLORS[c.id]?.color || c.color
-                      : c.color;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() =>
-                          onGraphFiltersChange({
-                            ...graphFilters,
-                            activeClusterId: isSelected ? null : c.id,
-                          })
-                        }
-                        style={{
-                          backgroundColor: isSelected ? clusterColor : isDark ? '#121A2B' : '#FBF8F2',
-                          color: isSelected ? '#0A0E17' : isDark ? '#F0F4FC' : '#171412',
-                          borderColor: isSelected ? clusterColor : isDark ? '#1C273C' : '#C8BEAA',
-                        }}
-                        className="px-2 py-0.5 rounded text-[10px] font-semibold border flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <span
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{
-                            backgroundColor: isSelected ? '#0A0E17' : clusterColor,
-                          }}
-                        />
-                        <span>{c.shortLabel}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Multi-Select Genres Filter */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-semibold text-[#52483E]">
-                    Filter by Genre ({graphFilters.selectedGenres.length} selected)
-                  </label>
-                  {graphFilters.selectedGenres.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onGraphFiltersChange({
-                          ...graphFilters,
-                          selectedGenres: [],
-                        })
-                      }
-                      className="text-[10px] text-[#B8292F] hover:underline cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
-                  {allGenresList.map((g) => {
-                    const active = graphFilters.selectedGenres.includes(g);
-                    return (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => {
-                          const next = active
-                            ? graphFilters.selectedGenres.filter((item) => item !== g)
-                            : [...graphFilters.selectedGenres, g];
-                          onGraphFiltersChange({
-                            ...graphFilters,
-                            selectedGenres: next,
-                          });
-                        }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
-                          active
-                            ? isDark
-                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/50 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
-                              : 'bg-[#234B6E] text-[#FBF8F2] border-[#234B6E]'
-                            : isDark
-                              ? 'bg-[#121A2B] text-[#94A3B8] hover:text-[#F0F4FC] border-[#1C273C]'
-                              : 'bg-[#FBF8F2] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
-                        }`}
-                      >
-                        {g}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Multi-Select Themes / Tropes (Keywords) */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                    Themes &amp; Keywords ({graphFilters.selectedTropes.length} selected)
-                  </label>
-                  {graphFilters.selectedTropes.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onGraphFiltersChange({
-                          ...graphFilters,
-                          selectedTropes: [],
-                        })
-                      }
-                      className={`text-[10px] hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`}
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search keywords…"
-                  value={keywordSearch}
-                  onChange={(e) => setKeywordSearch(e.target.value)}
-                  className={`w-full px-2 py-1 rounded text-xs focus:outline-none ${
-                    isDark
-                      ? 'bg-[#0B101B] border border-[#1C273C] text-[#F0F4FC] placeholder-[#64748B] focus:border-[#00D2FF]'
-                      : 'bg-[#FBF8F2] border border-[#C8BEAA] text-[#171412] placeholder-[#8F816B] focus:border-[#B8292F]'
-                  }`}
-                />
-                <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pr-1">
-                  {filteredTropes.map((t) => {
-                    const active = graphFilters.selectedTropes.includes(t);
-                    return (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => {
-                          const next = active
-                            ? graphFilters.selectedTropes.filter((item) => item !== t)
-                            : [...graphFilters.selectedTropes, t];
-                          onGraphFiltersChange({
-                            ...graphFilters,
-                            selectedTropes: next,
-                          });
-                        }}
-                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
-                          active
-                            ? isDark
-                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/50 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
-                              : 'bg-[#2A6B53] text-[#FBF8F2] border-[#2A6B53]'
-                            : isDark
-                              ? 'bg-[#121A2B] text-[#94A3B8] hover:text-[#F0F4FC] border-[#1C273C]'
-                              : 'bg-[#FBF8F2] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
-                        }`}
-                      >
-                        {t}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Year Era Slider */}
-              <div className="space-y-1">
-                <div className="flex items-baseline justify-between">
-                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                    Release Year Range
-                  </label>
-                  <span className={`text-xs font-tabular font-bold ${isDark ? 'text-[#00D2FF]' : 'text-[#171412]'}`}>
-                    {graphFilters.yearRange[0]} – {graphFilters.yearRange[1]}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min="1970"
-                    max="2030"
-                    step="1"
-                    value={graphFilters.yearRange[0]}
-                    onChange={(e) =>
-                      onGraphFiltersChange({
-                        ...graphFilters,
-                        yearRange: [
-                          Math.min(parseInt(e.target.value, 10), graphFilters.yearRange[1]),
-                          graphFilters.yearRange[1],
-                        ],
-                      })
-                    }
-                    className={`w-full h-1.5 rounded cursor-pointer ${
-                      isDark ? 'accent-[#00D2FF] bg-[#182338]' : 'accent-[#B8292F] bg-[#D5CCB9]'
-                    }`}
-                  />
-                  <input
-                    type="range"
-                    min="1970"
-                    max="2030"
-                    step="1"
-                    value={graphFilters.yearRange[1]}
-                    onChange={(e) =>
-                      onGraphFiltersChange({
-                        ...graphFilters,
-                        yearRange: [
-                          graphFilters.yearRange[0],
-                          Math.max(parseInt(e.target.value, 10), graphFilters.yearRange[0]),
-                        ],
-                      })
-                    }
-                    className={`w-full h-1.5 rounded cursor-pointer ${
-                      isDark ? 'accent-[#00D2FF] bg-[#182338]' : 'accent-[#B8292F] bg-[#D5CCB9]'
-                    }`}
-                  />
-                </div>
-                <div className="flex gap-1 pt-1">
-                  {(
-                    [
-                      { label: 'All', range: [1970, 2030] },
-                      { label: '2020s', range: [2020, 2030] },
-                      { label: '2010s', range: [2010, 2019] },
-                      { label: '2000s', range: [2000, 2009] },
-                      { label: 'Classic', range: [1970, 1999] },
-                    ] as const
-                  ).map((era) => {
-                    const isMatch =
-                      graphFilters.yearRange[0] === era.range[0] &&
-                      graphFilters.yearRange[1] === era.range[1];
-                    return (
-                      <button
-                        key={era.label}
-                        type="button"
-                        onClick={() =>
-                          onGraphFiltersChange({
-                            ...graphFilters,
-                            yearRange: [era.range[0], era.range[1]],
-                          })
-                        }
-                        className={`flex-1 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
-                          isMatch
-                            ? isDark
-                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
-                              : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
-                            : isDark
-                              ? 'bg-[#121A2B] text-[#94A3B8] border-[#1C273C]'
-                              : 'bg-[#FBF8F2] text-[#6B5E50] border-[#D5CCB9]'
-                        }`}
-                      >
-                        {era.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Minimum IMDb Rating Slider */}
-              <div className="space-y-1">
-                <div className="flex items-baseline justify-between">
-                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                    Minimum Rating
-                  </label>
-                  <span className={`text-xs font-tabular font-bold ${isDark ? 'text-[#FF3366]' : 'text-[#8C1D22]'}`}>
-                    {graphFilters.minImdbRating > 0
-                      ? `IMDb ${graphFilters.minImdbRating.toFixed(1)}+`
-                      : 'Any Rating'}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="9.0"
-                  step="0.5"
-                  value={graphFilters.minImdbRating}
-                  onChange={(e) =>
-                    onGraphFiltersChange({
-                      ...graphFilters,
-                      minImdbRating: parseFloat(e.target.value),
-                    })
-                  }
-                  className={`w-full h-1.5 rounded cursor-pointer ${
-                    isDark ? 'accent-[#FF3366] bg-[#182338]' : 'accent-[#B8292F] bg-[#D5CCB9]'
-                  }`}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <h3 className={`font-heading text-[15px] font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-                Format
-              </h3>
-              <span className={`text-xs font-tabular font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
-                {totalMediaCount} Titles
-              </span>
-            </div>
-
-            <div
-              role="group"
-              aria-label="Media format"
-              className={`grid grid-cols-3 gap-1 p-1 rounded border ${
-                isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
-              }`}
-            >
-              {(
-                [
-                  {
-                    id: 'ALL',
-                    label: 'All',
-                    count: mediaCounts?.all ?? totalMediaCount,
-                    icon: Layers,
-                  },
-                  {
-                    id: 'MOVIE',
-                    label: 'Films',
-                    count: mediaCounts?.movies,
-                    icon: Film,
-                  },
-                  {
-                    id: 'TV',
-                    label: 'Series',
-                    count: mediaCounts?.tv,
-                    icon: Tv,
-                  },
-                ] as const
-              ).map((tab) => {
-                const Icon = tab.icon;
-                const active = mediaFilter === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => onMediaFilterChange(tab.id)}
-                    className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-xs font-semibold transition-all cursor-pointer ${
-                      active
-                        ? isDark
-                          ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
-                          : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                        : isDark
-                          ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
-                          : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-                      <Icon
-                        className={`w-3 h-3 shrink-0 ${
-                          active
-                            ? isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'
-                            : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
-                        }`}
-                        aria-hidden="true"
-                      />
-                      <span className="truncate">{tab.label}</span>
-                    </div>
-                    {tab.count !== undefined && (
-                      <span
-                        className={`text-[10px] font-tabular leading-tight mt-0.5 ${
-                          active
-                            ? isDark ? 'text-[#00D2FF]' : 'text-[#52483E]'
-                            : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
-                        }`}
-                      >
-                        {tab.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        {/* 2. Curatorial Weighting Lens */}
-        <section className="px-4 py-4 space-y-2.5">
+        {/* 1. Curatorial Weighting Lens (Primary Control) */}
+        <section className="px-4 py-3.5 space-y-2">
           <div className="flex items-baseline justify-between">
-            <h3 className={`font-heading text-[15px] font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+            <h3 className={`font-heading text-sm font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
               Curatorial Lens
             </h3>
-            <span className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
+            <span className={`text-[10px] uppercase font-bold tracking-wider ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
               Weighting
             </span>
           </div>
 
-          <div className={`rounded overflow-hidden border divide-y ${
+          <div className={`rounded-lg overflow-hidden border divide-y ${
             isDark ? 'border-[#1C273C] divide-[#1C273C] bg-[#121A2B]' : 'border-[#C8BEAA] divide-[#D5CCB9] bg-[#FBF8F2]'
           }`}>
             {presets.map((p) => {
@@ -1518,17 +753,17 @@ export function LeftSidebar({
                       ? { boxShadow: isDark ? 'inset 3px 0 0 #00D2FF' : 'inset 3px 0 0 #B8292F' }
                       : undefined
                   }
-                  className={`w-full text-left py-2.5 px-3 transition-colors cursor-pointer ${
+                  className={`w-full text-left py-2 px-2.5 transition-colors cursor-pointer ${
                     active
                       ? isDark
                         ? 'bg-[#00D2FF]/15 text-[#00D2FF]'
-                        : 'bg-[#F5E4E4]/55'
+                        : 'bg-[#F5E4E4]/60'
                       : isDark
                         ? 'bg-[#121A2B] hover:bg-[#162035] text-[#94A3B8]'
                         : 'bg-[#FBF8F2] hover:bg-[#EFE8DA]/75 text-[#171412]'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <Icon
                         className={`w-3.5 h-3.5 shrink-0 ${
@@ -1549,7 +784,7 @@ export function LeftSidebar({
                       </span>
                     </div>
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-tabular font-bold border ${
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-tabular font-bold border shrink-0 ${
                         active
                           ? isDark
                             ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
@@ -1562,7 +797,7 @@ export function LeftSidebar({
                       {p.badge}
                     </span>
                   </div>
-                  <p className={`text-[11px] mt-0.5 pl-5.5 leading-snug ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                  <p className={`text-[10px] mt-0.5 pl-5.5 leading-tight ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                     {p.subtitle}
                   </p>
                 </button>
@@ -1571,12 +806,12 @@ export function LeftSidebar({
           </div>
         </section>
 
-        {/* 3. Minimum Affinity Cutoff */}
-        <section className="px-4 py-4 space-y-2.5">
+        {/* 2. Minimum Affinity Cutoff */}
+        <section className="px-4 py-3 space-y-2">
           <div className="flex items-baseline justify-between">
             <label
               htmlFor="slider-threshold"
-              className={`font-heading text-[15px] font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}
+              className={`font-heading text-sm font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}
             >
               Minimum Affinity
             </label>
@@ -1607,7 +842,7 @@ export function LeftSidebar({
             }`}
           />
 
-          <div className="grid grid-cols-4 gap-1 pt-0.5">
+          <div className="grid grid-cols-4 gap-1">
             {([15, 30, 45, 60] as const).map((stepVal) => {
               const isCurrent = forceSettings.matchThreshold === stepVal;
               return (
@@ -1637,11 +872,97 @@ export function LeftSidebar({
           </div>
         </section>
 
-        {/* 4. Visible Sculpture Layers */}
-        <section className="px-4 py-4 space-y-2.5">
+        {/* 3. Media Format */}
+        <section className="px-4 py-3 space-y-2">
           <div className="flex items-baseline justify-between">
-            <h3 className={`font-heading text-[15px] font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
-              Visible Layers
+            <h3 className={`font-heading text-sm font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+              Format
+            </h3>
+            <span className={`text-[11px] font-tabular font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+              {matchingMediaCount !== undefined ? `${matchingMediaCount} of ${totalMediaCount}` : `${totalMediaCount} Titles`}
+            </span>
+          </div>
+
+          <div
+            role="group"
+            aria-label="Media format"
+            className={`grid grid-cols-3 gap-1 p-1 rounded-lg border ${
+              isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+            }`}
+          >
+            {(
+              [
+                {
+                  id: 'ALL',
+                  label: 'All',
+                  count: mediaCounts?.all ?? totalMediaCount,
+                  icon: Layers,
+                },
+                {
+                  id: 'MOVIE',
+                  label: 'Films',
+                  count: mediaCounts?.movies,
+                  icon: Film,
+                },
+                {
+                  id: 'TV',
+                  label: 'Series',
+                  count: mediaCounts?.tv,
+                  icon: Tv,
+                },
+              ] as const
+            ).map((tab) => {
+              const Icon = tab.icon;
+              const active = mediaFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onMediaFilterChange(tab.id)}
+                  className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                    active
+                      ? isDark
+                        ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
+                        : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                      : isDark
+                        ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                        : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Icon
+                      className={`w-3 h-3 shrink-0 ${
+                        active
+                          ? isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'
+                          : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">{tab.label}</span>
+                  </div>
+                  {tab.count !== undefined && (
+                    <span
+                      className={`text-[10px] font-tabular leading-tight mt-0.5 ${
+                        active
+                          ? isDark ? 'text-[#00D2FF]' : 'text-[#52483E]'
+                          : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* 4. Visible Sculpture Layers */}
+        <section className="px-4 py-3 space-y-2">
+          <div className="flex items-baseline justify-between">
+            <h3 className={`font-heading text-sm font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+              Visible Threads
             </h3>
             {hasAnyHiddenLayer && onResetAllVisibility ? (
               <button
@@ -1649,16 +970,16 @@ export function LeftSidebar({
                 onClick={onResetAllVisibility}
                 className={`text-[11px] font-semibold hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#8C1D22]'}`}
               >
-                Show All ({activeLayersCount}/6)
+                Reset ({activeLayersCount}/{entityToggles.length})
               </button>
             ) : (
               <span className={`text-[11px] font-tabular font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
-                {activeLayersCount}/6 Active
+                {activeLayersCount}/{entityToggles.length} Active
               </span>
             )}
           </div>
 
-          <div className={`rounded overflow-hidden border divide-y ${
+          <div className={`rounded-lg overflow-hidden border divide-y ${
             isDark ? 'border-[#1C273C] divide-[#1C273C] bg-[#121A2B]' : 'border-[#C8BEAA] divide-[#D5CCB9] bg-[#FBF8F2]'
           }`}>
             {entityToggles.map((item) => {
@@ -1670,7 +991,7 @@ export function LeftSidebar({
                   type="button"
                   aria-pressed={checked}
                   onClick={() => onToggleVisibility(item.type)}
-                  className={`w-full flex items-center justify-between gap-2 py-2 px-2.5 text-left transition-colors cursor-pointer ${
+                  className={`w-full flex items-center justify-between gap-2 py-1.5 px-2.5 text-left transition-colors cursor-pointer ${
                     checked
                       ? isDark
                         ? 'bg-[#121A2B] hover:bg-[#162035] text-[#F0F4FC]'
@@ -1699,7 +1020,7 @@ export function LeftSidebar({
                       )}
                     </span>
 
-                    <span className={`w-7 h-7 rounded border flex items-center justify-center shrink-0 ${
+                    <span className={`w-6 h-6 rounded border flex items-center justify-center shrink-0 ${
                       isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#EFE8DA]/80 border-[#D5CCB9]'
                     }`}>
                       {renderCategoryShapeIcon(item.type, item.color)}
@@ -1709,14 +1030,11 @@ export function LeftSidebar({
                       <div className="text-xs font-semibold truncate leading-tight">
                         {item.label}
                       </div>
-                      <div className={`text-[10px] truncate leading-tight mt-0.5 ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
-                        {item.shapeLabel}
-                      </div>
                     </div>
                   </div>
 
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[11px] font-tabular font-semibold shrink-0 ${
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-tabular font-semibold shrink-0 ${
                       checked
                         ? isDark ? 'bg-[#182338] text-[#00D2FF]' : 'bg-[#EFE8DA] text-[#171412]'
                         : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
@@ -1730,8 +1048,473 @@ export function LeftSidebar({
           </div>
         </section>
 
-        {/* 5. Install Desktop / Mobile PWA App */}
-        <section className="px-4 py-4">
+        {/* 5. Collapsible Refine Catalog Drawer */}
+        {graphFilters && onGraphFiltersChange && (
+          <section className="px-4 py-3 space-y-2">
+            <button
+              type="button"
+              onClick={() => setFiltersExpanded((prev) => !prev)}
+              className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition-colors cursor-pointer ${
+                hasMovieMapFilters
+                  ? isDark
+                    ? 'bg-[#00D2FF]/10 border-[#00D2FF]/30 text-[#00D2FF]'
+                    : 'bg-[#F5E4E4] border-[#D8B4B6] text-[#8C1D22]'
+                  : isDark
+                    ? 'bg-[#121A2B] hover:bg-[#162035] border-[#1C273C] text-[#F0F4FC]'
+                    : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] border-[#C8BEAA] text-[#171412]'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span className="font-heading text-xs font-bold">Refine Catalog</span>
+                {hasMovieMapFilters && (
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-tabular leading-none ${
+                    isDark ? 'bg-[#00D2FF] text-[#0A0E17]' : 'bg-[#B8292F] text-[#FBF8F2]'
+                  }`}>
+                    Active
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-xs">
+                {filtersExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5 opacity-70" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                )}
+              </div>
+            </button>
+
+            {filtersExpanded && (
+              <div className={`space-y-3 pt-2 pb-1 border-t ${isDark ? 'border-[#1C273C]' : 'border-[#D5CCB9]'}`}>
+                {/* 1. Filter Match Mode & Canvas Behavior Controls */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
+                      Match Logic
+                    </label>
+                    <div className={`grid grid-cols-2 gap-0.5 p-0.5 rounded border ${
+                      isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            matchMode: 'OR',
+                          })
+                        }
+                        className={`py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
+                          graphFilters.matchMode === 'OR'
+                            ? isDark
+                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
+                              : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                            : isDark ? 'text-[#94A3B8] hover:text-[#F0F4FC]' : 'text-[#52483E] hover:text-[#171412]'
+                        }`}
+                        title="Match ANY selected genre or narrative trope"
+                      >
+                        Any (OR)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            matchMode: 'AND',
+                          })
+                        }
+                        className={`py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
+                          graphFilters.matchMode === 'AND'
+                            ? isDark
+                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
+                              : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                            : isDark ? 'text-[#94A3B8] hover:text-[#F0F4FC]' : 'text-[#52483E] hover:text-[#171412]'
+                        }`}
+                        title="Match ALL selected genres and narrative tropes"
+                      >
+                        All (AND)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
+                      Canvas Mode
+                    </label>
+                    <div className={`grid grid-cols-2 gap-0.5 p-0.5 rounded border ${
+                      isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            filterBehavior: 'DIM',
+                          })
+                        }
+                        className={`py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
+                          graphFilters.filterBehavior === 'DIM'
+                            ? isDark
+                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
+                              : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                            : isDark ? 'text-[#94A3B8] hover:text-[#F0F4FC]' : 'text-[#52483E] hover:text-[#171412]'
+                        }`}
+                        title="Ghost-dim non-matching titles to 12% opacity"
+                      >
+                        DIM
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            filterBehavior: 'HIDE',
+                          })
+                        }
+                        className={`py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
+                          graphFilters.filterBehavior === 'HIDE'
+                            ? isDark
+                              ? 'bg-[#FF3366]/20 text-[#FF3366] border border-[#FF3366]/40 shadow-xs'
+                              : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6] shadow-archival-sm'
+                            : isDark ? 'text-[#94A3B8] hover:text-[#F0F4FC]' : 'text-[#52483E] hover:text-[#171412]'
+                        }`}
+                        title="Exclude non-matching titles completely from graph"
+                      >
+                        HIDE
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Watched / Want to Watch Filter */}
+                <div className="space-y-1">
+                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                    Watched Status
+                  </label>
+                  <div className={`grid grid-cols-4 gap-1 p-1 rounded border ${
+                    isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+                  }`}>
+                    {(
+                      [
+                        { id: 'ALL', label: 'All' },
+                        { id: 'WATCHED', label: 'Watched' },
+                        { id: 'UNWATCHED', label: 'Unwatched' },
+                        { id: 'INTERESTED', label: 'Want Watch' },
+                      ] as const
+                    ).map((wf) => (
+                      <button
+                        key={wf.id}
+                        type="button"
+                        onClick={() =>
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            watchedFilter: wf.id,
+                          })
+                        }
+                        className={`py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
+                          graphFilters.watchedFilter === wf.id
+                            ? isDark
+                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
+                              : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                            : isDark
+                              ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                              : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                        }`}
+                      >
+                        {wf.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. Genre Filter */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                      Genres ({graphFilters.selectedGenres.length})
+                    </label>
+                    {graphFilters.selectedGenres.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            selectedGenres: [],
+                          })
+                        }
+                        className={`text-[10px] hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
+                    {allGenresList.map((g) => {
+                      const active = graphFilters.selectedGenres.includes(g);
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => {
+                            const next = active
+                              ? graphFilters.selectedGenres.filter((item) => item !== g)
+                              : [...graphFilters.selectedGenres, g];
+                            onGraphFiltersChange({
+                              ...graphFilters,
+                              selectedGenres: next,
+                            });
+                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
+                            active
+                              ? isDark
+                                ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/50 shadow-xs'
+                                : 'bg-[#234B6E] text-[#FBF8F2] border-[#234B6E]'
+                              : isDark
+                                ? 'bg-[#121A2B] text-[#94A3B8] hover:text-[#F0F4FC] border-[#1C273C]'
+                                : 'bg-[#FBF8F2] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
+                          }`}
+                        >
+                          {g}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. Narrative Themes & Tropes Filter */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                      Narrative Themes ({graphFilters.selectedTropes.length})
+                    </label>
+                    {graphFilters.selectedTropes.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            selectedTropes: [],
+                          })
+                        }
+                        className={`text-[10px] hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
+                    {filteredTropes.map((trope) => {
+                      const active = graphFilters.selectedTropes.includes(trope);
+                      return (
+                        <button
+                          key={trope}
+                          type="button"
+                          onClick={() => {
+                            const next = active
+                              ? graphFilters.selectedTropes.filter((t) => t !== trope)
+                              : [...graphFilters.selectedTropes, trope];
+                            onGraphFiltersChange({
+                              ...graphFilters,
+                              selectedTropes: next,
+                            });
+                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
+                            active
+                              ? isDark
+                                ? 'bg-[#00E599]/20 text-[#00E599] border-[#00E599]/50 shadow-xs'
+                                : 'bg-[#2A6B53] text-[#FBF8F2] border-[#2A6B53]'
+                              : isDark
+                                ? 'bg-[#121A2B] text-[#94A3B8] hover:text-[#F0F4FC] border-[#1C273C]'
+                                : 'bg-[#FBF8F2] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
+                          }`}
+                        >
+                          {trope}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 5. Release Era & Year Range Sliders */}
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                      Release Span
+                    </label>
+                    <span className={`text-[11px] font-tabular font-bold ${isDark ? 'text-[#00D2FF]' : 'text-[#171412]'}`}>
+                      {graphFilters.yearRange[0]}–{graphFilters.yearRange[1]}
+                    </span>
+                  </div>
+                  {/* Era Quick Selectors */}
+                  <div className="flex gap-1">
+                    {(
+                      [
+                        { label: 'All', range: [1970, 2030] },
+                        { label: '2020s', range: [2020, 2030] },
+                        { label: '2010s', range: [2010, 2019] },
+                        { label: '2000s', range: [2000, 2009] },
+                        { label: 'Classic', range: [1970, 1999] },
+                      ] as const
+                    ).map((era) => {
+                      const isMatch =
+                        graphFilters.yearRange[0] === era.range[0] &&
+                        graphFilters.yearRange[1] === era.range[1];
+                      return (
+                        <button
+                          key={era.label}
+                          type="button"
+                          onClick={() =>
+                            onGraphFiltersChange({
+                              ...graphFilters,
+                              yearRange: [era.range[0], era.range[1]],
+                            })
+                          }
+                          className={`flex-1 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
+                            isMatch
+                              ? isDark
+                                ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
+                                : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
+                              : isDark
+                                ? 'bg-[#121A2B] text-[#94A3B8] border-[#1C273C]'
+                                : 'bg-[#FBF8F2] text-[#6B5E50] border-[#D5CCB9]'
+                          }`}
+                        >
+                          {era.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Decade / Year Range Sliders */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between text-[9px] font-tabular">
+                        <span className={isDark ? 'text-[#64748B]' : 'text-[#8C8070]'}>Min Year</span>
+                        <span className={`font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>{graphFilters.yearRange[0]}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1970"
+                        max="2030"
+                        step="1"
+                        value={graphFilters.yearRange[0]}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            yearRange: [Math.min(val, graphFilters.yearRange[1]), graphFilters.yearRange[1]],
+                          });
+                        }}
+                        className={`w-full h-1.5 rounded cursor-pointer ${
+                          isDark ? 'accent-[#00D2FF] bg-[#182338]' : 'accent-[#234B6E] bg-[#D5CCB9]'
+                        }`}
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between text-[9px] font-tabular">
+                        <span className={isDark ? 'text-[#64748B]' : 'text-[#8C8070]'}>Max Year</span>
+                        <span className={`font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>{graphFilters.yearRange[1]}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1970"
+                        max="2030"
+                        step="1"
+                        value={graphFilters.yearRange[1]}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          onGraphFiltersChange({
+                            ...graphFilters,
+                            yearRange: [graphFilters.yearRange[0], Math.max(val, graphFilters.yearRange[0])],
+                          });
+                        }}
+                        className={`w-full h-1.5 rounded cursor-pointer ${
+                          isDark ? 'accent-[#00D2FF] bg-[#182338]' : 'accent-[#234B6E] bg-[#D5CCB9]'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. Rating Slider */}
+                <div className="space-y-1">
+                  <div className="flex items-baseline justify-between">
+                    <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                      Min Rating
+                    </label>
+                    <span className={`text-[11px] font-tabular font-bold ${isDark ? 'text-[#FF3366]' : 'text-[#8C1D22]'}`}>
+                      {graphFilters.minImdbRating > 0
+                        ? `IMDb ${graphFilters.minImdbRating.toFixed(1)}+`
+                        : 'Any'}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="9.0"
+                    step="0.5"
+                    value={graphFilters.minImdbRating}
+                    onChange={(e) =>
+                      onGraphFiltersChange({
+                        ...graphFilters,
+                        minImdbRating: parseFloat(e.target.value),
+                      })
+                    }
+                    className={`w-full h-1.5 rounded cursor-pointer ${
+                      isDark ? 'accent-[#FF3366] bg-[#182338]' : 'accent-[#B8292F] bg-[#D5CCB9]'
+                    }`}
+                  />
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* 6. Personal Profile & Watchlist */}
+        {onOpenProfileModal && (
+          <section className="px-4 py-3 space-y-2">
+            <button
+              type="button"
+              onClick={onOpenProfileModal}
+              className={`w-full py-2 px-2.5 rounded-lg border flex items-center justify-between gap-2 text-left transition-colors cursor-pointer ${
+                isDark
+                  ? 'bg-[#121A2B] hover:bg-[#162035] border-[#1C273C]'
+                  : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] border-[#C8BEAA]'
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {activeUser ? (
+                  <span
+                    className="w-5 h-5 rounded-full text-[10px] font-bold text-[#FBF8F2] flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: activeUser.avatarColor }}
+                  >
+                    {activeUser.displayName.slice(0, 1).toUpperCase()}
+                  </span>
+                ) : (
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                    isDark ? 'bg-[#00D2FF]/20 text-[#00D2FF]' : 'bg-[#B8292F]/15 text-[#B8292F]'
+                  }`}>
+                    <User className="w-3 h-3" aria-hidden="true" />
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <div className={`text-xs font-bold truncate ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+                    {activeUser ? activeUser.displayName : 'Sign In for Lists'}
+                  </div>
+                  <div className={`text-[10px] font-tabular truncate ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                    {activeUser
+                      ? `${watchedCount} Watched · ${interestedCount} Want Watch`
+                      : 'Sync personal watchlist'}
+                  </div>
+                </div>
+              </div>
+              <span className={`text-[10px] font-semibold shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'}`}>
+                {activeUser ? 'Manage' : 'Sign In'}
+              </span>
+            </button>
+          </section>
+        )}
+
+        {/* 7. Install Desktop / Mobile PWA App */}
+        <section className="px-4 py-3">
           <PwaInstallButton variant="sidebar" />
         </section>
       </div>
@@ -1742,7 +1525,7 @@ export function LeftSidebar({
     <>
       <aside
         aria-label="Filters & Lenses"
-        className={`hidden lg:flex w-[268px] shrink-0 h-[calc(100vh-3.5rem)] flex-col z-20 select-none ${
+        className={`hidden lg:flex w-[268px] shrink-0 h-full flex-col z-20 select-none ${
           isDark
             ? 'bg-[#0E1524]/95 border-r border-[#1C273C] text-[#F0F4FC] backdrop-blur-md'
             : 'bg-[#EFE8DA] border-r border-[#D5CCB9] text-[#171412]'
@@ -1763,7 +1546,7 @@ export function LeftSidebar({
             onClick={onCloseMobile}
             aria-hidden="true"
           />
-          <aside className={`relative w-[268px] max-w-[85vw] h-full shadow-2xl flex flex-col z-10 ${
+          <aside className={`relative w-[280px] max-w-[85vw] h-full shadow-2xl flex flex-col z-10 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] ${
             isDark
               ? 'bg-[#0E1524] border-r border-[#1C273C] text-[#F0F4FC]'
               : 'bg-[#EFE8DA] border-r border-[#B5A892] shadow-archival text-[#171412]'

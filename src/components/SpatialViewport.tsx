@@ -20,6 +20,10 @@ import {
   Map as MapIcon,
   Palette,
   Tag,
+  SlidersHorizontal,
+  X,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { SpatialQuadtree } from '@/lib/spatial-index';
 import {
@@ -1407,6 +1411,7 @@ export function SpatialViewport({
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [isNodeKeyOpen, setIsNodeKeyOpen] = useState(false);
   const [localTerritories, setLocalTerritories] = useState(true);
+  const [mobileLensOpen, setMobileLensOpen] = useState(false);
   const showTerritories = graphFilters?.showTerritories ?? localTerritories;
 
   // Refs for mutable access inside animation loop
@@ -2650,8 +2655,12 @@ export function SpatialViewport({
         posAttr.needsUpdate = true;
 
         if (!hasActiveFocus) {
-          entry.material.opacity =
-            entry.link.kind === 'SIMILARITY_DIRECT' ? 0.5 : 0.26;
+          const endpointsMatch = (src.isFilterMatch !== false) && (tgt.isFilterMatch !== false);
+          entry.material.opacity = !endpointsMatch
+            ? 0.03
+            : entry.link.kind === 'SIMILARITY_DIRECT'
+              ? 0.5
+              : 0.26;
           entry.beamMesh.visible = false;
         } else {
           const lit = illuminatedLinkSet.has(entry.link.id);
@@ -3524,356 +3533,69 @@ export function SpatialViewport({
       )}
 
       {/* Top-Left Curatorial Context Pill */}
-      <div className="pointer-events-none absolute top-4 left-4 flex flex-col gap-1.5 z-10">
+      <div className="pointer-events-none absolute top-3 sm:top-4 left-3 sm:left-4 z-10 flex flex-col gap-1.5 max-w-[calc(100vw-1.5rem)]">
         <div className="flex items-center gap-2 flex-wrap">
           <div
-            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs backdrop-blur-md shadow-lg ${theme === 'MOVIE_MAP_DARK'
+            className={`inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs backdrop-blur-md shadow-md sm:shadow-lg ${
+              theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#101624]/90 border border-white/10 text-[#F0F4FC]'
                 : 'bg-[#FBF8F2]/95 border border-[#C8BEAA] shadow-archival-sm text-[#171412]'
-              }`}
+            }`}
           >
             <span
-              className={`w-2 h-2 rounded-full ${focalItem ? 'bg-[#B8292F]' : 'bg-[#2A6B53]'
-                }`}
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                focalItem ? 'bg-[#B8292F]' : 'bg-[#2A6B53]'
+              }`}
             />
-            <span className="text-[#52483E]">
+            <span className="hidden sm:inline text-[#52483E]">
               {focalItem
                 ? 'Centered on:'
                 : graphScope === 'WATCHED_ONLY'
-                  ? `${activeUser ? `${activeUser.displayName}'s` : 'My'} Watched Graph:`
+                  ? 'Watched Graph:'
                   : graphScope === 'INTERESTED_ONLY'
-                    ? `${activeUser ? `${activeUser.displayName}'s` : 'My'} Interested Graph:`
-                    : graphScope === 'WATCHED_AND_INTERESTED'
-                      ? `${activeUser ? `${activeUser.displayName}'s` : 'My'} Watched + Interested:`
-                      : graphScope === 'WATCHED_PLUS_SUGGESTIONS'
-                        ? `${activeUser ? `${activeUser.displayName}'s` : 'My'} Watched + Suggested:`
-                        : 'Archive Index:'}
+                    ? 'Want to Watch:'
+                    : 'Archive:'}
             </span>
-            <strong className="font-heading font-bold text-[#171412]">
+            <strong className="font-heading font-bold text-inherit truncate max-w-[170px] sm:max-w-none">
               {focalItem
                 ? `${focalItem.title} (${focalItem.year})`
-                : graphScope !== 'FULL_ARCHIVE'
-                  ? `${nodes.filter((n) => n.type === 'MOVIE' || n.type === 'TV').length} Personal Titles · ${nodes.filter((n) => n.type !== 'MOVIE' && n.type !== 'TV').length} Shared Bridges`
-                  : `All ${nodes.filter((n) => n.type === 'MOVIE' || n.type === 'TV').length} Movies & TV Shows`}
+                : `${nodes.filter((n) => n.type === 'MOVIE' || n.type === 'TV').length} Titles`}
             </strong>
-          </div>
-
-          {activeUser && graphScope !== 'FULL_ARCHIVE' && onGraphScopeChange && (
-            <div className="pointer-events-auto inline-flex items-center gap-1 p-0.5 rounded bg-[#FBF8F2]/95 border border-[#C8BEAA] shadow-archival-sm">
+            {focalItem && (
               <button
                 type="button"
-                onClick={() => onGraphScopeChange('WATCHED_ONLY')}
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${graphScope === 'WATCHED_ONLY'
-                    ? 'bg-[#2A6B53] text-[#FBF8F2]'
-                    : 'text-[#52483E] hover:text-[#171412]'
-                  }`}
+                onClick={onClearFocal}
+                className="pointer-events-auto p-0.5 rounded-full hover:bg-black/10 transition-colors ml-0.5 cursor-pointer"
+                title="Clear focal title"
               >
-                Watched
-              </button>
-              <button
-                type="button"
-                onClick={() => onGraphScopeChange('INTERESTED_ONLY')}
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${graphScope === 'INTERESTED_ONLY'
-                    ? 'bg-[#234B6E] text-[#FBF8F2]'
-                    : 'text-[#52483E] hover:text-[#171412]'
-                  }`}
-              >
-                Interested
-              </button>
-              <button
-                type="button"
-                onClick={() => onGraphScopeChange('WATCHED_AND_INTERESTED')}
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${graphScope === 'WATCHED_AND_INTERESTED'
-                    ? 'bg-[#B8292F] text-[#FBF8F2]'
-                    : 'text-[#52483E] hover:text-[#171412]'
-                  }`}
-              >
-                Both
-              </button>
-              <button
-                type="button"
-                onClick={() => onGraphScopeChange('WATCHED_PLUS_SUGGESTIONS')}
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${graphScope === 'WATCHED_PLUS_SUGGESTIONS'
-                    ? 'bg-[#2A6B53] text-[#FBF8F2]'
-                    : 'text-[#52483E] hover:text-[#171412]'
-                  }`}
-              >
-                + Suggestions
-              </button>
-              {onOpenProfileModal && (
-                <button
-                  type="button"
-                  onClick={onOpenProfileModal}
-                  className="px-2 py-1 rounded text-[11px] font-semibold text-[#B8292F] hover:bg-[#F5E4E4]/60 transition-colors cursor-pointer"
-                >
-                  + Manage Lists
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => onGraphScopeChange('FULL_ARCHIVE')}
-                className="px-2 py-1 rounded text-[11px] font-semibold text-[#52483E] hover:text-[#171412] transition-colors cursor-pointer"
-              >
-                Full Archive
-              </button>
-            </div>
-          )}
-
-          {((selectedSubgraph.focusNode &&
-            (selectedSubgraph.focusNode.type === 'MOVIE' ||
-              selectedSubgraph.focusNode.type === 'TV')) ||
-            (focalItem && !selectedSubgraph.focusNode)) && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (onResetEverything) {
-                    onResetEverything();
-                  } else {
-                    onClearSelection?.();
-                    onClearFocal?.();
-                  }
-                }}
-                className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm text-xs font-semibold transition-colors cursor-pointer"
-                title="Reset view and show full graph (Esc)"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset (Esc)</span>
+                <X className="w-3 h-3 text-[#B8292F]" />
               </button>
             )}
-        </div>
-        {!selectedSubgraph.focusNode && (
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[#EFE8DA]/90 border border-[#D5CCB9] text-[11px] text-[#52483E]">
-            <span>
-              {graphScope !== 'FULL_ARCHIVE'
-                ? 'Personal Watched Constellation active · Showing your watched movies & TV shows and their shared directors, cast & themes'
-                : 'Click any node to isolate & inspect only its connected nodes · Double-click a title to center the map'}
-            </span>
           </div>
-        )}
+
+          {(focalItem || selectedSubgraph.focusNode) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (onResetEverything) {
+                  onResetEverything();
+                } else {
+                  onClearSelection?.();
+                  onClearFocal?.();
+                }
+              }}
+              className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm text-xs font-semibold transition-colors cursor-pointer"
+              title="Reset view and show full graph (Esc)"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset (Esc)</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Canonical Isolated-View Surface: Persistent Linked Constellation Panel (Shown for Collaborator & Theme bridge nodes; Film/TV nodes open the Right Monograph Inspector) */}
-      {selectedSubgraph.focusNode &&
-        selectedSubgraph.focusNode.type !== 'MOVIE' &&
-        selectedSubgraph.focusNode.type !== 'TV' && (
-          <div
-            aria-label="Selected Node Linked Connections"
-            className="pointer-events-auto absolute top-14 left-4 z-30 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-9.5rem)] rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex flex-col overflow-hidden"
-          >
-            {/* Header: Selected Node (Heading First — no kicker above h3) & Single Canonical Reset Action */}
-            <div className="px-3.5 py-2.5 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-start justify-between gap-2">
-              <div className="flex items-start gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded flex items-center justify-center shrink-0 border border-[#C8BEAA] bg-[#FBF8F2] mt-0.5">
-                  {selectedSubgraph.focusNode.type === 'DIRECTOR' && (
-                    <Award className="w-4 h-4 text-[#B8292F]" />
-                  )}
-                  {selectedSubgraph.focusNode.type === 'ACTOR' && (
-                    <UserCheck className="w-4 h-4 text-[#B86B14]" />
-                  )}
-                  {selectedSubgraph.focusNode.type === 'TROPE' && (
-                    <Hash className="w-4 h-4 text-[#2A6B53]" />
-                  )}
-                  {selectedSubgraph.focusNode.type === 'COMPOSER' && (
-                    <Music className="w-4 h-4 text-[#A63A2B]" />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-heading text-sm font-bold text-[#171412] truncate">
-                    {selectedSubgraph.focusNode.label}
-                  </h3>
-                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#B8292F]">
-                      <Link2 className="w-3 h-3" />
-                      <span>Isolated Subgraph</span>
-                    </span>
-                    <span className="text-[11px] text-[#52483E]">
-                      · {getEntityRoleLabel(selectedSubgraph.focusNode.type)}
-                    </span>
-                  </div>
-                </div>
-              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (onResetEverything) {
-                    onResetEverything();
-                  } else {
-                    onClearSelection?.();
-                    onClearFocal?.();
-                  }
-                }}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] text-[11px] font-semibold shadow-archival-sm transition-colors shrink-0 cursor-pointer"
-                title="Exit isolated view and restore full graph (Esc)"
-                aria-label="Reset isolated view (Escape)"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Reset (Esc)</span>
-              </button>
-            </div>
 
-            {/* Summary Count Strip */}
-            <div className="px-3.5 py-2 bg-[#F6F1E7] border-b border-[#D5CCB9] flex items-center justify-between text-[11px]">
-              <span className="font-medium text-[#52483E]">
-                {selectedSubgraph.linkedNodeIds.size} nodes shown:
-              </span>
-              <div className="flex items-center gap-1.5 font-tabular font-semibold">
-                <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]">
-                  {selectedSubgraph.linkedMedia.length}{' '}
-                  {selectedSubgraph.linkedMedia.length === 1 ? 'Title' : 'Titles'}
-                </span>
-                {selectedSubgraph.linkedEntities.length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA]">
-                    {selectedSubgraph.linkedEntities.length} Shared{' '}
-                    {selectedSubgraph.linkedEntities.length === 1
-                      ? 'Credit'
-                      : 'Credits'}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Scrollable Linked Nodes List */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
-              {/* Section 1: Linked Movies & TV Series */}
-              <div>
-                <h4 className="font-heading text-xs font-bold text-[#171412] mb-1.5">
-                  Connected Films &amp; Series ({selectedSubgraph.linkedMedia.length})
-                </h4>
-                {selectedSubgraph.linkedMedia.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {selectedSubgraph.linkedMedia.map(
-                      ({ node: mNode, sharedReasons, directScore }) => (
-                        <button
-                          key={mNode.id}
-                          type="button"
-                          onClick={() => {
-                            onSelectNode(mNode);
-                            frameNodeAndLinkedCluster(mNode.id);
-                          }}
-                          onMouseEnter={() => {
-                            hoveredIdRef.current = mNode.id;
-                            setHoveredNodeId(mNode.id);
-                          }}
-                          onMouseLeave={() => {
-                            hoveredIdRef.current = null;
-                            setHoveredNodeId(null);
-                          }}
-                          className="w-full text-left p-2 rounded bg-[#FBF8F2] hover:bg-[#EFE8DA] border border-[#D5CCB9] hover:border-[#B8292F] transition-colors cursor-pointer group"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              {mNode.type === 'MOVIE' ? (
-                                <Film className="w-3.5 h-3.5 text-[#234B6E] shrink-0" />
-                              ) : (
-                                <Tv className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" />
-                              )}
-                              <span className="font-heading text-xs font-bold text-[#171412] group-hover:text-[#B8292F] truncate">
-                                {mNode.label}
-                              </span>
-                              {mNode.mediaItem && (
-                                <span className="text-[11px] font-tabular text-[#6B5E50] shrink-0">
-                                  ({mNode.mediaItem.year})
-                                </span>
-                              )}
-                            </div>
-                            {directScore !== undefined && directScore > 0 && (
-                              <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[11px] font-tabular font-bold shrink-0">
-                                {directScore}%
-                              </span>
-                            )}
-                          </div>
-                          {sharedReasons.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {sharedReasons.slice(0, 3).map((reason) => (
-                                <span
-                                  key={reason}
-                                  className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#52483E] text-[11px] font-medium truncate max-w-full"
-                                >
-                                  {reason}
-                                </span>
-                              ))}
-                              {sharedReasons.length > 3 && (
-                                <span className="text-[11px] text-[#6B5E50]">
-                                  +{sharedReasons.length - 3} more
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </button>
-                      )
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-xs text-[#6B5E50] italic">
-                    No directly linked titles above the current threshold.
-                  </p>
-                )}
-              </div>
-
-              {/* Section 2: Linked Collaborator & Theme Nodes */}
-              {selectedSubgraph.linkedEntities.length > 0 && (
-                <div className="pt-2 border-t border-[#D5CCB9]">
-                  <h4 className="font-heading text-xs font-bold text-[#171412] mb-1.5">
-                    Shared Collaborators &amp; Themes (
-                    {selectedSubgraph.linkedEntities.length})
-                  </h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedSubgraph.linkedEntities.map(
-                      ({ node: eNode, roleLabel, connectedCount }) => (
-                        <button
-                          key={eNode.id}
-                          type="button"
-                          onClick={() => {
-                            onSelectNode(eNode);
-                            frameNodeAndLinkedCluster(eNode.id);
-                          }}
-                          onMouseEnter={() => {
-                            hoveredIdRef.current = eNode.id;
-                            setHoveredNodeId(eNode.id);
-                          }}
-                          onMouseLeave={() => {
-                            hoveredIdRef.current = null;
-                            setHoveredNodeId(null);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-[#EFE8DA] hover:bg-[#E5DEC9] border border-[#C8BEAA] hover:border-[#B8292F] transition-colors cursor-pointer"
-                        >
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ backgroundColor: eNode.color }}
-                          />
-                          <span className="font-semibold text-[#171412]">
-                            {eNode.label}
-                          </span>
-                          <span className="text-[11px] text-[#52483E]">
-                            · {roleLabel} ({connectedCount})
-                          </span>
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-      {/* Top-Center Hover Preview Pill (Strictly for Hover Previews when no node is selected) */}
-      {hoveredNodeId && hoveredTooltip && !selectedSubgraph.focusNode ? (
-        <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex items-center gap-2.5 text-xs">
-          <span className="w-2 h-2 rounded-full bg-[#B8292F] animate-pulse" />
-          <span className="text-[#52483E]">Inspecting threads:</span>
-          <strong className="text-[#B8292F] font-semibold">
-            {hoveredTooltip.node.label}
-          </strong>
-          {hoveredTooltip.node.matchScore !== undefined &&
-            !hoveredTooltip.node.isFocal && (
-              <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] font-tabular font-bold">
-                {hoveredTooltip.node.matchScore}% Match
-              </span>
-            )}
-        </div>
-      ) : null}
 
       {/* Sleek Obsidian-Style Floating Glass Hover Tooltip */}
       {hoveredTooltip && (() => {
@@ -3959,9 +3681,9 @@ export function SpatialViewport({
         );
       })()}
 
-      {/* HUD: Graph Projection, Color Coding, and Label Density Controls */}
+      {/* HUD: Graph Projection, Color Coding, and Label Density Controls (Desktop / Tablet) */}
       <div
-        className={`absolute top-4 right-4 z-20 flex items-center gap-2 p-1.5 rounded-full text-xs font-medium backdrop-blur-md shadow-lg transition-colors ${isDark
+        className={`hidden sm:flex absolute top-4 right-4 z-20 items-center gap-2 p-1.5 rounded-full text-xs font-medium backdrop-blur-md shadow-lg transition-colors ${isDark
             ? 'bg-[#0E1524]/90 border border-white/10 text-white/90 shadow-black/40'
             : 'bg-[#FBF8F2]/95 border border-[#B5A892] shadow-archival text-[#171412]'
           }`}
@@ -4100,6 +3822,315 @@ export function SpatialViewport({
         )}
       </div>
 
+      {/* MOBILE VIEW CONTROLS (Top-Right Action Chip + Secondary Mini-Pills) */}
+      <div className="sm:hidden absolute top-3 right-3 z-20 flex items-center gap-1.5 pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => setMobileLensOpen(true)}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-md shadow-md border transition-all active:scale-95 cursor-pointer ${
+            isDark
+              ? 'bg-[#0E1524]/90 border-white/15 text-white/90 shadow-black/40'
+              : 'bg-[#FBF8F2]/95 border-[#B5A892] shadow-archival text-[#171412]'
+          }`}
+          title="Open Map View & Color Controls"
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
+          <span>{layoutMode === 'SEMANTIC_GALAXY' ? 'Galaxy' : 'Cast'}</span>
+          <ChevronDown className="w-3 h-3 opacity-60" />
+        </button>
+      </div>
+
+      {/* Mobile Swipeable Quick Pills Bar */}
+      <div className="sm:hidden absolute top-11 left-3 right-3 z-15 flex items-center gap-1.5 pointer-events-auto overflow-x-auto no-scrollbar py-1">
+        {onLayoutModeChange && (
+          <button
+            type="button"
+            onClick={() => onLayoutModeChange(layoutMode === 'SEMANTIC_GALAXY' ? 'FORCE_CONSTELLATION' : 'SEMANTIC_GALAXY')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 border shadow-xs transition-all cursor-pointer ${
+              layoutMode === 'SEMANTIC_GALAXY'
+                ? 'bg-[#B8292F] text-white border-[#B8292F]'
+                : 'bg-[#234B6E] text-white border-[#234B6E]'
+            }`}
+          >
+            {layoutMode === 'SEMANTIC_GALAXY' ? 'Galaxy' : 'Cast'}
+          </button>
+        )}
+
+        {layoutMode === 'SEMANTIC_GALAXY' && (
+          <button
+            type="button"
+            onClick={() => {
+              if (onToggleTerritories) onToggleTerritories();
+              else setLocalTerritories((p) => !p);
+            }}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 border transition-all cursor-pointer flex items-center gap-1 ${
+              showTerritories
+                ? isDark
+                  ? 'bg-[#2A6B53]/40 text-[#8CE8C3] border-[#2A6B53]/60'
+                  : 'bg-[#E3EFEA] text-[#1E563F] border-[#B4D4C7]'
+                : isDark
+                  ? 'bg-white/5 text-white/60 border-white/10'
+                  : 'bg-[#EFE8DA] text-[#6B5E50] border-[#D5CCB9]'
+            }`}
+          >
+            <MapIcon className="w-3 h-3 opacity-80" />
+            <span>Zones</span>
+          </button>
+        )}
+
+        {onColorModeChange && (
+          <button
+            type="button"
+            onClick={() => {
+              const modes: NodeColorMode[] = ['CLUSTER', 'GENRE', 'DECADE', 'CATEGORY'];
+              const idx = modes.indexOf(colorMode || 'CLUSTER');
+              onColorModeChange(modes[(idx + 1) % modes.length]);
+            }}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 border transition-all cursor-pointer flex items-center gap-1 ${
+              isDark ? 'bg-[#0E1524]/90 text-white/90 border-white/15' : 'bg-[#FBF8F2] text-[#171412] border-[#C8BEAA]'
+            }`}
+          >
+            <Palette className="w-3 h-3 opacity-70" />
+            <span>{colorMode === 'CLUSTER' ? 'Theme' : colorMode === 'GENRE' ? 'Genre' : colorMode === 'DECADE' ? 'Era' : 'Format'}</span>
+          </button>
+        )}
+
+        {onLabelModeChange && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = labelMode === 'AUTO' ? 'ALL' : labelMode === 'ALL' ? 'OFF' : 'AUTO';
+              onLabelModeChange(next);
+            }}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 border transition-all cursor-pointer flex items-center gap-1 ${
+              labelMode === 'OFF'
+                ? isDark ? 'bg-white/5 text-white/40 border-white/10' : 'bg-[#EFE8DA] text-[#6B5E50] border-[#D5CCB9]'
+                : isDark ? 'bg-white/10 text-white border-white/20' : 'bg-[#FBF8F2] text-[#171412] border-[#C8BEAA]'
+            }`}
+          >
+            <Tag className="w-3 h-3 opacity-70" />
+            <span>Titles: {labelMode === 'AUTO' ? 'Auto' : labelMode === 'ALL' ? 'All' : 'Off'}</span>
+          </button>
+        )}
+      </div>
+
+      {/* Mobile View Controls Bottom Sheet Drawer */}
+      {mobileLensOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Map View & Color Settings"
+          className="sm:hidden fixed inset-0 z-50 flex flex-col justify-end"
+        >
+          <div
+            className="fixed inset-0 bg-[#0A0E17]/70 backdrop-blur-sm"
+            onClick={() => setMobileLensOpen(false)}
+            aria-hidden="true"
+          />
+
+          <div
+            className={`relative w-full max-h-[85dvh] rounded-t-2xl border-t p-4 z-10 overflow-y-auto space-y-4 shadow-2xl animate-in slide-in-from-bottom-6 duration-200 ${
+              isDark
+                ? 'bg-[#0E1524] border-white/15 text-[#F0F4FC]'
+                : 'bg-[#FBF8F2] border-[#B5A892] text-[#171412]'
+            } pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]`}
+          >
+            <div className="w-10 h-1 rounded-full bg-white/20 mx-auto -mt-1 mb-2 shrink-0" />
+
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
+                <h2 className="font-heading text-base font-bold">Map View &amp; Projection</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileLensOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Projection Mode */}
+            {onLayoutModeChange && (
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider opacity-60">
+                  Spatial Layout Projection
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onLayoutModeChange('SEMANTIC_GALAXY')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      layoutMode === 'SEMANTIC_GALAXY'
+                        ? 'bg-[#B8292F]/20 border-[#B8292F] ring-1 ring-[#B8292F] text-white'
+                        : isDark ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-[#EFE8DA] border-[#D5CCB9] text-[#52483E]'
+                    }`}
+                  >
+                    <div className="font-bold text-xs flex items-center justify-between">
+                      <span>Semantic Galaxy</span>
+                      {layoutMode === 'SEMANTIC_GALAXY' && <Check className="w-3.5 h-3.5 text-rose-400" />}
+                    </div>
+                    <div className="text-[10px] opacity-75 mt-0.5">Themes, plots &amp; narrative worlds</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onLayoutModeChange('FORCE_CONSTELLATION')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      layoutMode === 'FORCE_CONSTELLATION'
+                        ? 'bg-[#234B6E]/20 border-[#234B6E] ring-1 ring-[#234B6E] text-white'
+                        : isDark ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-[#EFE8DA] border-[#D5CCB9] text-[#52483E]'
+                    }`}
+                  >
+                    <div className="font-bold text-xs flex items-center justify-between">
+                      <span>Cast &amp; Crew</span>
+                      {layoutMode === 'FORCE_CONSTELLATION' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                    </div>
+                    <div className="text-[10px] opacity-75 mt-0.5">Direct connections by directors &amp; cast</div>
+                  </button>
+                </div>
+
+                {layoutMode === 'SEMANTIC_GALAXY' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onToggleTerritories) onToggleTerritories();
+                      else setLocalTerritories((p) => !p);
+                    }}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-xs font-semibold ${
+                      showTerritories
+                        ? isDark ? 'bg-[#2A6B53]/25 border-[#2A6B53] text-[#8CE8C3]' : 'bg-[#E3EFEA] border-[#B4D4C7] text-[#1E563F]'
+                        : isDark ? 'bg-white/5 border-white/10 text-slate-400' : 'bg-[#EFE8DA] border-[#D5CCB9] text-[#6B5E50]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <MapIcon className="w-3.5 h-3.5" />
+                      <span>Draw Theme Zone Boundaries</span>
+                    </div>
+                    <span>{showTerritories ? 'Active' : 'Off'}</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Color Scheme */}
+            {onColorModeChange && (
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider opacity-60">
+                  Node Color Scheme
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'CLUSTER', label: 'Theme Worlds', desc: 'Story universe' },
+                    { id: 'GENRE', label: 'Genre', desc: 'Action, Sci-Fi…' },
+                    { id: 'DECADE', label: 'Release Era', desc: 'Chronological era' },
+                    { id: 'CATEGORY', label: 'Format', desc: 'Film vs TV vs Cast' },
+                  ].map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => onColorModeChange(c.id as NodeColorMode)}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        colorMode === c.id
+                          ? isDark ? 'bg-white/15 border-white/30 text-white font-bold' : 'bg-[#171412] text-white border-[#171412] font-bold'
+                          : isDark ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-[#EFE8DA] border-[#D5CCB9] text-[#52483E]'
+                      }`}
+                    >
+                      <div className="text-xs flex items-center justify-between">
+                        <span>{c.label}</span>
+                        {colorMode === c.id && <Check className="w-3 h-3 text-cyan-400" />}
+                      </div>
+                      <div className="text-[10px] opacity-75">{c.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Title Display Density */}
+            {onLabelModeChange && (
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider opacity-60">
+                  Title Label Density
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'AUTO', label: 'Auto', desc: 'Adaptive' },
+                    { id: 'ALL', label: 'All Titles', desc: 'Show all' },
+                    { id: 'OFF', label: 'Off', desc: 'Minimal' },
+                  ].map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => onLabelModeChange(l.id as LabelDisplayMode)}
+                      className={`p-2.5 rounded-xl border text-center transition-all ${
+                        labelMode === l.id
+                          ? isDark ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 font-bold' : 'bg-[#E4F0EA] border-[#B3D4C5] text-[#1E563F] font-bold'
+                          : isDark ? 'bg-white/5 border-white/10 text-slate-400' : 'bg-[#EFE8DA] border-[#D5CCB9] text-[#6B5E50]'
+                      }`}
+                    >
+                      <div className="text-xs">{l.label}</div>
+                      <div className="text-[10px] opacity-75">{l.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Theme Clusters Quick Filter */}
+            {clusters && clusters.length > 0 && onSelectCluster && (
+              <div className="space-y-2 pt-2 border-t border-white/10">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider opacity-60">
+                    Story Worlds ({clusters.length})
+                  </span>
+                  {graphFilters?.activeClusterId && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectCluster(null)}
+                      className="text-xs text-cyan-400 hover:underline"
+                    >
+                      Clear Filter
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
+                  {clusters.map((c) => {
+                    const isSelected = graphFilters?.activeClusterId === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => onSelectCluster(isSelected ? null : c.id)}
+                        className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-left text-xs transition-all ${
+                          isSelected
+                            ? isDark ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 font-bold' : 'bg-[#EFE8DA] border-[#B5A892] font-bold'
+                            : isDark ? 'bg-white/5 border-white/5 text-slate-300' : 'bg-[#EFE8DA]/50 border-transparent text-[#52483E]'
+                        }`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                        <span className="truncate text-[11px]">{c.shortLabel}</span>
+                        <span className="text-[10px] font-tabular opacity-60 ml-auto">{c.mediaIds.length}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setMobileLensOpen(false)}
+              className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-[#0A0E17] font-bold text-xs shadow-md transition-colors cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* MOVIE MAP REA: INTERACTIVE CLUSTER TERRITORY LEGEND (Bottom-Left) */}
       {clusters && clusters.length > 0 && (
         <div
@@ -4164,9 +4195,9 @@ export function SpatialViewport({
         </div>
       )}
 
-      {/* Bottom Center Camera Dock */}
+      {/* Bottom Center Camera Dock (Desktop / Tablet) */}
       <div
-        className={`absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2.5 py-1.5 rounded-full backdrop-blur-md transition-colors ${isDark
+        className={`hidden sm:flex absolute bottom-5 left-1/2 -translate-x-1/2 z-20 items-center gap-1 px-2.5 py-1.5 rounded-full backdrop-blur-md transition-colors ${isDark
             ? 'bg-[#0B101D]/90 border border-white/15 text-slate-200 shadow-[0_8px_32px_rgba(0,0,0,0.6)]'
             : 'bg-[#FBF8F2] border border-[#B5A892] text-[#52483E] shadow-archival'
           }`}
@@ -4326,6 +4357,154 @@ export function SpatialViewport({
             style={{ animationDuration: '8s' }}
           />
           <span>Gentle Spin</span>
+        </button>
+      </div>
+
+      {/* Mobile Bottom Camera Dock */}
+      <div
+        className={`sm:hidden absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 z-20 flex items-center justify-between gap-1 px-2.5 py-1 rounded-full backdrop-blur-md transition-colors max-w-[calc(100vw-1.5rem)] shadow-lg ${
+          isDark
+            ? 'bg-[#0B101D]/92 border border-white/15 text-slate-200 shadow-[0_8px_24px_rgba(0,0,0,0.6)]'
+            : 'bg-[#FBF8F2]/95 border border-[#B5A892] text-[#52483E] shadow-archival'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => onCameraModeChange('ORBIT')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+            cameraMode === 'ORBIT'
+              ? isDark
+                ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-xs'
+                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
+              : isDark
+                ? 'text-slate-400 hover:text-white'
+                : 'text-[#52483E] hover:text-[#171412]'
+          }`}
+          title="Orbit Camera"
+        >
+          <Compass className="w-3.5 h-3.5" />
+          <span className="text-[11px]">Orbit</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onCameraModeChange('FREE_LOOK')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+            cameraMode === 'FREE_LOOK'
+              ? isDark
+                ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-xs'
+                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
+              : isDark
+                ? 'text-slate-400 hover:text-white'
+                : 'text-[#52483E] hover:text-[#171412]'
+          }`}
+          title="Pan Camera"
+        >
+          <Eye className="w-3.5 h-3.5" />
+          <span className="text-[11px]">Pan</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onCameraModeChange('FLY_THROUGH')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+            cameraMode === 'FLY_THROUGH'
+              ? isDark
+                ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-xs'
+                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
+              : isDark
+                ? 'text-slate-400 hover:text-white'
+                : 'text-[#52483E] hover:text-[#171412]'
+          }`}
+          title="Guided Tour"
+        >
+          <Navigation className="w-3.5 h-3.5" />
+          <span className="text-[11px]">Tour</span>
+        </button>
+
+        <div className={`h-4 w-px mx-0.5 ${isDark ? 'bg-white/15' : 'bg-[#D5CCB9]'}`} />
+
+        <button
+          type="button"
+          onClick={() => handleZoomStep(35)}
+          className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+            isDark ? 'text-slate-400 hover:text-white' : 'text-[#52483E] hover:text-[#171412]'
+          }`}
+          title="Zoom Out (-)"
+          aria-label="Zoom Out"
+        >
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleZoomStep(-35)}
+          className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+            isDark ? 'text-slate-400 hover:text-white' : 'text-[#52483E] hover:text-[#171412]'
+          }`}
+          title="Zoom In (+)"
+          aria-label="Zoom In"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+
+        <div className={`h-4 w-px mx-0.5 ${isDark ? 'bg-white/15' : 'bg-[#D5CCB9]'}`} />
+
+        <button
+          type="button"
+          onClick={() => {
+            const bounds = computeGraphBounds(nodesRef.current, clusters);
+            const w = containerRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 390);
+            const h = containerRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 600);
+            const autoDist = computeResponsive3DDistance(w, h, bounds);
+            const autoZoom = computeResponsive2DZoom(w, h, bounds);
+            camSphericalRef.current.phi = 1.44;
+            camSphericalRef.current.theta = 0.05;
+            camSphericalRef.current.goalX = bounds.centerX;
+            camSphericalRef.current.goalY = bounds.centerY;
+            camSphericalRef.current.goalRadius = autoDist;
+            pan2dRef.current.goalPanX = 0;
+            pan2dRef.current.goalPanY = 0;
+            pan2dRef.current.goalZoom = autoZoom;
+            onCameraModeChange('ORBIT');
+            if (onResetEverything) {
+              onResetEverything();
+            } else {
+              onClearSelection?.();
+              onClearFocal?.();
+            }
+          }}
+          className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+            selectedSubgraph.focusNode || focalItem
+              ? isDark
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'bg-[#B8292F] text-white shadow-xs'
+              : isDark
+                ? 'text-cyan-400 hover:text-cyan-300'
+                : 'text-[#8C1D22] hover:text-[#B8292F]'
+          }`}
+          title="Reset View"
+          aria-label="Reset View"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onAutoRotateChange(!autoRotate)}
+          className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+            autoRotate
+              ? isDark
+                ? 'text-emerald-400 bg-emerald-500/20'
+                : 'text-[#2A6B53] bg-[#E3EFEA]'
+              : isDark
+                ? 'text-slate-400 hover:text-white'
+                : 'text-[#52483E] hover:text-[#171412]'
+          }`}
+          title={autoRotate ? 'Stop Gentle Spin' : 'Start Gentle Spin'}
+          aria-label="Gentle Spin"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '8s' }} />
         </button>
       </div>
     </div>

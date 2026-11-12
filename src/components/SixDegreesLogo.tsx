@@ -15,7 +15,7 @@ export function SixDegreesLogo({
   const isDark = theme === 'MOVIE_MAP_DARK';
 
   return (
-    <div className={`flex items-center gap-2.5 select-none group ${className}`}>
+    <div className={`flex items-center gap-2 select-none group ${className}`}>
       {/* Brand Emblem: The 6° Constellation Nexus */}
       <div
         className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 shrink-0 ${
