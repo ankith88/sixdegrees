@@ -274,6 +274,8 @@ export type LabelDisplayMode = 'AUTO' | 'ALL' | 'OFF';
 
 export type GraphLayoutMode = 'FORCE_CONSTELLATION' | 'SEMANTIC_GALAXY';
 
+export type AppTheme = 'MOVIE_MAP_DARK' | 'ARCHIVAL_FOLIO';
+
 export interface SemanticCluster {
   id: string;
   label: string;
@@ -297,6 +299,50 @@ export interface GraphFilterState {
   watchedFilter: 'ALL' | 'WATCHED' | 'UNWATCHED' | 'INTERESTED';
   activeClusterId: string | null;
   searchHighlightQuery: string;
+  showTerritories?: boolean;
+}
+
+export interface PrecomputedUmapPoint {
+  id: string;
+  title: string;
+  year: number;
+  primaryGenre: string;
+  imdbRating: number;
+  x: number;
+  y: number;
+  z: number;
+  umapX: number;
+  umapY: number;
+  clusterId: string;
+  clusterLabel: string;
+  primaryClusterColor: string;
+  secondaryClusterColor: string;
+  blendedColor: string;
+  nearestNeighborIds: string[];
+}
+
+export interface CatalogUmapPayload {
+  version: 1;
+  generatedAt: string;
+  totalPoints: number;
+  bounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    minZ: number;
+    maxZ: number;
+  };
+  points: Record<string, PrecomputedUmapPoint>;
+  clusters: Array<{
+    id: string;
+    label: string;
+    shortLabel: string;
+    color: string;
+    glowColor: string;
+    centroid: { x: number; y: number; z: number };
+    mediaCount: number;
+  }>;
 }
 
 

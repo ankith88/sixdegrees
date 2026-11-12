@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sixdegrees-pwa-v1';
+const CACHE_NAME = 'sixdegrees-pwa-v15';
 const PRECACHE_ASSETS = [
   '/',
   '/site.webmanifest',
@@ -41,6 +41,16 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
+  // In local development, always bypass service worker cache completely
+  if (
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.pathname.startsWith('/_next/') ||
+    url.pathname.includes('webpack-hmr')
+  ) {
+    return;
+  }
+
   // Skip cross-origin requests except fonts/posters if needed, and skip API mutations
   if (url.origin !== self.location.origin) return;
 
@@ -72,7 +82,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Stale-while-revalidate for static assets
+  // Stale-while-revalidate for static assets in production
   event.respondWith(
     caches.match(request).then((cached) => {
       const networkFetch = fetch(request)
@@ -89,7 +99,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => cached);
 
-      return cached || networkFetch;
+      return networkFetch || cached;
     })
   );
 });

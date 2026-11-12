@@ -1,4 +1,5 @@
 import {
+  AppTheme,
   EntityNodeType,
   EntityVisibility,
   ForceSettings,
@@ -11,6 +12,7 @@ import {
   MediaItem,
   NodeColorMode,
   NodeSizeMode,
+  PrecomputedUmapPoint,
   SemanticCluster,
   SharedConnection,
   SimilarityBreakdown,
@@ -56,6 +58,64 @@ export const ENTITY_COLORS: Record<
     badgeBg: 'rgba(166, 58, 43, 0.10)',
     label: 'Composer & Cinematography',
   },
+};
+
+export const MOVIE_MAP_DARK_ENTITY_COLORS: Record<
+  EntityNodeType,
+  { primary: string; glow: string; badgeBg: string; label: string }
+> = {
+  MOVIE: {
+    primary: '#00D2FF', // Electric Cyan
+    glow: '#38E1FF',
+    badgeBg: 'rgba(0, 210, 255, 0.14)',
+    label: 'Feature Film',
+  },
+  TV: {
+    primary: '#D946EF', // Radiant Fuchsia
+    glow: '#F0ABFC',
+    badgeBg: 'rgba(217, 70, 239, 0.14)',
+    label: 'Television Series',
+  },
+  DIRECTOR: {
+    primary: '#FF3366', // Neon Crimson Rose
+    glow: '#FF668B',
+    badgeBg: 'rgba(255, 51, 102, 0.14)',
+    label: 'Director & Writer',
+  },
+  ACTOR: {
+    primary: '#FFAA00', // Luminous Amber Gold
+    glow: '#FFC44D',
+    badgeBg: 'rgba(255, 170, 0, 0.14)',
+    label: 'Principal Cast',
+  },
+  TROPE: {
+    primary: '#00F5D4', // Emerald Mint
+    glow: '#57FCE3',
+    badgeBg: 'rgba(0, 245, 212, 0.14)',
+    label: 'Theme & Motif',
+  },
+  COMPOSER: {
+    primary: '#FF5400', // Solar Flame
+    glow: '#FF7A33',
+    badgeBg: 'rgba(255, 84, 0, 0.14)',
+    label: 'Composer & Cinematography',
+  },
+};
+
+export const MOVIE_MAP_DARK_CLUSTER_COLORS: Record<
+  string,
+  { color: string; glowColor: string }
+> = {
+  'satirical-wry-humanity': { color: '#00F5A0', glowColor: '#57FCE3' }, // Comedy (mint emerald)
+  'romcom-and-romance': { color: '#FF6584', glowColor: '#FFA3B5' }, // Romance & Romcom (coral rose)
+  'visceral-noir-thrillers': { color: '#FFB800', glowColor: '#FFD066' }, // Crime & Noir (amber gold)
+  'auteur-prestige-drama': { color: '#FF7A59', glowColor: '#FFA07A' }, // Drama (sunset peach)
+  'documentary-and-truth': { color: '#00A6FF', glowColor: '#38BDF8' }, // Documentary (azure blue)
+  'atmospheric-supernatural': { color: '#FF2E93', glowColor: '#FF6EB4' }, // Horror (magenta violet)
+  'mind-bending-scifi': { color: '#00D2FF', glowColor: '#38E1FF' }, // Sci-Fi (electric cyan)
+  'kinetic-action-spectacle': { color: '#FF3366', glowColor: '#FF668B' }, // Action (scarlet red)
+  'epic-worldbuilding-fantasy': { color: '#10B981', glowColor: '#34D399' }, // Fantasy (emerald green)
+  'philosophical-slow-burn': { color: '#A78BFA', glowColor: '#C4B5FD' }, // Contemplative (lavender)
 };
 
 export function toEntityNodeId(type: EntityNodeType, name: string): string {
@@ -153,6 +213,7 @@ export const DEFAULT_GRAPH_FILTERS: GraphFilterState = {
   watchedFilter: 'ALL',
   activeClusterId: null,
   searchHighlightQuery: '',
+  showTerritories: true,
 };
 
 export function hasActiveGraphFilters(filters: GraphFilterState): boolean {
@@ -169,8 +230,8 @@ export function hasActiveGraphFilters(filters: GraphFilterState): boolean {
 }
 
 /**
- * 8 Primary Semantic Galaxy clusters inspired by Mikey Guinness's Movie Map HDBSCAN clusters.
- * Each cluster anchors a spatial sector in the galaxy projection and features a rich archival signature palette.
+ * 10 Primary Semantic Galaxy clusters inspired by Mikey Guinness's Movie Map HDBSCAN clusters.
+ * Each cluster anchors an expansive spatial sector in the galaxy projection with generous inter-genre spacing.
  */
 export const SEMANTIC_CLUSTER_DEFINITIONS: Array<{
   id: string;
@@ -184,124 +245,151 @@ export const SEMANTIC_CLUSTER_DEFINITIONS: Array<{
   genres: string[];
 }> = [
   {
+    id: 'satirical-wry-humanity',
+    label: 'Comedy & Wry Satire',
+    shortLabel: 'Comedy',
+    description: 'Dark comedy, sharp societal critiques, absurdism, and witty human humor.',
+    color: '#1B6A47',
+    glowColor: '#2A9A67',
+    centroid: { x: 20, y: 520, z: 20 },
+    keywords: [
+      'comedy', 'satire', 'dark humor', 'spoof', 'slapstick', 'workplace absurdity',
+      'eccentric characters', 'cynicism', 'witty dialogue', 'absurdism', 'parody',
+    ],
+    genres: ['Comedy'],
+  },
+  {
+    id: 'romcom-and-romance',
+    label: 'Romance & Romantic Comedy',
+    shortLabel: 'Romance',
+    description: 'Love, bittersweet relationships, romantic comedy, and passionate human bonds.',
+    color: '#A63F52',
+    glowColor: '#D1586F',
+    centroid: { x: 440, y: 220, z: -15 },
+    keywords: [
+      'romance', 'love', 'romantic comedy', 'romcom', 'erotic', 'relationships',
+      'dating', 'heartbreak', 'passion', 'soulmates', 'bittersweet romance',
+    ],
+    genres: ['Romance'],
+  },
+  {
+    id: 'visceral-noir-thrillers',
+    label: 'Visceral Noir & Neo-Crime Sagas',
+    shortLabel: 'Crime & Noir',
+    description: 'Corrupt syndicates, high-stakes heists, hard-boiled detectives, and gripping cat-and-mouse games.',
+    color: '#B86B14',
+    glowColor: '#E28E2B',
+    centroid: { x: 320, y: -20, z: -35 },
+    keywords: [
+      'heist', 'organized crime', 'conspiracy', 'cat-and-mouse',
+      'revenge', 'detective noir', 'corruption', 'assassin',
+      'underworld', 'betrayal', 'fbi investigation', 'neo-noir',
+    ],
+    genres: ['Crime', 'Thriller', 'Mystery'],
+  },
+  {
+    id: 'auteur-prestige-drama',
+    label: 'Auteur Prestige & Modern Drama',
+    shortLabel: 'Drama',
+    description: 'Character-driven psychological labyrinths, moral ambiguity, family sagas, and cinematic auteur craft.',
+    color: '#B8292F',
+    glowColor: '#E04A50',
+    centroid: { x: 280, y: -480, z: -45 },
+    keywords: [
+      'psychological unraveling', 'moral ambiguity', 'character study',
+      'existential crisis', 'family trauma', 'paranoia', 'obsession',
+      'unreliable narrator', 'social alienation', 'modern drama', 'grief',
+    ],
+    genres: ['Drama'],
+  },
+  {
+    id: 'documentary-and-truth',
+    label: 'Documentary & Real Life',
+    shortLabel: 'Documentary',
+    description: 'Factual exposés, musical legends, true crime, historical revolutions, and nature.',
+    color: '#286B7B',
+    glowColor: '#3D9BB2',
+    centroid: { x: -480, y: -420, z: 35 },
+    keywords: [
+      'documentary', 'music documentary', 'biography', 'investigation',
+      'historical truth', 'real life', 'true crime', 'nature', 'interviews',
+    ],
+    genres: ['Documentary', 'History', 'Music'],
+  },
+  {
+    id: 'atmospheric-supernatural',
+    label: 'Atmospheric Horror & Macabre Mystery',
+    shortLabel: 'Horror',
+    description: 'Gothic dread, psychological tension, supernatural anomalies, and slow-burn cosmic terror.',
+    color: '#6B3A6E',
+    glowColor: '#9C58A0',
+    centroid: { x: -380, y: -70, z: 45 },
+    keywords: [
+      'isolation', 'folklore', 'cosmic horror', 'haunted past',
+      'psychological terror', 'supernatural', 'monsters', 'occult',
+      'claustrophobia', 'body horror', 'creepy atmosphere', 'slasher',
+    ],
+    genres: ['Horror', 'Mystery', 'Thriller'],
+  },
+  {
     id: 'mind-bending-scifi',
     label: 'Mind-Bending & Speculative Sci-Fi',
-    shortLabel: 'Speculative Sci-Fi',
+    shortLabel: 'Science Fiction',
     description: 'Quantum realities, time loops, artificial intelligence, and existential cosmos.',
-    color: '#234B6E', // Archival Prussian Blue
+    color: '#234B6E',
     glowColor: '#3D78A8',
-    centroid: { x: -160, y: 110, z: 25 },
+    centroid: { x: -140, y: -30, z: 20 },
     keywords: [
       'time travel', 'artificial intelligence', 'existential dread', 'dystopia',
       'cyborg', 'space exploration', 'virtual reality', 'parallel dimensions',
       'cyberpunk', 'simulation hypothesis', 'mind games', 'quantum mechanics',
     ],
-    genres: ['Science Fiction', 'Mystery', 'Thriller'],
-  },
-  {
-    id: 'auteur-prestige-drama',
-    label: 'Auteur Prestige & Psychological Drama',
-    shortLabel: 'Auteur Drama',
-    description: 'Character-driven psychological labyrinths, moral ambiguity, and cinematic auteur craft.',
-    color: '#B8292F', // Archival Crimson
-    glowColor: '#E04A50',
-    centroid: { x: -140, y: -120, z: -35 },
-    keywords: [
-      'psychological unraveling', 'moral ambiguity', 'character study',
-      'existential crisis', 'family trauma', 'paranoia', 'obsession',
-      'unreliable narrator', 'social alienation', 'auteur signature',
-    ],
-    genres: ['Drama', 'Mystery'],
-  },
-  {
-    id: 'visceral-noir-thrillers',
-    label: 'Visceral Noir & Neo-Crime Sagas',
-    shortLabel: 'Noir & Crime',
-    description: 'Corrupt syndicates, high-stakes heists, hard-boiled detectives, and gripping cat-and-mouse games.',
-    color: '#B86B14', // Archival Ochre Amber
-    glowColor: '#E28E2B',
-    centroid: { x: 130, y: 130, z: -20 },
-    keywords: [
-      'heist', 'organized crime', 'conspiracy', 'cat-and-mouse',
-      'revenge', 'detective noir', 'corruption', 'assassin',
-      'underworld', 'betrayal', 'fbi investigation',
-    ],
-    genres: ['Crime', 'Thriller', 'Action'],
-  },
-  {
-    id: 'atmospheric-supernatural',
-    label: 'Atmospheric Horror & Macabre Mystery',
-    shortLabel: 'Horror & Macabre',
-    description: 'Gothic dread, psychological tension, supernatural anomalies, and slow-burn cosmic terror.',
-    color: '#6B3A6E', // Archival Imperial Plum
-    glowColor: '#9C58A0',
-    centroid: { x: 70, y: -160, z: 45 },
-    keywords: [
-      'isolation', 'folklore', 'cosmic horror', 'haunted past',
-      'psychological terror', 'supernatural', 'monsters', 'occult',
-      'claustrophobia', 'body horror', 'creepy atmosphere',
-    ],
-    genres: ['Horror', 'Mystery', 'Thriller'],
-  },
-  {
-    id: 'epic-worldbuilding-fantasy',
-    label: 'Epic Worldbuilding & Mythic Adventure',
-    shortLabel: 'Epic & Fantasy',
-    description: 'Sweeping mythologies, grand quests, legendary realms, and heroic odysseys.',
-    color: '#2A6B53', // Archival Verdigris Green
-    glowColor: '#429E7C',
-    centroid: { x: 165, y: -50, z: -30 },
-    keywords: [
-      'heroic journey', 'ancient prophecy', 'mythic world', 'grand crusade',
-      'sword & sorcery', 'empire politics', 'monumental scale', 'rebellion',
-      'chosen one', 'fellowship',
-    ],
-    genres: ['Fantasy', 'Adventure', 'Action'],
-  },
-  {
-    id: 'philosophical-slow-burn',
-    label: 'Contemplative & Philosophical Cinema',
-    shortLabel: 'Contemplative',
-    description: 'Lyrical pacing, metaphysical questions, memory, grief, and visual poetry.',
-    color: '#5C5446', // Archival Sepia Slate
-    glowColor: '#8C8270',
-    centroid: { x: -40, y: 170, z: -40 },
-    keywords: [
-      'memory and loss', 'meditative', 'melancholy', 'philosophical inquiry',
-      'visual poetry', 'human condition', 'solitude', 'grief and healing',
-      'slow burn', 'art-house aesthetic',
-    ],
-    genres: ['Drama', 'Mystery'],
+    genres: ['Science Fiction', 'Thriller'],
   },
   {
     id: 'kinetic-action-spectacle',
     label: 'Kinetic Spectacle & Tactical Escapism',
-    shortLabel: 'Action Spectacle',
+    shortLabel: 'Action',
     description: 'Precision stuntwork, explosive set-pieces, adrenaline-fueled pacing, and survival combat.',
-    color: '#A63A2B', // Archival Terracotta Red
+    color: '#A63A2B',
     glowColor: '#CF5745',
-    centroid: { x: 120, y: 70, z: 60 },
+    centroid: { x: 50, y: 180, z: 50 },
     keywords: [
       'martial arts', 'car chases', 'survival battle', 'explosive stunts',
       'tactical combat', 'superheroes', 'adrenaline rush', 'high octane',
-      'military ops', 'blockbuster spectacle',
+      'military ops', 'blockbuster spectacle', 'action comedy',
     ],
-    genres: ['Action', 'Adventure', 'Thriller'],
+    genres: ['Action', 'Adventure'],
   },
   {
-    id: 'satirical-wry-humanity',
-    label: 'Wry Satire & Humanist Tragicomedy',
-    shortLabel: 'Satire & Comedy',
-    description: 'Dark comedy, sharp societal critiques, absurdism, and bittersweet human connection.',
-    color: '#8C4820', // Archival Burnt Umber
-    glowColor: '#B66635',
-    centroid: { x: -80, y: -60, z: 65 },
+    id: 'epic-worldbuilding-fantasy',
+    label: 'Epic Worldbuilding & Mythic Adventure',
+    shortLabel: 'Fantasy & Epic',
+    description: 'Sweeping mythologies, grand quests, legendary realms, and heroic odysseys.',
+    color: '#2A6B53',
+    glowColor: '#429E7C',
+    centroid: { x: -280, y: 320, z: -30 },
     keywords: [
-      'dark humor', 'existential irony', 'social commentary', 'tragicomedy',
-      'eccentric characters', 'satire', 'workplace absurdity', 'cynicism',
-      'witty dialogue', 'bittersweet romance',
+      'heroic journey', 'ancient prophecy', 'mythic world', 'grand crusade',
+      'sword & sorcery', 'empire politics', 'monumental scale', 'rebellion',
+      'chosen one', 'fellowship', 'animation', 'animated',
     ],
-    genres: ['Comedy', 'Drama'],
+    genres: ['Fantasy', 'Adventure', 'Animation'],
+  },
+  {
+    id: 'philosophical-slow-burn',
+    label: 'Contemplative & Historical Cinema',
+    shortLabel: 'Contemplative',
+    description: 'Lyrical pacing, metaphysical questions, memory, grief, and visual poetry.',
+    color: '#5C5446',
+    glowColor: '#8C8270',
+    centroid: { x: -50, y: -280, z: -35 },
+    keywords: [
+      'memory and loss', 'meditative', 'melancholy', 'philosophical inquiry',
+      'visual poetry', 'human condition', 'solitude', 'grief and healing',
+      'slow burn', 'art-house aesthetic', 'historical drama', 'war',
+    ],
+    genres: ['Drama', 'War', 'Music'],
   },
 ];
 
@@ -363,7 +451,10 @@ export function getDecadeColor(year: number): string {
  * Assigns a MediaItem to its primary and secondary semantic clusters based on
  * thematic keywords, tropes, and broad genres.
  */
-export function assignItemSemanticCluster(item: MediaItem): {
+export function assignItemSemanticCluster(
+  item: MediaItem,
+  theme: AppTheme = 'MOVIE_MAP_DARK'
+): {
   primary: typeof SEMANTIC_CLUSTER_DEFINITIONS[0];
   secondary: typeof SEMANTIC_CLUSTER_DEFINITIONS[0];
   blendRatio: number; // 0.0 (pure primary) to 0.5 (equal split)
@@ -396,8 +487,32 @@ export function assignItemSemanticCluster(item: MediaItem): {
   });
 
   scores.sort((a, b) => b.score - a.score);
-  const primary = scores[0]?.score > 0 ? scores[0].cluster : SEMANTIC_CLUSTER_DEFINITIONS[0];
-  const secondary = scores[1]?.score > 0 ? scores[1].cluster : scores[0].cluster;
+  let primaryCluster =
+    scores[0]?.score > 0 ? scores[0].cluster : SEMANTIC_CLUSTER_DEFINITIONS[0];
+  let secondaryCluster =
+    scores[1]?.score > 0 ? scores[1].cluster : scores[0].cluster;
+
+  if (theme === 'MOVIE_MAP_DARK') {
+    const dark1 = MOVIE_MAP_DARK_CLUSTER_COLORS[primaryCluster.id];
+    if (dark1) {
+      primaryCluster = {
+        ...primaryCluster,
+        color: dark1.color,
+        glowColor: dark1.glowColor,
+      };
+    }
+    const dark2 = MOVIE_MAP_DARK_CLUSTER_COLORS[secondaryCluster.id];
+    if (dark2) {
+      secondaryCluster = {
+        ...secondaryCluster,
+        color: dark2.color,
+        glowColor: dark2.glowColor,
+      };
+    }
+  }
+
+  const primary = primaryCluster;
+  const secondary = secondaryCluster;
 
   const total = (scores[0]?.score || 1) + (scores[1]?.score || 0);
   const blendRatio = scores[1]?.score > 0
@@ -542,6 +657,8 @@ export function hasConcreteSharedConnection(
  * 5. Score & Cinematography (Max 10 pts): +6 pts shared Composer; +4 pts shared Cinematographer
  * 6. Viewer Overlap (Max 5 pts): +5 pts when frequently paired by audiences (only counted when a concrete connection exists)
  */
+const similarityCache = new Map<string, SimilarityBreakdown>();
+
 export function calculateSimilarity(
   focal: MediaItem,
   candidate: MediaItem,
@@ -562,6 +679,10 @@ export function calculateSimilarity(
       linkDistance: 60,
     };
   }
+
+  const cacheKey = `${focal.id}::${candidate.id}::${preset}`;
+  const cached = similarityCache.get(cacheKey);
+  if (cached) return cached;
 
   const sharedConnections: SharedConnection[] = [];
 
@@ -716,7 +837,7 @@ export function calculateSimilarity(
     tropePts > 0 || auteurPts > 0 || castPts > 0 || sonicVisualPts > 0;
 
   if (!hasConcrete) {
-    return {
+    const zeroResult: SimilarityBreakdown = {
       totalScore: 0,
       rawPoints: {
         tropes: 0,
@@ -729,6 +850,8 @@ export function calculateSimilarity(
       sharedConnections: [],
       linkDistance: 240,
     };
+    similarityCache.set(cacheKey, zeroResult);
+    return zeroResult;
   }
 
   const genrePts = 0;
@@ -764,7 +887,7 @@ export function calculateSimilarity(
 
   const linkDistance = Math.max(48, Math.round(180 - totalScore * 1.2));
 
-  return {
+  const result: SimilarityBreakdown = {
     totalScore,
     rawPoints: {
       tropes: tropePts,
@@ -777,6 +900,8 @@ export function calculateSimilarity(
     sharedConnections,
     linkDistance,
   };
+  similarityCache.set(cacheKey, result);
+  return result;
 }
 
 /**
@@ -812,6 +937,8 @@ export interface BuildGraphOptions {
   layoutMode?: GraphLayoutMode;
   colorMode?: NodeColorMode;
   sizeMode?: NodeSizeMode;
+  precomputedUmapPoints?: Record<string, PrecomputedUmapPoint>;
+  theme?: AppTheme;
 }
 
 /**
@@ -886,9 +1013,11 @@ export function buildSpatialGraph({
   interestedIds = [],
   suggestedMediaIds = [],
   graphFilters = DEFAULT_GRAPH_FILTERS,
-  layoutMode = 'FORCE_CONSTELLATION',
+  layoutMode = 'SEMANTIC_GALAXY',
   colorMode = 'CATEGORY',
   sizeMode = 'RATING',
+  precomputedUmapPoints,
+  theme = 'MOVIE_MAP_DARK',
 }: BuildGraphOptions): {
   nodes: GraphNode[];
   links: GraphLink[];
@@ -897,6 +1026,8 @@ export function buildSpatialGraph({
   clusters: SemanticCluster[];
   matchingMediaCount: number;
 } {
+  const activeEntityColors =
+    theme === 'MOVIE_MAP_DARK' ? MOVIE_MAP_DARK_ENTITY_COLORS : ENTITY_COLORS;
   const watchedSet = new Set(watchedIds);
   const interestedSet = new Set(interestedIds);
   const suggestedSet = new Set(suggestedMediaIds);
@@ -918,7 +1049,7 @@ export function buildSpatialGraph({
     }
   >();
   for (const item of items) {
-    itemClusterMap.set(item.id, assignItemSemanticCluster(item));
+    itemClusterMap.set(item.id, assignItemSemanticCluster(item, theme));
   }
 
   // Precompute filter match map for all items
@@ -967,6 +1098,12 @@ export function buildSpatialGraph({
     item: MediaItem,
     isFilterMatch: boolean
   ): { color: string; glowColor: string } => {
+    if (!isFilterMatch && graphFilters.filterBehavior === 'DIM') {
+      return theme === 'MOVIE_MAP_DARK'
+        ? { color: '#131A26', glowColor: '#1A2436' }
+        : { color: '#C8BEAA', glowColor: '#D5CCB9' };
+    }
+
     const clusterInfo = itemClusterMap.get(item.id);
     const blended = clusterInfo
       ? blendHexColors(
@@ -974,10 +1111,10 @@ export function buildSpatialGraph({
           clusterInfo.secondary.color,
           clusterInfo.blendRatio
         )
-      : ENTITY_COLORS[item.mediaType].primary;
+      : activeEntityColors[item.mediaType].primary;
 
-    let baseColor = ENTITY_COLORS[item.mediaType].primary;
-    let baseGlow = ENTITY_COLORS[item.mediaType].glow;
+    let baseColor = activeEntityColors[item.mediaType].primary;
+    let baseGlow = activeEntityColors[item.mediaType].glow;
 
     if (colorMode === 'CLUSTER') {
       baseColor = blended;
@@ -993,17 +1130,17 @@ export function buildSpatialGraph({
     return { color: baseColor, glowColor: baseGlow };
   };
 
-  // Helper to resolve node radius according to NodeSizeMode
+  // Helper to resolve node radius according to NodeSizeMode (refined Obsidian graph scale)
   const resolveNodeRadius = (
     item: MediaItem,
     connectionCount: number
   ): number => {
-    if (sizeMode === 'UNIFORM') return 8.0;
+    if (sizeMode === 'UNIFORM') return 3.6;
     if (sizeMode === 'CONNECTIONS') {
-      return Math.min(14, Math.max(5.5, 5.5 + Math.sqrt(connectionCount) * 1.8));
+      return Math.min(5.8, Math.max(2.6, 2.6 + Math.sqrt(connectionCount) * 0.6));
     }
-    // Default RATING
-    return 7.2 + Math.max(0, (item.imdbRating - 7.0) * 1.35);
+    // Default RATING: sleek Obsidian scale (3.0px - 5.2px)
+    return 3.0 + Math.max(0, (item.imdbRating - 7.0) * 0.9);
   };
 
   // ==================== MODE A: GLOBAL OR PERSONAL ARCHIVE CONSTELLATION (NO SINGLE FOCAL ITEM) ====================
@@ -1234,7 +1371,11 @@ export function buildSpatialGraph({
         suggestedSet.has(item.id);
       const isFilterMatch = filterMatchMap.get(item.id) ?? true;
       const clusterInfo = itemClusterMap.get(item.id);
-      const nearestNeighbors = nearestNeighborsMap.get(item.id) || [];
+      const precomputed = precomputedUmapPoints?.[item.id];
+      const nearestNeighbors =
+        precomputed?.nearestNeighborIds && precomputed.nearestNeighborIds.length > 0
+          ? precomputed.nearestNeighborIds
+          : nearestNeighborsMap.get(item.id) || [];
       const connectionsCount = connectedMediaByNode.get(item.id)?.size || 1;
 
       const isUnlinked =
@@ -1257,32 +1398,38 @@ export function buildSpatialGraph({
       let posY = 0;
       let posZ = 0;
 
-      if (layoutMode === 'SEMANTIC_GALAXY' && clusterInfo) {
-        // Position relative to its HDBSCAN semantic cluster centroid
-        // with boundary pull toward its secondary cluster
-        const c1 = clusterInfo.primary.centroid;
-        const c2 = clusterInfo.secondary.centroid;
-        const pull = clusterInfo.blendRatio; // 0 to 0.45
-        const baseX = c1.x * (1 - pull) + c2.x * pull;
-        const baseY = c1.y * (1 - pull) + c2.y * pull;
-        const baseZ = c1.z * (1 - pull) + c2.z * pull;
+      if (layoutMode === 'SEMANTIC_GALAXY') {
+        if (precomputed) {
+          posX = precomputed.x * forceSettings.linkDistanceMultiplier;
+          posY = precomputed.y * forceSettings.linkDistanceMultiplier;
+          posZ = precomputed.z * forceSettings.zRepulsion;
+        } else if (clusterInfo) {
+          // Position relative to its HDBSCAN semantic cluster centroid
+          // with boundary pull toward its secondary cluster
+          const c1 = clusterInfo.primary.centroid;
+          const c2 = clusterInfo.secondary.centroid;
+          const pull = clusterInfo.blendRatio; // 0 to 0.45
+          const baseX = c1.x * (1 - pull) + c2.x * pull;
+          const baseY = c1.y * (1 - pull) + c2.y * pull;
+          const baseZ = c1.z * (1 - pull) + c2.z * pull;
 
-        // Local cluster dispersion via seeded golden spiral
-        const localSpread = 46 * forceSettings.linkDistanceMultiplier;
-        const theta = idx * 2.399963; // Golden angle
-        const r = Math.sqrt((idx % 19) + 1) * (localSpread / 4.4);
-        posX = baseX + r * Math.cos(theta);
-        posY = baseY + r * Math.sin(theta);
-        posZ = baseZ + ((idx % 7) - 3) * 10 * forceSettings.zRepulsion;
+          // Local cluster dispersion via seeded golden spiral
+          const localSpread = 44 * forceSettings.linkDistanceMultiplier;
+          const theta = idx * 2.399963; // Golden angle
+          const r = Math.sqrt((idx % 19) + 1) * (localSpread / 4.0);
+          posX = baseX + r * Math.cos(theta);
+          posY = baseY + r * Math.sin(theta);
+          posZ = baseZ + ((idx % 7) - 3) * 8 * forceSettings.zRepulsion;
+        }
       } else {
-        const pos = seededSphericalPosition(
-          idx,
-          rankedMatches.length,
-          baseRadius
-        );
-        posX = pos.x;
-        posY = pos.y;
-        posZ = pos.z * forceSettings.zRepulsion;
+        // Constellation layout: anchor each title at its genre centroid with relational network spacing
+        const c = clusterInfo?.primary.centroid || { x: 0, y: 0, z: 0 };
+        const golden = idx * 2.399963;
+        const localSpread = 54 * forceSettings.linkDistanceMultiplier;
+        const r = Math.sqrt((idx % 19) + 1) * (localSpread / 3.8);
+        posX = c.x + r * Math.cos(golden);
+        posY = c.y + r * Math.sin(golden);
+        posZ = c.z + ((idx % 7) - 3) * 14 * forceSettings.zRepulsion;
       }
 
       const { color: nodeColor, glowColor: nodeGlow } = resolveNodeColor(
@@ -1465,16 +1612,16 @@ export function buildSpatialGraph({
         subLabel: `${ent.subLabel} · ${connectedIds.length} Titles`,
         type: ent.type,
         isFocal: false,
-        color: ENTITY_COLORS[ent.type].primary,
-        glowColor: ENTITY_COLORS[ent.type].glow,
+        color: activeEntityColors[ent.type].primary,
+        glowColor: activeEntityColors[ent.type].glow,
         radius:
           ent.type === 'DIRECTOR'
-            ? 5.8
+            ? 2.8
             : ent.type === 'TROPE'
-              ? 5.2
+              ? 2.4
               : ent.type === 'COMPOSER'
-                ? 5.0
-                : 4.6,
+                ? 2.3
+                : 2.2,
         x: avgX * 0.88 + jitter.x,
         y: avgY * 0.88 + jitter.y,
         z: (avgZ * 0.88 + jitter.z) * forceSettings.zRepulsion,
@@ -1512,14 +1659,46 @@ export function buildSpatialGraph({
           .filter((m) => itemClusterMap.get(m.id)?.primary.id === def.id)
           .map((m) => m.id);
 
+        let centroid = def.centroid;
+        if (clusterMediaIds.length > 0) {
+          let sumX = 0;
+          let sumY = 0;
+          let sumZ = 0;
+          let count = 0;
+          for (const mId of clusterMediaIds) {
+            const n = nodesMap.get(mId);
+            if (n) {
+              sumX += n.x;
+              sumY += n.y;
+              sumZ += n.z;
+              count++;
+            }
+          }
+          if (count > 0) {
+            centroid = {
+              x: Math.round(sumX / count),
+              y: Math.round(sumY / count),
+              z: Math.round(sumZ / count),
+            };
+          }
+        }
+
+        const darkPalette = MOVIE_MAP_DARK_CLUSTER_COLORS[def.id];
+        const color =
+          theme === 'MOVIE_MAP_DARK' && darkPalette ? darkPalette.color : def.color;
+        const glowColor =
+          theme === 'MOVIE_MAP_DARK' && darkPalette
+            ? darkPalette.glowColor
+            : def.glowColor;
+
         return {
           id: def.id,
           label: def.label,
           shortLabel: def.shortLabel,
           description: def.description,
-          color: def.color,
-          glowColor: def.glowColor,
-          centroid: def.centroid,
+          color,
+          glowColor,
+          centroid,
           keywords: def.keywords,
           genres: def.genres,
           mediaIds: clusterMediaIds,
@@ -1604,7 +1783,7 @@ export function buildSpatialGraph({
     mediaItem: focalItem,
     color: '#B8292F',
     glowColor: '#D43D43',
-    radius: 13,
+    radius: 6.8,
     x: 0,
     y: 0,
     z: 0,
@@ -1807,12 +1986,12 @@ export function buildSpatialGraph({
       glowColor: ENTITY_COLORS[ent.type].glow,
       radius:
         ent.type === 'DIRECTOR'
-          ? 5.8
+          ? 2.8
           : ent.type === 'TROPE'
-            ? 5.2
+            ? 2.4
             : ent.type === 'COMPOSER'
-              ? 5.0
-              : 4.6,
+              ? 2.3
+              : 2.2,
       x: avgX * 0.85 + jitter.x,
       y: avgY * 0.85 + jitter.y,
       z: (avgZ * 0.85 + jitter.z) * forceSettings.zRepulsion,
@@ -1850,14 +2029,46 @@ export function buildSpatialGraph({
         .filter((m) => itemClusterMap.get(m.id)?.primary.id === def.id)
         .map((m) => m.id);
 
+      let centroid = def.centroid;
+      if (clusterMediaIds.length > 0) {
+        let sumX = 0;
+        let sumY = 0;
+        let sumZ = 0;
+        let count = 0;
+        for (const mId of clusterMediaIds) {
+          const n = nodesMap.get(mId);
+          if (n) {
+            sumX += n.x;
+            sumY += n.y;
+            sumZ += n.z;
+            count++;
+          }
+        }
+        if (count > 0) {
+          centroid = {
+            x: Math.round(sumX / count),
+            y: Math.round(sumY / count),
+            z: Math.round(sumZ / count),
+          };
+        }
+      }
+
+      const darkPalette = MOVIE_MAP_DARK_CLUSTER_COLORS[def.id];
+      const color =
+        theme === 'MOVIE_MAP_DARK' && darkPalette ? darkPalette.color : def.color;
+      const glowColor =
+        theme === 'MOVIE_MAP_DARK' && darkPalette
+          ? darkPalette.glowColor
+          : def.glowColor;
+
       return {
         id: def.id,
         label: def.label,
         shortLabel: def.shortLabel,
         description: def.description,
-        color: def.color,
-        glowColor: def.glowColor,
-        centroid: def.centroid,
+        color,
+        glowColor,
+        centroid,
         keywords: def.keywords,
         genres: def.genres,
         mediaIds: clusterMediaIds,

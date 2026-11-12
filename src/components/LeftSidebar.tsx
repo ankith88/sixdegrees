@@ -20,6 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {
+  AppTheme,
   EntityNodeType,
   EntityVisibility,
   FilterMatchMode,
@@ -37,7 +38,10 @@ import {
   SemanticCluster,
   UserProfile,
 } from '@/lib/types';
-import { SEMANTIC_CLUSTER_DEFINITIONS } from '@/lib/similarity';
+import {
+  SEMANTIC_CLUSTER_DEFINITIONS,
+  MOVIE_MAP_DARK_CLUSTER_COLORS,
+} from '@/lib/similarity';
 import { FirestoreSyncTelemetry, QuotaTelemetry } from '@/lib/api';
 import { PwaInstallButton } from './PwaInstallButton';
 
@@ -95,6 +99,7 @@ interface LeftSidebarProps {
   onLabelModeChange?: (mode: LabelDisplayMode) => void;
   clusters?: SemanticCluster[];
   matchingMediaCount?: number;
+  theme?: AppTheme;
 }
 
 export function LeftSidebar({
@@ -125,7 +130,7 @@ export function LeftSidebar({
   onOpenProfileModal,
   graphFilters,
   onGraphFiltersChange,
-  layoutMode = 'FORCE_CONSTELLATION',
+  layoutMode = 'SEMANTIC_GALAXY',
   onLayoutModeChange,
   colorMode = 'CATEGORY',
   onColorModeChange,
@@ -135,8 +140,10 @@ export function LeftSidebar({
   onLabelModeChange,
   clusters = [],
   matchingMediaCount,
+  theme = 'MOVIE_MAP_DARK',
 }: LeftSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const isDark = theme === 'MOVIE_MAP_DARK';
+  const [collapsed, setCollapsed] = useState(true);
   const [keywordSearch, setKeywordSearch] = useState('');
 
   const presets: Array<{
@@ -526,23 +533,35 @@ export function LeftSidebar({
     return (
       <aside
         aria-label="Collapsed Curatorial Controls"
-        className="hidden lg:flex w-[52px] shrink-0 h-[calc(100vh-3.5rem)] bg-[#EFE8DA] border-r border-[#D5CCB9] flex-col items-center py-3 gap-2 z-20 select-none"
+        className={`hidden lg:flex w-[52px] shrink-0 h-[calc(100vh-3.5rem)] flex-col items-center py-3 gap-2 z-20 select-none ${
+          isDark
+            ? 'bg-[#0E1524]/95 border-r border-[#1C273C] text-[#F0F4FC]'
+            : 'bg-[#EFE8DA] border-r border-[#D5CCB9] text-[#171412]'
+        }`}
       >
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="w-8 h-8 rounded bg-[#FBF8F2] hover:bg-[#E5DEC9] border border-[#C8BEAA] flex items-center justify-center text-[#171412] shadow-archival-sm transition-colors cursor-pointer"
+          className={`w-8 h-8 rounded flex items-center justify-center transition-colors cursor-pointer ${
+            isDark
+              ? 'bg-[#121A2B] hover:bg-[#162035] border border-[#1C273C] text-[#F0F4FC]'
+              : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] border border-[#C8BEAA] text-[#171412] shadow-archival-sm'
+          }`}
           aria-label="Expand Curatorial Sidebar"
           title="Expand Curatorial Sidebar"
         >
-          <PanelLeftOpen className="w-4 h-4 text-[#52483E]" aria-hidden="true" />
+          <PanelLeftOpen className={`w-4 h-4 ${isDark ? 'text-[#00D2FF]' : 'text-[#52483E]'}`} aria-hidden="true" />
         </button>
 
         {focalItem && (
           <button
             type="button"
             onClick={onClearFocal}
-            className="w-8 h-8 rounded bg-[#F5E4E4] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#D8B4B6] flex items-center justify-center transition-colors cursor-pointer"
+            className={`w-8 h-8 rounded flex items-center justify-center transition-colors cursor-pointer ${
+              isDark
+                ? 'bg-[#FF3366]/20 hover:bg-[#FF3366] text-[#FF3366] hover:text-[#0A0E17] border border-[#FF3366]/40'
+                : 'bg-[#F5E4E4] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#D8B4B6]'
+            }`}
             title={`Centered on "${focalItem.title}" — Click to show all titles`}
             aria-label={`Clear focal title ${focalItem.title}`}
           >
@@ -550,7 +569,7 @@ export function LeftSidebar({
           </button>
         )}
 
-        <div className="w-6 h-px bg-[#D5CCB9] my-0.5" aria-hidden="true" />
+        <div className={`w-6 h-px my-0.5 ${isDark ? 'bg-[#1C273C]' : 'bg-[#D5CCB9]'}`} aria-hidden="true" />
 
         {entityToggles.map((item) => {
           const active = visibility[item.type];
@@ -562,8 +581,12 @@ export function LeftSidebar({
               onClick={() => onToggleVisibility(item.type)}
               className={`relative w-8 h-8 rounded border flex items-center justify-center transition-all cursor-pointer ${
                 active
-                  ? 'bg-[#FBF8F2] border-[#C8BEAA] shadow-archival-sm'
-                  : 'bg-[#E5DEC9]/45 border-transparent opacity-40 hover:opacity-80'
+                  ? isDark
+                    ? 'bg-[#162035] border-[#00D2FF]/50 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                    : 'bg-[#FBF8F2] border-[#C8BEAA] shadow-archival-sm'
+                  : isDark
+                    ? 'bg-[#121A2B]/40 border-transparent opacity-30 hover:opacity-75'
+                    : 'bg-[#E5DEC9]/45 border-transparent opacity-40 hover:opacity-80'
               }`}
               title={`${item.label} (${item.shapeLabel}): ${active ? 'Visible' : 'Hidden'} (${count} in graph)`}
               aria-label={`Toggle ${item.label}`}
@@ -572,7 +595,7 @@ export function LeftSidebar({
               {renderCategoryShapeIcon(item.type, item.color)}
               {active && (
                 <span
-                  className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#FBF8F2]"
+                  className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border ${isDark ? 'border-[#0E1524]' : 'border-[#FBF8F2]'}`}
                   style={{ backgroundColor: item.color }}
                   aria-hidden="true"
                 />
@@ -583,11 +606,15 @@ export function LeftSidebar({
 
         {hasCustomSettings && (
           <>
-            <div className="w-6 h-px bg-[#D5CCB9] my-0.5" aria-hidden="true" />
+            <div className={`w-6 h-px my-0.5 ${isDark ? 'bg-[#1C273C]' : 'bg-[#D5CCB9]'}`} aria-hidden="true" />
             <button
               type="button"
               onClick={handleResetAll}
-              className="w-8 h-8 rounded bg-[#FBF8F2] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#C8BEAA] flex items-center justify-center transition-colors cursor-pointer"
+              className={`w-8 h-8 rounded flex items-center justify-center transition-colors cursor-pointer ${
+                isDark
+                  ? 'bg-[#121A2B] hover:bg-[#FF3366] text-[#FF3366] hover:text-[#0A0E17] border border-[#1C273C]'
+                  : 'bg-[#FBF8F2] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#C8BEAA]'
+              }`}
               title="Reset all filters and lenses"
               aria-label="Reset all filters"
             >
@@ -602,13 +629,17 @@ export function LeftSidebar({
   const sidebarContent = (
     <>
       {/* Editorial Rail Header */}
-      <div className="h-11 px-4 border-b border-[#D5CCB9] bg-[#EFE8DA] flex items-center justify-between gap-2 shrink-0">
+      <div className={`h-11 px-4 border-b flex items-center justify-between gap-2 shrink-0 ${
+        isDark
+          ? 'bg-[#121A2B] border-[#1C273C] text-[#F0F4FC]'
+          : 'bg-[#EFE8DA] border-[#D5CCB9] text-[#171412]'
+      }`}>
         <div className="flex items-center gap-2 min-w-0">
-          <h2 className="font-heading text-[15px] font-bold text-[#171412] tracking-tight truncate">
+          <h2 className="font-heading text-[15px] font-bold tracking-tight truncate">
             Filters &amp; Lenses
           </h2>
           {hasCustomSettings && (
-            <span className="w-1.5 h-1.5 rounded-full bg-[#B8292F] shrink-0" />
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDark ? 'bg-[#00D2FF] shadow-[0_0_6px_#00D2FF]' : 'bg-[#B8292F]'}`} />
           )}
         </div>
 
@@ -617,7 +648,11 @@ export function LeftSidebar({
             <button
               type="button"
               onClick={handleResetAll}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold text-[#8C1D22] bg-[#F5E4E4]/70 hover:bg-[#B8292F] hover:text-[#FBF8F2] border border-[#D8B4B6] transition-colors cursor-pointer"
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                isDark
+                  ? 'text-[#FF3366] bg-[#FF3366]/15 hover:bg-[#FF3366] hover:text-[#0A0E17] border border-[#FF3366]/30'
+                  : 'text-[#8C1D22] bg-[#F5E4E4]/70 hover:bg-[#B8292F] hover:text-[#FBF8F2] border border-[#D8B4B6]'
+              }`}
               title="Reset all filters and lenses"
             >
               <RotateCcw className="w-2.5 h-2.5" aria-hidden="true" />
@@ -628,7 +663,11 @@ export function LeftSidebar({
           <button
             type="button"
             onClick={() => setCollapsed(true)}
-            className="hidden lg:inline-flex items-center justify-center w-6 h-6 rounded text-[#52483E] hover:text-[#171412] hover:bg-[#E5DEC9] transition-colors cursor-pointer"
+            className={`hidden lg:inline-flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer ${
+              isDark
+                ? 'text-[#94A3B8] hover:text-[#F0F4FC] hover:bg-[#162035]'
+                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#E5DEC9]'
+            }`}
             aria-label="Collapse Sidebar"
             title="Collapse sidebar to icon rail"
           >
@@ -639,7 +678,11 @@ export function LeftSidebar({
             <button
               type="button"
               onClick={onCloseMobile}
-              className="lg:hidden inline-flex items-center justify-center w-6 h-6 rounded text-[#52483E] hover:text-[#171412] hover:bg-[#E5DEC9] transition-colors cursor-pointer"
+              className={`lg:hidden inline-flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer ${
+                isDark
+                  ? 'text-[#94A3B8] hover:text-[#F0F4FC] hover:bg-[#162035]'
+                  : 'text-[#52483E] hover:text-[#171412] hover:bg-[#E5DEC9]'
+              }`}
               aria-label="Close Menu"
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" />
@@ -648,24 +691,34 @@ export function LeftSidebar({
         </div>
       </div>
 
-      {/* Scrollable Curatorial Sections (hairline-divided, zero nested card boxes) */}
-      <div className="divide-y divide-[#D5CCB9] overflow-y-auto flex-1">
+      {/* Scrollable Curatorial Sections */}
+      <div className={`divide-y overflow-y-auto flex-1 ${
+        isDark ? 'divide-[#1C273C]' : 'divide-[#D5CCB9]'
+      }`}>
         {/* 0. Personal Profile & My Watched / Interested Graphs */}
-        <section className="px-4 py-4 space-y-2.5 bg-[#FBF8F2]/65">
+        <section className={`px-4 py-4 space-y-2.5 ${isDark ? 'bg-[#121A2B]/40' : 'bg-[#FBF8F2]/65'}`}>
           <div className="flex items-center justify-between gap-2">
-            <h3 className="font-heading text-[15px] font-bold text-[#171412] flex items-center gap-1.5">
+            <h3 className={`font-heading text-[15px] font-bold flex items-center gap-1.5 ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
               <Bookmark
-                className="w-3.5 h-3.5 text-[#B8292F] shrink-0"
+                className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'}`}
                 aria-hidden="true"
               />
               <span>Personal Graphs</span>
             </h3>
             {activeUser && (
               <div className="flex items-center gap-1">
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-tabular font-semibold bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-tabular font-semibold border ${
+                  isDark
+                    ? 'bg-[#00D2FF]/15 text-[#00D2FF] border-[#00D2FF]/30'
+                    : 'bg-[#E3EFEA] text-[#2A6B53] border-[#B4D4C7]'
+                }`}>
                   {watchedCount}W
                 </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-tabular font-semibold bg-[#E6EEF6] text-[#234B6E] border border-[#B6C8DC]">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-tabular font-semibold border ${
+                  isDark
+                    ? 'bg-[#FF3366]/15 text-[#FF3366] border-[#FF3366]/30'
+                    : 'bg-[#E6EEF6] text-[#234B6E] border-[#B6C8DC]'
+                }`}>
                   {interestedCount}I
                 </span>
               </div>
@@ -676,7 +729,11 @@ export function LeftSidebar({
             <button
               type="button"
               onClick={onOpenProfileModal}
-              className="w-full py-2 px-2.5 rounded-lg bg-[#EFE8DA] hover:bg-[#E5DEC9] border border-[#C8BEAA] flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
+              className={`w-full py-2 px-2.5 rounded-lg border flex items-center justify-between gap-2 text-left transition-colors cursor-pointer ${
+                isDark
+                  ? 'bg-[#121A2B] hover:bg-[#162035] border-[#1C273C]'
+                  : 'bg-[#EFE8DA] hover:bg-[#E5DEC9] border-[#C8BEAA]'
+              }`}
             >
               <div className="flex items-center gap-2 min-w-0">
                 {activeUser ? (
@@ -687,24 +744,26 @@ export function LeftSidebar({
                     {activeUser.displayName.slice(0, 2).toUpperCase()}
                   </span>
                 ) : (
-                  <span className="w-6 h-6 rounded-full bg-[#B8292F]/15 text-[#B8292F] flex items-center justify-center shrink-0">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                    isDark ? 'bg-[#00D2FF]/20 text-[#00D2FF]' : 'bg-[#B8292F]/15 text-[#B8292F]'
+                  }`}>
                     <User className="w-3.5 h-3.5" aria-hidden="true" />
                   </span>
                 )}
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-[#171412] truncate">
+                  <div className={`text-xs font-bold truncate ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
                     {activeUser
                       ? activeUser.displayName
                       : 'Sign In to Unlock Lists'}
                   </div>
-                  <div className="text-[10px] text-[#52483E] truncate">
+                  <div className={`text-[10px] truncate ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                     {activeUser
                       ? `@${activeUser.handle} · Watchlist & Interested`
                       : 'Access Watched & Interested graphs'}
                   </div>
                 </div>
               </div>
-              <span className="text-[10px] font-semibold text-[#B8292F] shrink-0">
+              <span className={`text-[10px] font-semibold shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'}`}>
                 {activeUser ? 'Manage' : 'Sign In'}
               </span>
             </button>
@@ -712,13 +771,15 @@ export function LeftSidebar({
 
           {activeUser && onGraphScopeChange && (
             <div className="space-y-1 pt-0.5">
-              <div className="text-[11px] font-semibold text-[#52483E]">
+              <div className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                 Constellation Source
               </div>
               <div
                 role="group"
                 aria-label="Constellation graph scope"
-                className="grid grid-cols-1 gap-1 p-1 rounded bg-[#E5DEC9] border border-[#C8BEAA]"
+                className={`grid grid-cols-1 gap-1 p-1 rounded border ${
+                  isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+                }`}
               >
                 {(
                   [
@@ -759,14 +820,20 @@ export function LeftSidebar({
                       onClick={() => onGraphScopeChange(sc.id)}
                       className={`flex items-center justify-between gap-2 py-1.5 px-2.5 rounded text-xs font-semibold transition-all cursor-pointer ${
                         active
-                          ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                          : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                          ? isDark
+                            ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                            : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                          : isDark
+                            ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                            : 'text-[#52483E] hover:text-[#171412] border border-transparent'
                       }`}
                     >
                       <span className="flex items-center gap-1.5 truncate">
                         <Icon
                           className={`w-3.5 h-3.5 shrink-0 ${
-                            active ? 'text-[#2A6B53]' : 'text-[#6B5E50]'
+                            active
+                              ? isDark ? 'text-[#00D2FF]' : 'text-[#2A6B53]'
+                              : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
                           }`}
                           aria-hidden="true"
                         />
@@ -774,7 +841,7 @@ export function LeftSidebar({
                       </span>
                       {active && (
                         <Check
-                          className="w-3 h-3 text-[#2A6B53] shrink-0"
+                          className={`w-3 h-3 shrink-0 ${isDark ? 'text-[#00D2FF]' : 'text-[#2A6B53]'}`}
                           aria-hidden="true"
                         />
                       )}
@@ -791,8 +858,12 @@ export function LeftSidebar({
               onClick={onOpenSuggestions}
               className={`w-full py-2 px-3 rounded text-xs font-semibold border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                 isSuggestMode
-                  ? 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
-                  : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22] shadow-archival-sm'
+                  ? isDark
+                    ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
+                    : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
+                  : isDark
+                    ? 'bg-[#00D2FF] hover:bg-[#00B4DB] text-[#0A0E17] font-bold border-[#00D2FF] shadow-[0_0_12px_rgba(0,210,255,0.3)]'
+                    : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22] shadow-archival-sm'
               }`}
             >
               <Bookmark className="w-3.5 h-3.5" aria-hidden="true" />
@@ -813,7 +884,11 @@ export function LeftSidebar({
                   key={g}
                   type="button"
                   onClick={() => onSuggestByGenre(g)}
-                  className="px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FBF8F2] hover:bg-[#234B6E] text-[#52483E] hover:text-[#FBF8F2] border border-[#C8BEAA] hover:border-[#234B6E] transition-colors cursor-pointer"
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-[#121A2B] hover:bg-[#00D2FF]/20 text-[#94A3B8] hover:text-[#00D2FF] border-[#1C273C] hover:border-[#00D2FF]/40'
+                      : 'bg-[#FBF8F2] hover:bg-[#234B6E] text-[#52483E] hover:text-[#FBF8F2] border border-[#C8BEAA] hover:border-[#234B6E]'
+                  }`}
                 >
                   {g}
                 </button>
@@ -851,14 +926,14 @@ export function LeftSidebar({
           )}
 
           {/* MOVIE MAP REA: GALAXY & NODE STYLE SECTION */}
-          <div className="space-y-2.5 pb-3 border-b border-[#D5CCB9]">
+          <div className={`space-y-2.5 pb-3 border-b ${isDark ? 'border-[#1C273C]' : 'border-[#D5CCB9]'}`}>
             <div className="flex items-baseline justify-between">
-              <h3 className="font-heading text-[15px] font-bold text-[#171412] flex items-center gap-1.5">
-                <Orbit className="w-3.5 h-3.5 text-[#234B6E]" aria-hidden="true" />
+              <h3 className={`font-heading text-[15px] font-bold flex items-center gap-1.5 ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+                <Orbit className={`w-3.5 h-3.5 ${isDark ? 'text-[#00D2FF]' : 'text-[#234B6E]'}`} aria-hidden="true" />
                 <span>Galaxy Projection</span>
               </h3>
-              <span className="text-[11px] font-semibold text-[#6B5E50]">
-                {layoutMode === 'SEMANTIC_GALAXY' ? 'UMAP Clusters' : 'Physics Orbit'}
+              <span className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
+                {layoutMode === 'SEMANTIC_GALAXY' ? 'Themes & Vibe' : 'Cast & Crew'}
               </span>
             </div>
 
@@ -866,18 +941,24 @@ export function LeftSidebar({
             <div
               role="group"
               aria-label="Graph layout projection"
-              className="grid grid-cols-2 gap-1 p-1 rounded bg-[#E5DEC9] border border-[#C8BEAA]"
+              className={`grid grid-cols-2 gap-1 p-1 rounded border ${
+                isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+              }`}
             >
               <button
                 type="button"
                 onClick={() => onLayoutModeChange?.('FORCE_CONSTELLATION')}
                 className={`py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   layoutMode === 'FORCE_CONSTELLATION'
-                    ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                    : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                    ? isDark
+                      ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                      : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                    : isDark
+                      ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                      : 'text-[#52483E] hover:text-[#171412] border border-transparent'
                 }`}
               >
-                <Compass className="w-3 h-3 text-[#234B6E]" />
+                <Compass className={`w-3 h-3 ${isDark ? 'text-[#00D2FF]' : 'text-[#234B6E]'}`} />
                 <span>Constellation</span>
               </button>
               <button
@@ -885,88 +966,35 @@ export function LeftSidebar({
                 onClick={() => onLayoutModeChange?.('SEMANTIC_GALAXY')}
                 className={`py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   layoutMode === 'SEMANTIC_GALAXY'
-                    ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                    : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                    ? isDark
+                      ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                      : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                    : isDark
+                      ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                      : 'text-[#52483E] hover:text-[#171412] border border-transparent'
                 }`}
               >
-                <Sparkles className="w-3 h-3 text-[#B8292F]" />
+                <Sparkles className={`w-3 h-3 ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`} />
                 <span>Semantic Galaxy</span>
               </button>
-            </div>
-
-            {/* Color By Mode: Cluster, Genre, Decade, Category */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-[#52483E]">
-                Color Nodes By
-              </label>
-              <div className="grid grid-cols-4 gap-1 p-1 rounded bg-[#E5DEC9] border border-[#C8BEAA]">
-                {(
-                  [
-                    { id: 'CLUSTER', label: 'Cluster' },
-                    { id: 'GENRE', label: 'Genre' },
-                    { id: 'DECADE', label: 'Decade' },
-                    { id: 'CATEGORY', label: 'Type' },
-                  ] as const
-                ).map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => onColorModeChange?.(c.id)}
-                    className={`py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
-                      colorMode === c.id
-                        ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                        : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Size By Mode: Rating, Connections, Uniform */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-[#52483E]">
-                Size Nodes By
-              </label>
-              <div className="grid grid-cols-3 gap-1 p-1 rounded bg-[#E5DEC9] border border-[#C8BEAA]">
-                {(
-                  [
-                    { id: 'RATING', label: 'IMDb Rating' },
-                    { id: 'CONNECTIONS', label: 'Bridges' },
-                    { id: 'UNIFORM', label: 'Uniform' },
-                  ] as const
-                ).map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onSizeModeChange?.(s.id)}
-                    className={`py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
-                      sizeMode === s.id
-                        ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                        : 'text-[#52483E] hover:text-[#171412] border border-transparent'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Label Display Mode (Auto, All, Off) */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-[#52483E]">
+                <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                   Canvas Labels
                 </label>
-                <span className="text-[10px] text-[#6B5E50] font-mono">Press 'L'</span>
+                <span className={`text-[10px] font-mono ${isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'}`}>Press 'L'</span>
               </div>
-              <div className="grid grid-cols-3 gap-1 p-1 rounded bg-[#E5DEC9] border border-[#C8BEAA]">
+              <div className={`grid grid-cols-3 gap-1 p-1 rounded border ${
+                isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+              }`}>
                 {(
                   [
-                    { id: 'AUTO', label: 'Auto (LOD)' },
-                    { id: 'ALL', label: 'All Labels' },
-                    { id: 'OFF', label: 'Off' },
+                    { id: 'AUTO', label: 'Auto' },
+                    { id: 'ALL', label: 'All Titles' },
+                    { id: 'OFF', label: 'Hidden' },
                   ] as const
                 ).map((l) => (
                   <button
@@ -975,8 +1003,12 @@ export function LeftSidebar({
                     onClick={() => onLabelModeChange?.(l.id)}
                     className={`py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
                       labelMode === l.id
-                        ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                        : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                        ? isDark
+                          ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                          : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                        : isDark
+                          ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                          : 'text-[#52483E] hover:text-[#171412] border border-transparent'
                     }`}
                   >
                     {l.label}
@@ -984,112 +1016,63 @@ export function LeftSidebar({
                 ))}
               </div>
             </div>
+
+            {/* Territory Contours Toggle for 2D Galaxy Mode */}
+            {graphFilters && onGraphFiltersChange && (
+              <div className="flex items-center justify-between pt-1">
+                <div>
+                  <div className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
+                    Territory Contours
+                  </div>
+                  <div className={`text-[10px] ${isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'}`}>
+                    Watercolor halos in 2D Galaxy
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onGraphFiltersChange({
+                      ...graphFilters,
+                      showTerritories: graphFilters.showTerritories === false,
+                    })
+                  }
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
+                    graphFilters.showTerritories !== false
+                      ? isDark
+                        ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
+                        : 'bg-[#E3EFEA] text-[#1E563F] border-[#B4D4C7]'
+                      : isDark
+                        ? 'bg-[#121A2B] text-[#64748B] border-[#1C273C]'
+                        : 'bg-[#E5DEC9] text-[#6B5E50] border-[#C8BEAA]'
+                  }`}
+                >
+                  {graphFilters.showTerritories !== false ? 'On' : 'Off'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* MOVIE MAP REA: MULTI-FACETED FILTER CONTROLS */}
           {graphFilters && onGraphFiltersChange && (
-            <div className="space-y-3 pb-3 border-b border-[#D5CCB9]">
+            <div className={`space-y-3 pb-3 border-b ${isDark ? 'border-[#1C273C]' : 'border-[#D5CCB9]'}`}>
               <div className="flex items-baseline justify-between">
-                <h3 className="font-heading text-[15px] font-bold text-[#171412] flex items-center gap-1.5">
-                  <Compass className="w-3.5 h-3.5 text-[#B8292F]" aria-hidden="true" />
+                <h3 className={`font-heading text-[15px] font-bold flex items-center gap-1.5 ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
+                  <Compass className={`w-3.5 h-3.5 ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`} aria-hidden="true" />
                   <span>Map Filters</span>
                 </h3>
-                <span className="text-xs font-tabular font-bold text-[#2A6B53]">
+                <span className={`text-xs font-tabular font-bold ${isDark ? 'text-[#00D2FF]' : 'text-[#2A6B53]'}`}>
                   {matchingMediaCount !== undefined ? matchingMediaCount : totalMediaCount} of {totalMediaCount}
                 </span>
               </div>
 
-              {/* Match Mode (OR vs AND) & Filter Behavior (DIM vs HIDE) */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-semibold text-[#6B5E50] uppercase tracking-wider block mb-1">
-                    Match Logic
-                  </label>
-                  <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded bg-[#E5DEC9] border border-[#C8BEAA]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onGraphFiltersChange({
-                          ...graphFilters,
-                          matchMode: 'OR',
-                        })
-                      }
-                      className={`py-1 text-[11px] font-bold rounded cursor-pointer ${
-                        graphFilters.matchMode === 'OR'
-                          ? 'bg-[#FBF8F2] text-[#8C1D22] shadow-archival-sm'
-                          : 'text-[#52483E]'
-                      }`}
-                    >
-                      Any (OR)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onGraphFiltersChange({
-                          ...graphFilters,
-                          matchMode: 'AND',
-                        })
-                      }
-                      className={`py-1 text-[11px] font-bold rounded cursor-pointer ${
-                        graphFilters.matchMode === 'AND'
-                          ? 'bg-[#FBF8F2] text-[#8C1D22] shadow-archival-sm'
-                          : 'text-[#52483E]'
-                      }`}
-                    >
-                      All (AND)
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-semibold text-[#6B5E50] uppercase tracking-wider block mb-1">
-                    Canvas Mode
-                  </label>
-                  <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded bg-[#E5DEC9] border border-[#C8BEAA]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onGraphFiltersChange({
-                          ...graphFilters,
-                          filterBehavior: 'DIM',
-                        })
-                      }
-                      title="Keep non-matching nodes visible at low opacity"
-                      className={`py-1 text-[11px] font-bold rounded cursor-pointer ${
-                        graphFilters.filterBehavior === 'DIM'
-                          ? 'bg-[#FBF8F2] text-[#234B6E] shadow-archival-sm'
-                          : 'text-[#52483E]'
-                      }`}
-                    >
-                      Dim
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onGraphFiltersChange({
-                          ...graphFilters,
-                          filterBehavior: 'HIDE',
-                        })
-                      }
-                      title="Prune non-matching nodes entirely"
-                      className={`py-1 text-[11px] font-bold rounded cursor-pointer ${
-                        graphFilters.filterBehavior === 'HIDE'
-                          ? 'bg-[#FBF8F2] text-[#234B6E] shadow-archival-sm'
-                          : 'text-[#52483E]'
-                      }`}
-                    >
-                      Hide
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               {/* Watched / Want to Watch Filter */}
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-[#52483E]">
+                <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                   Watched Status
                 </label>
-                <div className="grid grid-cols-4 gap-1 p-1 rounded bg-[#E5DEC9] border border-[#C8BEAA]">
+                <div className={`grid grid-cols-4 gap-1 p-1 rounded border ${
+                  isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+                }`}>
                   {(
                     [
                       { id: 'ALL', label: 'All' },
@@ -1109,8 +1092,12 @@ export function LeftSidebar({
                       }
                       className={`py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
                         graphFilters.watchedFilter === wf.id
-                          ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                          : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                          ? isDark
+                            ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                            : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                          : isDark
+                            ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                            : 'text-[#52483E] hover:text-[#171412] border border-transparent'
                       }`}
                     >
                       {wf.label}
@@ -1122,7 +1109,7 @@ export function LeftSidebar({
               {/* Semantic Cluster Filter Chips */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-semibold text-[#52483E]">
+                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                     Semantic Cluster Focus
                   </label>
                   {graphFilters.activeClusterId && (
@@ -1134,7 +1121,7 @@ export function LeftSidebar({
                           activeClusterId: null,
                         })
                       }
-                      className="text-[10px] text-[#B8292F] hover:underline cursor-pointer"
+                      className={`text-[10px] hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`}
                     >
                       Clear
                     </button>
@@ -1143,6 +1130,9 @@ export function LeftSidebar({
                 <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pr-1">
                   {SEMANTIC_CLUSTER_DEFINITIONS.map((c) => {
                     const isSelected = graphFilters.activeClusterId === c.id;
+                    const clusterColor = isDark
+                      ? MOVIE_MAP_DARK_CLUSTER_COLORS[c.id]?.color || c.color
+                      : c.color;
                     return (
                       <button
                         key={c.id}
@@ -1154,16 +1144,16 @@ export function LeftSidebar({
                           })
                         }
                         style={{
-                          backgroundColor: isSelected ? c.color : '#FBF8F2',
-                          color: isSelected ? '#FBF8F2' : '#171412',
-                          borderColor: isSelected ? c.color : '#C8BEAA',
+                          backgroundColor: isSelected ? clusterColor : isDark ? '#121A2B' : '#FBF8F2',
+                          color: isSelected ? '#0A0E17' : isDark ? '#F0F4FC' : '#171412',
+                          borderColor: isSelected ? clusterColor : isDark ? '#1C273C' : '#C8BEAA',
                         }}
                         className="px-2 py-0.5 rounded text-[10px] font-semibold border flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <span
                           className="w-1.5 h-1.5 rounded-full"
                           style={{
-                            backgroundColor: isSelected ? '#FBF8F2' : c.color,
+                            backgroundColor: isSelected ? '#0A0E17' : clusterColor,
                           }}
                         />
                         <span>{c.shortLabel}</span>
@@ -1212,8 +1202,12 @@ export function LeftSidebar({
                         }}
                         className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
                           active
-                            ? 'bg-[#234B6E] text-[#FBF8F2] border-[#234B6E]'
-                            : 'bg-[#FBF8F2] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
+                            ? isDark
+                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/50 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                              : 'bg-[#234B6E] text-[#FBF8F2] border-[#234B6E]'
+                            : isDark
+                              ? 'bg-[#121A2B] text-[#94A3B8] hover:text-[#F0F4FC] border-[#1C273C]'
+                              : 'bg-[#FBF8F2] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
                         }`}
                       >
                         {g}
@@ -1226,7 +1220,7 @@ export function LeftSidebar({
               {/* Multi-Select Themes / Tropes (Keywords) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-semibold text-[#52483E]">
+                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                     Themes &amp; Keywords ({graphFilters.selectedTropes.length} selected)
                   </label>
                   {graphFilters.selectedTropes.length > 0 && (
@@ -1238,7 +1232,7 @@ export function LeftSidebar({
                           selectedTropes: [],
                         })
                       }
-                      className="text-[10px] text-[#B8292F] hover:underline cursor-pointer"
+                      className={`text-[10px] hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#B8292F]'}`}
                     >
                       Clear
                     </button>
@@ -1249,7 +1243,11 @@ export function LeftSidebar({
                   placeholder="Search keywords…"
                   value={keywordSearch}
                   onChange={(e) => setKeywordSearch(e.target.value)}
-                  className="w-full px-2 py-1 rounded text-xs bg-[#FBF8F2] border border-[#C8BEAA] text-[#171412] placeholder-[#8F816B] focus:outline-none focus:border-[#B8292F]"
+                  className={`w-full px-2 py-1 rounded text-xs focus:outline-none ${
+                    isDark
+                      ? 'bg-[#0B101B] border border-[#1C273C] text-[#F0F4FC] placeholder-[#64748B] focus:border-[#00D2FF]'
+                      : 'bg-[#FBF8F2] border border-[#C8BEAA] text-[#171412] placeholder-[#8F816B] focus:border-[#B8292F]'
+                  }`}
                 />
                 <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pr-1">
                   {filteredTropes.map((t) => {
@@ -1269,8 +1267,12 @@ export function LeftSidebar({
                         }}
                         className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
                           active
-                            ? 'bg-[#2A6B53] text-[#FBF8F2] border-[#2A6B53]'
-                            : 'bg-[#FBF8F2] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
+                            ? isDark
+                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/50 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                              : 'bg-[#2A6B53] text-[#FBF8F2] border-[#2A6B53]'
+                            : isDark
+                              ? 'bg-[#121A2B] text-[#94A3B8] hover:text-[#F0F4FC] border-[#1C273C]'
+                              : 'bg-[#FBF8F2] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
                         }`}
                       >
                         {t}
@@ -1283,10 +1285,10 @@ export function LeftSidebar({
               {/* Year Era Slider */}
               <div className="space-y-1">
                 <div className="flex items-baseline justify-between">
-                  <label className="text-[11px] font-semibold text-[#52483E]">
+                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                     Release Year Range
                   </label>
-                  <span className="text-xs font-tabular font-bold text-[#171412]">
+                  <span className={`text-xs font-tabular font-bold ${isDark ? 'text-[#00D2FF]' : 'text-[#171412]'}`}>
                     {graphFilters.yearRange[0]} – {graphFilters.yearRange[1]}
                   </span>
                 </div>
@@ -1306,7 +1308,9 @@ export function LeftSidebar({
                         ],
                       })
                     }
-                    className="w-full accent-[#B8292F] h-1.5 bg-[#D5CCB9] rounded cursor-pointer"
+                    className={`w-full h-1.5 rounded cursor-pointer ${
+                      isDark ? 'accent-[#00D2FF] bg-[#182338]' : 'accent-[#B8292F] bg-[#D5CCB9]'
+                    }`}
                   />
                   <input
                     type="range"
@@ -1323,7 +1327,9 @@ export function LeftSidebar({
                         ],
                       })
                     }
-                    className="w-full accent-[#B8292F] h-1.5 bg-[#D5CCB9] rounded cursor-pointer"
+                    className={`w-full h-1.5 rounded cursor-pointer ${
+                      isDark ? 'accent-[#00D2FF] bg-[#182338]' : 'accent-[#B8292F] bg-[#D5CCB9]'
+                    }`}
                   />
                 </div>
                 <div className="flex gap-1 pt-1">
@@ -1351,8 +1357,12 @@ export function LeftSidebar({
                         }
                         className={`flex-1 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
                           isMatch
-                            ? 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
-                            : 'bg-[#FBF8F2] text-[#6B5E50] border-[#D5CCB9]'
+                            ? isDark
+                              ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
+                              : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
+                            : isDark
+                              ? 'bg-[#121A2B] text-[#94A3B8] border-[#1C273C]'
+                              : 'bg-[#FBF8F2] text-[#6B5E50] border-[#D5CCB9]'
                         }`}
                       >
                         {era.label}
@@ -1365,10 +1375,10 @@ export function LeftSidebar({
               {/* Minimum IMDb Rating Slider */}
               <div className="space-y-1">
                 <div className="flex items-baseline justify-between">
-                  <label className="text-[11px] font-semibold text-[#52483E]">
+                  <label className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                     Minimum Rating
                   </label>
-                  <span className="text-xs font-tabular font-bold text-[#8C1D22]">
+                  <span className={`text-xs font-tabular font-bold ${isDark ? 'text-[#FF3366]' : 'text-[#8C1D22]'}`}>
                     {graphFilters.minImdbRating > 0
                       ? `IMDb ${graphFilters.minImdbRating.toFixed(1)}+`
                       : 'Any Rating'}
@@ -1386,7 +1396,9 @@ export function LeftSidebar({
                       minImdbRating: parseFloat(e.target.value),
                     })
                   }
-                  className="w-full accent-[#B8292F] h-1.5 bg-[#D5CCB9] rounded cursor-pointer"
+                  className={`w-full h-1.5 rounded cursor-pointer ${
+                    isDark ? 'accent-[#FF3366] bg-[#182338]' : 'accent-[#B8292F] bg-[#D5CCB9]'
+                  }`}
                 />
               </div>
             </div>
@@ -1394,10 +1406,10 @@ export function LeftSidebar({
 
           <div className="space-y-2">
             <div className="flex items-baseline justify-between">
-              <h3 className="font-heading text-[15px] font-bold text-[#171412]">
+              <h3 className={`font-heading text-[15px] font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
                 Format
               </h3>
-              <span className="text-xs font-tabular font-semibold text-[#52483E]">
+              <span className={`text-xs font-tabular font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                 {totalMediaCount} Titles
               </span>
             </div>
@@ -1405,7 +1417,9 @@ export function LeftSidebar({
             <div
               role="group"
               aria-label="Media format"
-              className="grid grid-cols-3 gap-1 p-1 rounded bg-[#E5DEC9] border border-[#C8BEAA]"
+              className={`grid grid-cols-3 gap-1 p-1 rounded border ${
+                isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#E5DEC9] border-[#C8BEAA]'
+              }`}
             >
               {(
                 [
@@ -1439,14 +1453,20 @@ export function LeftSidebar({
                     onClick={() => onMediaFilterChange(tab.id)}
                     className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-xs font-semibold transition-all cursor-pointer ${
                       active
-                        ? 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
-                        : 'text-[#52483E] hover:text-[#171412] border border-transparent'
+                        ? isDark
+                          ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
+                          : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
+                        : isDark
+                          ? 'text-[#94A3B8] hover:text-[#F0F4FC] border border-transparent'
+                          : 'text-[#52483E] hover:text-[#171412] border border-transparent'
                     }`}
                   >
                     <div className="flex items-center gap-1">
                       <Icon
                         className={`w-3 h-3 shrink-0 ${
-                          active ? 'text-[#B8292F]' : 'text-[#6B5E50]'
+                          active
+                            ? isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'
+                            : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
                         }`}
                         aria-hidden="true"
                       />
@@ -1455,7 +1475,9 @@ export function LeftSidebar({
                     {tab.count !== undefined && (
                       <span
                         className={`text-[10px] font-tabular leading-tight mt-0.5 ${
-                          active ? 'text-[#52483E]' : 'text-[#6B5E50]'
+                          active
+                            ? isDark ? 'text-[#00D2FF]' : 'text-[#52483E]'
+                            : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
                         }`}
                       >
                         {tab.count}
@@ -1471,15 +1493,17 @@ export function LeftSidebar({
         {/* 2. Curatorial Weighting Lens */}
         <section className="px-4 py-4 space-y-2.5">
           <div className="flex items-baseline justify-between">
-            <h3 className="font-heading text-[15px] font-bold text-[#171412]">
+            <h3 className={`font-heading text-[15px] font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
               Curatorial Lens
             </h3>
-            <span className="text-[11px] font-semibold text-[#6B5E50]">
+            <span className={`text-[11px] font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
               Weighting
             </span>
           </div>
 
-          <div className="rounded overflow-hidden border border-[#C8BEAA] divide-y divide-[#D5CCB9] bg-[#FBF8F2]">
+          <div className={`rounded overflow-hidden border divide-y ${
+            isDark ? 'border-[#1C273C] divide-[#1C273C] bg-[#121A2B]' : 'border-[#C8BEAA] divide-[#D5CCB9] bg-[#FBF8F2]'
+          }`}>
             {presets.map((p) => {
               const active = preset === p.id;
               const Icon = p.icon;
@@ -1491,26 +1515,34 @@ export function LeftSidebar({
                   onClick={() => onPresetChange(p.id)}
                   style={
                     active
-                      ? { boxShadow: 'inset 3px 0 0 #B8292F' }
+                      ? { boxShadow: isDark ? 'inset 3px 0 0 #00D2FF' : 'inset 3px 0 0 #B8292F' }
                       : undefined
                   }
                   className={`w-full text-left py-2.5 px-3 transition-colors cursor-pointer ${
                     active
-                      ? 'bg-[#F5E4E4]/55'
-                      : 'bg-[#FBF8F2] hover:bg-[#EFE8DA]/75'
+                      ? isDark
+                        ? 'bg-[#00D2FF]/15 text-[#00D2FF]'
+                        : 'bg-[#F5E4E4]/55'
+                      : isDark
+                        ? 'bg-[#121A2B] hover:bg-[#162035] text-[#94A3B8]'
+                        : 'bg-[#FBF8F2] hover:bg-[#EFE8DA]/75 text-[#171412]'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <Icon
                         className={`w-3.5 h-3.5 shrink-0 ${
-                          active ? 'text-[#B8292F]' : 'text-[#6B5E50]'
+                          active
+                            ? isDark ? 'text-[#00D2FF]' : 'text-[#B8292F]'
+                            : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
                         }`}
                         aria-hidden="true"
                       />
                       <span
                         className={`text-xs font-bold truncate ${
-                          active ? 'text-[#8C1D22]' : 'text-[#171412]'
+                          active
+                            ? isDark ? 'text-[#00D2FF]' : 'text-[#8C1D22]'
+                            : isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'
                         }`}
                       >
                         {p.title}
@@ -1519,14 +1551,18 @@ export function LeftSidebar({
                     <span
                       className={`px-1.5 py-0.5 rounded text-[10px] font-tabular font-bold border ${
                         active
-                          ? 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
-                          : 'bg-[#EFE8DA] text-[#52483E] border-[#D5CCB9]'
+                          ? isDark
+                            ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
+                            : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
+                          : isDark
+                            ? 'bg-[#0B101B] text-[#94A3B8] border-[#1C273C]'
+                            : 'bg-[#EFE8DA] text-[#52483E] border-[#D5CCB9]'
                       }`}
                     >
                       {p.badge}
                     </span>
                   </div>
-                  <p className="text-[11px] text-[#52483E] mt-0.5 pl-5.5 leading-snug">
+                  <p className={`text-[11px] mt-0.5 pl-5.5 leading-snug ${isDark ? 'text-[#94A3B8]' : 'text-[#52483E]'}`}>
                     {p.subtitle}
                   </p>
                 </button>
@@ -1540,11 +1576,15 @@ export function LeftSidebar({
           <div className="flex items-baseline justify-between">
             <label
               htmlFor="slider-threshold"
-              className="font-heading text-[15px] font-bold text-[#171412]"
+              className={`font-heading text-[15px] font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}
             >
               Minimum Affinity
             </label>
-            <span className="px-1.5 py-0.5 rounded text-xs font-bold font-tabular bg-[#FBF8F2] text-[#8C1D22] border border-[#C8BEAA]">
+            <span className={`px-1.5 py-0.5 rounded text-xs font-bold font-tabular border ${
+              isDark
+                ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
+                : 'bg-[#FBF8F2] text-[#8C1D22] border-[#C8BEAA]'
+            }`}>
               {forceSettings.matchThreshold}%+
             </span>
           </div>
@@ -1562,7 +1602,9 @@ export function LeftSidebar({
                 matchThreshold: parseInt(e.target.value, 10),
               })
             }
-            className="w-full accent-[#B8292F] h-1.5 bg-[#D5CCB9] rounded cursor-pointer"
+            className={`w-full h-1.5 rounded cursor-pointer ${
+              isDark ? 'accent-[#00D2FF] bg-[#182338]' : 'accent-[#B8292F] bg-[#D5CCB9]'
+            }`}
           />
 
           <div className="grid grid-cols-4 gap-1 pt-0.5">
@@ -1580,8 +1622,12 @@ export function LeftSidebar({
                   }
                   className={`py-0.5 rounded text-[10px] font-tabular font-semibold border transition-colors cursor-pointer ${
                     isCurrent
-                      ? 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
-                      : 'bg-[#FBF8F2] text-[#6B5E50] hover:text-[#171412] border-[#D5CCB9]'
+                      ? isDark
+                        ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40'
+                        : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6]'
+                      : isDark
+                        ? 'bg-[#121A2B] text-[#94A3B8] border-[#1C273C]'
+                        : 'bg-[#FBF8F2] text-[#6B5E50] hover:text-[#171412] border-[#D5CCB9]'
                   }`}
                 >
                   {stepVal}%
@@ -1594,25 +1640,27 @@ export function LeftSidebar({
         {/* 4. Visible Sculpture Layers */}
         <section className="px-4 py-4 space-y-2.5">
           <div className="flex items-baseline justify-between">
-            <h3 className="font-heading text-[15px] font-bold text-[#171412]">
+            <h3 className={`font-heading text-[15px] font-bold ${isDark ? 'text-[#F0F4FC]' : 'text-[#171412]'}`}>
               Visible Layers
             </h3>
             {hasAnyHiddenLayer && onResetAllVisibility ? (
               <button
                 type="button"
                 onClick={onResetAllVisibility}
-                className="text-[11px] font-semibold text-[#8C1D22] hover:underline cursor-pointer"
+                className={`text-[11px] font-semibold hover:underline cursor-pointer ${isDark ? 'text-[#FF3366]' : 'text-[#8C1D22]'}`}
               >
                 Show All ({activeLayersCount}/6)
               </button>
             ) : (
-              <span className="text-[11px] font-tabular font-semibold text-[#6B5E50]">
+              <span className={`text-[11px] font-tabular font-semibold ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
                 {activeLayersCount}/6 Active
               </span>
             )}
           </div>
 
-          <div className="rounded overflow-hidden border border-[#C8BEAA] divide-y divide-[#D5CCB9] bg-[#FBF8F2]">
+          <div className={`rounded overflow-hidden border divide-y ${
+            isDark ? 'border-[#1C273C] divide-[#1C273C] bg-[#121A2B]' : 'border-[#C8BEAA] divide-[#D5CCB9] bg-[#FBF8F2]'
+          }`}>
             {entityToggles.map((item) => {
               const checked = visibility[item.type];
               const count = nodeCountsByType[item.type] || 0;
@@ -1624,8 +1672,12 @@ export function LeftSidebar({
                   onClick={() => onToggleVisibility(item.type)}
                   className={`w-full flex items-center justify-between gap-2 py-2 px-2.5 text-left transition-colors cursor-pointer ${
                     checked
-                      ? 'bg-[#FBF8F2] hover:bg-[#EFE8DA]/60 text-[#171412]'
-                      : 'bg-[#EFE8DA]/45 text-[#6B5E50] opacity-60 hover:opacity-90'
+                      ? isDark
+                        ? 'bg-[#121A2B] hover:bg-[#162035] text-[#F0F4FC]'
+                        : 'bg-[#FBF8F2] hover:bg-[#EFE8DA]/60 text-[#171412]'
+                      : isDark
+                        ? 'bg-[#0B101B]/50 text-[#64748B] opacity-50 hover:opacity-80'
+                        : 'bg-[#EFE8DA]/45 text-[#6B5E50] opacity-60 hover:opacity-90'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -1633,7 +1685,7 @@ export function LeftSidebar({
                       className={`w-3.5 h-3.5 rounded-sm flex items-center justify-center border shrink-0 transition-colors ${
                         checked
                           ? 'border-transparent text-[#FBF8F2]'
-                          : 'border-[#8F816B] bg-transparent'
+                          : isDark ? 'border-[#2A3B57] bg-transparent' : 'border-[#8F816B] bg-transparent'
                       }`}
                       style={{
                         backgroundColor: checked ? item.color : 'transparent',
@@ -1647,7 +1699,9 @@ export function LeftSidebar({
                       )}
                     </span>
 
-                    <span className="w-7 h-7 rounded bg-[#EFE8DA]/80 border border-[#D5CCB9] flex items-center justify-center shrink-0">
+                    <span className={`w-7 h-7 rounded border flex items-center justify-center shrink-0 ${
+                      isDark ? 'bg-[#0B101B] border-[#1C273C]' : 'bg-[#EFE8DA]/80 border-[#D5CCB9]'
+                    }`}>
                       {renderCategoryShapeIcon(item.type, item.color)}
                     </span>
 
@@ -1655,7 +1709,7 @@ export function LeftSidebar({
                       <div className="text-xs font-semibold truncate leading-tight">
                         {item.label}
                       </div>
-                      <div className="text-[10px] text-[#6B5E50] truncate leading-tight mt-0.5">
+                      <div className={`text-[10px] truncate leading-tight mt-0.5 ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
                         {item.shapeLabel}
                       </div>
                     </div>
@@ -1664,8 +1718,8 @@ export function LeftSidebar({
                   <span
                     className={`px-1.5 py-0.5 rounded text-[11px] font-tabular font-semibold shrink-0 ${
                       checked
-                        ? 'bg-[#EFE8DA] text-[#171412]'
-                        : 'text-[#6B5E50]'
+                        ? isDark ? 'bg-[#182338] text-[#00D2FF]' : 'bg-[#EFE8DA] text-[#171412]'
+                        : isDark ? 'text-[#64748B]' : 'text-[#6B5E50]'
                     }`}
                   >
                     {count}
@@ -1688,7 +1742,11 @@ export function LeftSidebar({
     <>
       <aside
         aria-label="Filters & Lenses"
-        className="hidden lg:flex w-[268px] shrink-0 h-[calc(100vh-3.5rem)] bg-[#EFE8DA] border-r border-[#D5CCB9] flex-col z-20 select-none"
+        className={`hidden lg:flex w-[268px] shrink-0 h-[calc(100vh-3.5rem)] flex-col z-20 select-none ${
+          isDark
+            ? 'bg-[#0E1524]/95 border-r border-[#1C273C] text-[#F0F4FC] backdrop-blur-md'
+            : 'bg-[#EFE8DA] border-r border-[#D5CCB9] text-[#171412]'
+        }`}
       >
         {sidebarContent}
       </aside>
@@ -1701,11 +1759,15 @@ export function LeftSidebar({
           className="lg:hidden fixed inset-0 z-50 flex"
         >
           <div
-            className="fixed inset-0 bg-[#171412]/40"
+            className="fixed inset-0 bg-[#0A0E17]/70 backdrop-blur-sm"
             onClick={onCloseMobile}
             aria-hidden="true"
           />
-          <aside className="relative w-[268px] max-w-[85vw] h-full bg-[#EFE8DA] border-r border-[#B5A892] shadow-archival flex flex-col z-10">
+          <aside className={`relative w-[268px] max-w-[85vw] h-full shadow-2xl flex flex-col z-10 ${
+            isDark
+              ? 'bg-[#0E1524] border-r border-[#1C273C] text-[#F0F4FC]'
+              : 'bg-[#EFE8DA] border-r border-[#B5A892] shadow-archival text-[#171412]'
+          }`}>
             {sidebarContent}
           </aside>
         </div>

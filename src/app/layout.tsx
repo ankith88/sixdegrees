@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const viewport: Viewport = {
-  themeColor: '#B8292F',
+  themeColor: '#0A0E17',
   width: 'device-width',
   initialScale: 1,
 };
@@ -39,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="movie-map-dark">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
@@ -52,7 +52,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-[#F6F1E7] text-[#171412] antialiased selection:bg-[#B8292F]/15 selection:text-[#171412] caret-[#B8292F]">
+      <body className="bg-[var(--bg-parchment)] text-[var(--ink-primary)] antialiased transition-colors">
         {children}
       </body>
     </html>

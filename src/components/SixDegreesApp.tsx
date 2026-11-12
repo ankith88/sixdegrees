@@ -52,7 +52,9 @@ import {
   isValidPersonName,
 } from '@/lib/similarity';
 import {
+  AppTheme,
   CameraMode,
+  CatalogUmapPayload,
   EntityNodeType,
   EntityVisibility,
   ForceSettings,
@@ -65,6 +67,7 @@ import {
   MediaItem,
   NodeColorMode,
   NodeSizeMode,
+  PrecomputedUmapPoint,
   RegionCode,
   SimilarityBreakdown,
   SuggestionFilterState,
@@ -82,6 +85,38 @@ import {
 } from 'lucide-react';
 
 export function SixDegreesApp() {
+  const [theme, setTheme] = useState<AppTheme>('MOVIE_MAP_DARK');
+
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem('sixdegrees_theme') as AppTheme | null;
+      if (savedTheme === 'MOVIE_MAP_DARK' || savedTheme === 'ARCHIVAL_FOLIO') {
+        setTheme(savedTheme);
+        document.documentElement.setAttribute(
+          'data-theme',
+          savedTheme === 'MOVIE_MAP_DARK' ? 'movie-map-dark' : 'archival-folio'
+        );
+      } else {
+        document.documentElement.setAttribute('data-theme', 'movie-map-dark');
+      }
+    } catch {
+      // localStorage may fail in restricted environments
+    }
+  }, []);
+
+  const handleThemeChange = useCallback((newTheme: AppTheme) => {
+    setTheme(newTheme);
+    try {
+      localStorage.setItem('sixdegrees_theme', newTheme);
+    } catch {
+      // ignore
+    }
+    document.documentElement.setAttribute(
+      'data-theme',
+      newTheme === 'MOVIE_MAP_DARK' ? 'movie-map-dark' : 'archival-folio'
+    );
+  }, []);
+
   const [mediaLibrary, setMediaLibrary] = useState<MediaItem[]>(() =>
     getInitialMediaLibrary()
   );
@@ -91,6 +126,7 @@ export function SixDegreesApp() {
   const [activeEntityNode, setActiveEntityNode] = useState<GraphNode | null>(
     null
   );
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
 
   const [viewMode, setViewMode] = useState<ViewMode>('3D');
   const [region, setRegion] = useState<RegionCode>('AU');
@@ -183,7 +219,7 @@ export function SixDegreesApp() {
     searchHighlightQuery: '',
   });
   const [layoutMode, setLayoutMode] =
-    useState<GraphLayoutMode>('FORCE_CONSTELLATION');
+    useState<GraphLayoutMode>('SEMANTIC_GALAXY');
   const [colorMode, setColorMode] = useState<NodeColorMode>('CATEGORY');
   const [sizeMode, setSizeMode] = useState<NodeSizeMode>('RATING');
   const [labelMode, setLabelMode] = useState<LabelDisplayMode>('AUTO');
@@ -539,6 +575,27 @@ export function SixDegreesApp() {
     []
   );
 
+  // Ingest static precomputed UMAP catalog coordinates if present in public/data/catalog_umap.json
+  const [precomputedUmapPoints, setPrecomputedUmapPoints] = useState<
+    Record<string, PrecomputedUmapPoint> | undefined
+  >(undefined);
+
+  useEffect(() => {
+    fetch('/data/catalog_umap.json')
+      .then((res) => {
+        if (res.ok) return res.json();
+        return null;
+      })
+      .then((payload: CatalogUmapPayload | null) => {
+        if (payload?.points && Object.keys(payload.points).length > 0) {
+          setPrecomputedUmapPoints(payload.points);
+        }
+      })
+      .catch(() => {
+        // Fallback dynamically to algorithmic spiral layout
+      });
+  }, []);
+
   // Compute top suggested media IDs for WATCHED_PLUS_SUGGESTIONS personal graph mode
   const suggestedMediaIdsForGraph = useMemo(() => {
     if (graphScope !== 'WATCHED_PLUS_SUGGESTIONS') return [];
@@ -581,6 +638,8 @@ export function SixDegreesApp() {
       layoutMode,
       colorMode,
       sizeMode,
+      precomputedUmapPoints,
+      theme,
     });
   }, [
     mediaLibrary,
@@ -597,6 +656,8 @@ export function SixDegreesApp() {
     layoutMode,
     colorMode,
     sizeMode,
+    precomputedUmapPoints,
+    theme,
   ]);
 
   const focalItem: MediaItem | null = useMemo(() => {
@@ -915,6 +976,7 @@ export function SixDegreesApp() {
   }, []);
 
   const handleSelectNode = useCallback((node: GraphNode) => {
+    setIsCatalogOpen(false);
     if (node.type === 'MOVIE' || node.type === 'TV') {
       setInspectedMediaId(node.id);
       setActiveEntityNode(null);
@@ -930,6 +992,7 @@ export function SixDegreesApp() {
     setActiveEntityNode(null);
     setInspectedMediaId(null);
     setOrbitTargetNodeId(null);
+    setIsCatalogOpen(false);
   }, []);
 
   /**
@@ -941,6 +1004,7 @@ export function SixDegreesApp() {
     setInspectedMediaId(null);
     setActiveEntityNode(null);
     setOrbitTargetNodeId(null);
+    setIsCatalogOpen(false);
     setGraphScope('FULL_ARCHIVE');
     setMediaFilter('ALL');
     setPreset('VIBE_TROPES');
@@ -969,7 +1033,7 @@ export function SixDegreesApp() {
       activeClusterId: null,
       searchHighlightQuery: '',
     });
-    setLayoutMode('FORCE_CONSTELLATION');
+    setLayoutMode('SEMANTIC_GALAXY');
     setColorMode('CATEGORY');
     setSizeMode('RATING');
     setLabelMode('AUTO');
@@ -1432,9 +1496,15 @@ export function SixDegreesApp() {
   }, []);
 
   return (
-    <div className="archival-folio-surface relative w-screen h-screen overflow-hidden flex flex-col bg-[#F6F1E7] text-[#171412]">
+    <div className={`relative w-screen h-screen overflow-hidden flex flex-col ${
+      theme === 'MOVIE_MAP_DARK'
+        ? 'movie-map-dark-surface bg-[#0A0E17] text-[#F0F4FC]'
+        : 'archival-folio-surface bg-[#F6F1E7] text-[#171412]'
+    }`}>
       {/* A. Top Navigation Bar (h-14, fixed) */}
       <TopNavBar
+        theme={theme}
+        onThemeChange={handleThemeChange}
         nodes={nodes}
         linksCount={links.length}
         focalItem={focalItem}
@@ -1469,12 +1539,15 @@ export function SixDegreesApp() {
         layoutMode={layoutMode}
         onLayoutModeChange={setLayoutMode}
         matchingMediaCount={matchingMediaCount}
+        isCatalogOpen={isCatalogOpen}
+        onToggleCatalog={() => setIsCatalogOpen((prev) => !prev)}
       />
 
       {/* Main Workspace Below Fixed Top Bar */}
       <div className="pt-14 flex-1 flex overflow-hidden relative">
         {/* B. Left Curatorial Rail */}
         <LeftSidebar
+          theme={theme}
           focalItem={focalItem}
           totalMediaCount={activeMediaItems.length}
           mediaCounts={mediaCounts}
@@ -1529,11 +1602,15 @@ export function SixDegreesApp() {
           {(isBuildingCluster ||
             isFetchingLiveSuggestions ||
             liveStatusToast) && (
-            <div className="absolute top-16 right-[424px] z-30 flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival text-xs font-medium text-[#171412]">
+            <div className={`absolute top-16 right-[424px] z-30 flex items-center gap-2 px-3.5 py-2 rounded-lg border text-xs font-medium ${
+              theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#121A2B] border-[#1C273C] text-[#F0F4FC] shadow-2xl backdrop-blur-md'
+                : 'bg-[#FBF8F2] border-[#B5A892] shadow-archival text-[#171412]'
+            }`}>
               {isBuildingCluster || isFetchingLiveSuggestions ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#B8292F] shrink-0" />
+                <Loader2 className={`w-3.5 h-3.5 animate-spin shrink-0 ${theme === 'MOVIE_MAP_DARK' ? 'text-[#00D2FF]' : 'text-[#B8292F]'}`} />
               ) : (
-                <CheckCircle2 className="w-3.5 h-3.5 text-[#2A6B53] shrink-0" />
+                <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${theme === 'MOVIE_MAP_DARK' ? 'text-[#00F5D4]' : 'text-[#2A6B53]'}`} />
               )}
               <span>{liveStatusToast || 'Updating catalog connections…'}</span>
             </div>
@@ -1581,6 +1658,7 @@ export function SixDegreesApp() {
             />
           ) : (
             <SpatialViewport
+              theme={theme}
               nodes={nodes}
               links={links}
               focalItem={focalItem}
@@ -1637,12 +1715,16 @@ export function SixDegreesApp() {
 
         {/* D. Right Monograph Inspector / All Graph Titles Catalogue */}
         <RightInspectorCard
+          theme={theme}
           inspectedItem={inspectedItem}
           activeEntityNode={activeEntityNode}
           focalItem={focalItem}
           allMediaItems={activeMediaItems}
           similarity={inspectedSimilarity}
           region={region}
+          isCatalogOpen={isCatalogOpen}
+          onCloseCatalog={() => setIsCatalogOpen(false)}
+          onOpenCatalog={() => setIsCatalogOpen(true)}
           onMakeFocal={handleMakeFocal}
           onClearFocal={handleClearFocal}
           onClearInspected={handleClearSelection}
@@ -1651,6 +1733,7 @@ export function SixDegreesApp() {
           onSelectEntityNode={handleSelectNodeById}
           topRecommendations={inspectorRecommendations}
           onSelectMedia={(item) => {
+            setIsCatalogOpen(false);
             setInspectedMediaId(item.id);
             setActiveEntityNode(null);
             setOrbitTargetNodeId(item.id);

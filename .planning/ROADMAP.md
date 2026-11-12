@@ -30,3 +30,17 @@
     - [x] `05-01-PLAN.md` — HDBSCAN-inspired Semantic Galaxy clustering, color blending, nearest neighbor precomputation, and filter evaluation engine (`src/lib/types.ts` & `src/lib/similarity.ts`).
     - [x] `05-02-PLAN.md` — Interactive Movie Map filter controls, HUD projection switcher, context-preserving node dimming in 3D/2D, territory legends, and 20 Nearest Neighbors inspector tab (`src/components/LeftSidebar.tsx`, `src/components/SpatialViewport.tsx`, `src/components/RightInspectorCard.tsx`, `src/components/TopNavBar.tsx`, `src/components/SixDegreesApp.tsx`).
 
+- [x] **Phase 6: Movie Map High-Performance Engine: Static UMAP Catalog, 2D Spatial Quadtree & Archival Territory Heatmaps** — Completed
+  - **Goal:** Scale SixDegrees' movie map visualization to support thousands of titles with zero client-side lag through precomputed static UMAP coordinates, zero-dependency 2D spatial quadtree indexing for sub-millisecond hover detection, and soft archival territory watercolor heatmaps.
+  - **Plans:**
+    - [x] `06-01-PLAN.md` — Static UMAP Catalog Pipeline (`scripts/generate-umap-catalog.mjs` -> `public/data/catalog_umap.json`), Zero-Dependency SpatialQuadtree (`src/lib/spatial-index.ts`), and Runtime Coordinate Integration.
+    - [x] `06-02-PLAN.md` — Archival Territory Heatmap Underlays, Gaussian Density Halos, and Cluster Contour HUD Controls in 2D Galaxy View.
+
+- [x] **Phase 7: Mikey Guinness Movie Map UI, UX & Luminous Dark Palette Transformation** — Completed
+  - **Goal:** Bring the authentic dark-space aesthetic, vibrant luminous color palette, and floating glassmorphic UI/UX of Mikey Guinness's Movie Map (`https://mikeyguinness.com/movies/`) into SixDegrees, featuring an obsidian canvas (`#0A0E17`), electric glowing cluster nodes, dark glass floating panels, and theme switching.
+  - **Plans:**
+    - [x] `07-01-PLAN.md` — Core Theme Engine (`AppTheme`), Luminous Cluster Definitions, CSS Variables, and 3D/2D Dark Canvas/Shader Overhaul (`src/lib/types.ts`, `src/lib/similarity.ts`, `src/app/globals.css`, `src/components/SpatialViewport.tsx`).
+    - [x] `07-02-PLAN.md` — Floating Glassmorphic UI Overhaul: TopNavBar with Theme Toggle, LeftSidebar Filter Drawer, and RightInspectorCard Similar Films Cards (`src/components/TopNavBar.tsx`, `src/components/LeftSidebar.tsx`, `src/components/RightInspectorCard.tsx`, `src/components/SixDegreesApp.tsx`).
+
+
+

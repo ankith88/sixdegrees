@@ -24,10 +24,13 @@ import {
   User,
   BookmarkCheck,
   Bookmark,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { SixDegreesLogo } from './SixDegreesLogo';
 import { PwaInstallButton } from './PwaInstallButton';
 import {
+  AppTheme,
   GraphNode,
   GraphScopeMode,
   MediaItem,
@@ -68,6 +71,10 @@ interface TopNavBarProps {
   layoutMode?: string;
   onLayoutModeChange?: (mode: any) => void;
   matchingMediaCount?: number;
+  theme?: AppTheme;
+  onThemeChange?: (theme: AppTheme) => void;
+  isCatalogOpen?: boolean;
+  onToggleCatalog?: () => void;
 }
 
 export function TopNavBar({
@@ -96,9 +103,13 @@ export function TopNavBar({
   graphScope = 'FULL_ARCHIVE',
   onGraphScopeChange,
   onOpenProfileModal,
-  layoutMode = 'FORCE_CONSTELLATION',
+  layoutMode = 'SEMANTIC_GALAXY',
   onLayoutModeChange,
   matchingMediaCount,
+  theme = 'MOVIE_MAP_DARK',
+  onThemeChange,
+  isCatalogOpen = false,
+  onToggleCatalog,
 }: TopNavBarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -241,19 +252,29 @@ export function TopNavBar({
   ];
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-14 z-40 bg-[#EFE8DA]/95 backdrop-blur-md border-b border-[#D5CCB9] px-4 flex items-center justify-between gap-3">
+    <header
+      className={`fixed top-0 left-0 right-0 h-14 z-40 backdrop-blur-md px-4 flex items-center justify-between gap-3 transition-colors ${
+        theme === 'MOVIE_MAP_DARK'
+          ? 'bg-[#0A0E17]/88 border-b border-white/10 text-[#F0F4FC]'
+          : 'bg-[#EFE8DA]/95 border-b border-[#D5CCB9] text-[#171412]'
+      }`}
+    >
       {/* LEFT: Mobile Menu Trigger + Brand Mark + Search */}
       <div className="flex items-center gap-3 min-w-0 flex-1 max-w-xl">
         {onToggleMobileMenu && (
           <button
             type="button"
             onClick={onToggleMobileMenu}
-            className="lg:hidden relative inline-flex items-center justify-center w-8 h-8 rounded-md bg-[#FBF8F2] hover:bg-[#E5DEC9] border border-[#C8BEAA] text-[#171412] transition-colors cursor-pointer shrink-0"
+            className={`lg:hidden relative inline-flex items-center justify-center w-8 h-8 rounded-md border transition-colors cursor-pointer shrink-0 ${
+              theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#141C2C] hover:bg-[#1C263A] border-white/10 text-[#F0F4FC]'
+                : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] border-[#C8BEAA] text-[#171412]'
+            }`}
             aria-label="Open Curatorial Menu"
           >
-            <SlidersHorizontal className="w-4 h-4 text-[#52483E]" aria-hidden="true" />
+            <SlidersHorizontal className="w-4 h-4 text-inherit opacity-75" aria-hidden="true" />
             {activeFilterCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#B8292F] text-[#FBF8F2] text-[9px] font-tabular font-bold flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#FF3366] text-[#FFFFFF] text-[9px] font-tabular font-bold flex items-center justify-center">
                 {activeFilterCount}
               </span>
             )}
@@ -263,10 +284,10 @@ export function TopNavBar({
         <button
           type="button"
           onClick={onResetEverything || onClearFocal}
-          className="text-left cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B8292F] shrink-0"
+          className="text-left cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] shrink-0"
           title="Reset everything & show full archive"
         >
-          <SixDegreesLogo />
+          <SixDegreesLogo theme={theme} />
         </button>
 
         {/* Minimal Command Search Bar */}
@@ -279,23 +300,33 @@ export function TopNavBar({
               setSearchOpen(true);
               inputRef.current?.focus();
             }}
-            className={`group flex items-center gap-2 h-9 px-3 rounded-lg bg-[#FBF8F2] border transition-all duration-150 cursor-text ${
-              searchOpen
-                ? 'border-[#B8292F] ring-2 ring-[#B8292F]/15'
-                : 'border-[#C8BEAA] hover:border-[#8F816B]'
+            className={`group flex items-center gap-2 h-9 px-3 rounded-lg border transition-all duration-150 cursor-text ${
+              theme === 'MOVIE_MAP_DARK'
+                ? searchOpen
+                  ? 'bg-[#141C2C] border-[#00D2FF] ring-2 ring-[#00D2FF]/20 text-[#F0F4FC]'
+                  : 'bg-[#101624] border-white/10 hover:border-white/20 text-[#F0F4FC]'
+                : searchOpen
+                  ? 'bg-[#FBF8F2] border-[#B8292F] ring-2 ring-[#B8292F]/15 text-[#171412]'
+                  : 'bg-[#FBF8F2] border-[#C8BEAA] hover:border-[#8F816B] text-[#171412]'
             }`}
           >
             {isSearchingLive || isBuildingCluster ? (
               <Loader2
-                className="w-3.5 h-3.5 text-[#B8292F] animate-spin shrink-0"
+                className={`w-3.5 h-3.5 animate-spin shrink-0 ${
+                  theme === 'MOVIE_MAP_DARK' ? 'text-[#00D2FF]' : 'text-[#B8292F]'
+                }`}
                 aria-hidden="true"
               />
             ) : (
               <Search
                 className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                  searchOpen
-                    ? 'text-[#B8292F]'
-                    : 'text-[#6B5E50] group-hover:text-[#171412]'
+                  theme === 'MOVIE_MAP_DARK'
+                    ? searchOpen
+                      ? 'text-[#00D2FF]'
+                      : 'text-[#6C7D99] group-hover:text-[#F0F4FC]'
+                    : searchOpen
+                      ? 'text-[#B8292F]'
+                      : 'text-[#6B5E50] group-hover:text-[#171412]'
                 }`}
                 aria-hidden="true"
               />
@@ -309,9 +340,12 @@ export function TopNavBar({
                 setQuery(e.target.value);
                 setSearchOpen(true);
               }}
-              aria-label="Search films, series, directors, actors, or themes"
-              placeholder="Search or add film, series, director…"
-              className="w-full bg-transparent text-xs text-[#171412] placeholder:text-[#6B5E50] focus:outline-none"
+              placeholder="Search or add films, series, creators, themes... (⌘K)"
+              className={`w-full bg-transparent text-xs focus:outline-none font-normal ${
+                theme === 'MOVIE_MAP_DARK'
+                  ? 'text-[#F0F4FC] placeholder:text-[#6C7D99]'
+                  : 'text-[#171412] placeholder:text-[#6B5E50]'
+              }`}
             />
             {query ? (
               <button
@@ -710,11 +744,73 @@ export function TopNavBar({
           </button>
         )}
 
+        {/* Movie Map Dark vs Archival Folio Theme Toggle */}
+        {onThemeChange && (
+          <button
+            type="button"
+            onClick={() =>
+              onThemeChange(
+                theme === 'MOVIE_MAP_DARK' ? 'ARCHIVAL_FOLIO' : 'MOVIE_MAP_DARK'
+              )
+            }
+            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#141C2C] hover:bg-[#1C263A] text-[#00D2FF] border-[#00D2FF]/30 shadow-sm'
+                : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#B8292F] border-[#C8BEAA]'
+            }`}
+            title={
+              theme === 'MOVIE_MAP_DARK'
+                ? 'Currently in Movie Map Dark Void theme — click to switch to Archival Folio'
+                : 'Currently in Archival Folio theme — click to switch to Movie Map Dark Void'
+            }
+          >
+            {theme === 'MOVIE_MAP_DARK' ? (
+              <>
+                <Moon className="w-3.5 h-3.5 text-[#00D2FF]" aria-hidden="true" />
+                <span className="hidden sm:inline">Movie Map</span>
+              </>
+            ) : (
+              <>
+                <Sun className="w-3.5 h-3.5 text-[#B8292F]" aria-hidden="true" />
+                <span className="hidden sm:inline">Folio</span>
+              </>
+            )}
+          </button>
+        )}
+
+        {/* Browse All Titles Catalogue Toggle Button */}
+        {onToggleCatalog && (
+          <button
+            type="button"
+            onClick={onToggleCatalog}
+            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              isCatalogOpen
+                ? theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#00D2FF]/20 text-[#00D2FF] border-[#00D2FF]/40 shadow-[0_0_10px_rgba(0,210,255,0.2)]'
+                  : 'bg-[#FBF8F2] text-[#171412] border-[#171412]'
+                : theme === 'MOVIE_MAP_DARK'
+                  ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] hover:text-[#F0F4FC] border-white/10'
+                  : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border-[#C8BEAA]'
+            }`}
+            title={isCatalogOpen ? 'Close Catalogue (Esc)' : 'Browse Complete Catalogue'}
+          >
+            <Film className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span className="hidden sm:inline">Titles</span>
+            <span className="font-tabular text-[11px] opacity-75">
+              ({matchingMediaCount ?? allMediaItems.length})
+            </span>
+          </button>
+        )}
+
         {focalItem && (
           <button
             type="button"
             onClick={onClearFocal}
-            className="hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-[#F5E4E4] hover:bg-[#B8292F] text-[#8C1D22] hover:text-[#FBF8F2] border border-[#D8B4B6] text-xs font-semibold transition-colors cursor-pointer"
+            className={`hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+              theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#FF3366]/20 text-[#FF3366] border-[#FF3366]/40 hover:bg-[#FF3366]/30'
+                : 'bg-[#F5E4E4] text-[#8C1D22] border-[#D8B4B6] hover:bg-[#B8292F] hover:text-[#FBF8F2]'
+            }`}
             title="Clear focal filter and return to full archive"
           >
             <Crosshair className="w-3 h-3 shrink-0" aria-hidden="true" />
@@ -722,24 +818,6 @@ export function TopNavBar({
             <X className="w-3 h-3 shrink-0" aria-hidden="true" />
           </button>
         )}
-
-        <div className="hidden xl:flex items-center gap-2 h-8 px-2.5 rounded-lg bg-[#FBF8F2]/80 border border-[#C8BEAA] text-xs font-tabular text-[#52483E]">
-          <span>
-            <strong className="text-[#171412] font-semibold">
-              {matchingMediaCount !== undefined ? matchingMediaCount : mediaNodesCount}
-            </strong>{' '}
-            {matchingMediaCount !== undefined && matchingMediaCount !== mediaNodesCount
-              ? `of ${mediaNodesCount} Titles`
-              : 'Titles'}
-          </span>
-          <span className="text-[#B5A892]" aria-hidden="true">·</span>
-          <span>
-            <strong className="text-[#171412] font-semibold">
-              {linksCount}
-            </strong>{' '}
-            Threads
-          </span>
-        </div>
 
         <button
           type="button"
@@ -751,28 +829,25 @@ export function TopNavBar({
               onResetPitch();
             }
           }}
-          className={`group flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B8292F] ${
+          className={`group flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] ${
             hasActiveSelection ||
             focalItem ||
             activeFilterCount > 0 ||
             graphScope !== 'FULL_ARCHIVE'
-              ? 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22] shadow-archival-sm'
-              : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border-[#C8BEAA]'
+              ? theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#FF3366] text-[#0A0E17] border-[#FF3366] font-bold shadow-[0_0_10px_rgba(255,51,102,0.3)]'
+                : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border-[#8C1D22] shadow-archival-sm'
+              : theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] hover:text-[#F0F4FC] border-white/10'
+                : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border-[#C8BEAA]'
           }`}
           title="Reset selection, filters, and camera to show the full graph"
         >
           <RotateCcw
-            className={`w-3.5 h-3.5 group-hover:-rotate-45 transition-transform duration-200 ${
-              hasActiveSelection ||
-              focalItem ||
-              activeFilterCount > 0 ||
-              graphScope !== 'FULL_ARCHIVE'
-                ? 'text-[#FBF8F2]'
-                : 'text-[#52483E]'
-            }`}
+            className="w-3.5 h-3.5 group-hover:-rotate-45 transition-transform duration-200"
             aria-hidden="true"
           />
-          <span className="hidden sm:inline">
+          <span className="hidden md:inline">
             {hasActiveSelection ||
             focalItem ||
             activeFilterCount > 0 ||

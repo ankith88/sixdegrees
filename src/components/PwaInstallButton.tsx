@@ -39,11 +39,30 @@ export function PwaInstallButton({
 
     // 1. Register Service Worker for PWA installability & offline shell caching
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js', { scope: '/' })
-        .catch(() => {
-          // Non-blocking in restricted environments
+      if (
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
+      ) {
+        // In local development, unregister any existing service workers and clear cache
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const registration of registrations) {
+            registration.unregister();
+          }
         });
+        if ('caches' in window) {
+          caches.keys().then((names) => {
+            for (const name of names) {
+              caches.delete(name);
+            }
+          });
+        }
+      } else {
+        navigator.serviceWorker
+          .register('/sw.js', { scope: '/' })
+          .catch(() => {
+            // Non-blocking in restricted environments
+          });
+      }
     }
 
     // 2. Detect if already running in standalone mode

@@ -1,10 +1,34 @@
 @import "tailwindcss";
 
-:root {
+:root,
+[data-theme="movie-map-dark"] {
+  --bg-parchment: #0A0E17;
+  --surface-card: #121826;
+  --surface-vellum: #182234;
+  --surface-hover: #222E46;
+  --surface-glass: rgba(18, 24, 38, 0.85);
+  --surface-glass-border: rgba(255, 255, 255, 0.08);
+  --ink-primary: #F0F4FC;
+  --ink-secondary: #9DAEC7;
+  --ink-muted: #6C7D99;
+  --rule-stone: rgba(255, 255, 255, 0.08);
+  --rule-strong: rgba(255, 255, 255, 0.15);
+  --accent-crimson: #FF3366;
+  --accent-crimson-deep: #D91A4D;
+  --accent-prussian: #00D2FF;
+  --accent-plum: #9D4EDD;
+  --accent-ochre: #FFAA00;
+  --accent-verdigris: #00F5D4;
+  --accent-rust: #FF5400;
+}
+
+[data-theme="archival-folio"] {
   --bg-parchment: #F6F1E7;
   --surface-card: #EFE8DA;
   --surface-vellum: #FBF8F2;
   --surface-hover: #E5DEC9;
+  --surface-glass: rgba(251, 248, 242, 0.88);
+  --surface-glass-border: #D5CCB9;
   --ink-primary: #171412;
   --ink-secondary: #52483E;
   --ink-muted: #6B5E50;

@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "expand-catalog": "node scripts/auto-expand-catalog.mjs"
+    "expand-catalog": "node scripts/auto-expand-catalog.mjs",
+    "build:umap": "npx tsx scripts/generate-umap-catalog.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

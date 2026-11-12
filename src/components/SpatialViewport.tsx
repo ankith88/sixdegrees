@@ -17,8 +17,13 @@ import {
   Music,
   Hash,
   Link2,
+  Map as MapIcon,
+  Palette,
+  Tag,
 } from 'lucide-react';
+import { SpatialQuadtree } from '@/lib/spatial-index';
 import {
+  AppTheme,
   CameraMode,
   ForceSettings,
   GraphFilterBehavior,
@@ -72,6 +77,8 @@ interface SpatialViewportProps {
   onLabelModeChange?: (mode: LabelDisplayMode) => void;
   graphFilters?: GraphFilterState;
   onSelectCluster?: (clusterId: string | null) => void;
+  onToggleTerritories?: () => void;
+  theme?: AppTheme;
 }
 
 interface HoveredTooltipState {
@@ -427,12 +434,13 @@ function drawCategoryGlyph2D(
   cy: number,
   r: number,
   color: string,
-  fillStyle?: string
+  fillStyle?: string,
+  cutoutColor = '#FBF8F2'
 ) {
   ctx.save();
   ctx.translate(cx, cy);
   const mainColor = fillStyle || color;
-  const vellumCutout = '#FBF8F2';
+  const vellumCutout = cutoutColor;
   ctx.strokeStyle = mainColor;
   ctx.fillStyle = mainColor;
 
@@ -885,508 +893,44 @@ function createCategoryNodeAssembly(
   accentMaterials.push(glassShellMat);
 
   const r = node.radius;
-  let coreObject: THREE.Object3D;
+
+  // Sleek Obsidian-Style Glowing Celestial Orb
+  const sphereGeo = new THREE.SphereGeometry(r, 20, 20);
+  const coreObject = new THREE.Mesh(sphereGeo, coreMat);
+  group.add(coreObject);
+
   let outerShell: THREE.Object3D | null = null;
   let secondaryRing: THREE.Object3D | null = null;
 
-  if (node.type === 'MOVIE') {
-    // ==================== MOVIE: 3D 35MM CINEMA FILM REEL ====================
-    const reelGroup = new THREE.Group();
-
-    // Extruded 5-hole film reel body
-    const reelGeo = createFilmReelGeometry(r * 1.08);
-    const reelMesh = new THREE.Mesh(reelGeo, coreMat);
-    reelGroup.add(reelMesh);
-
-    // Inner wound celluloid film pack with warm brass sheen
-    const tapeCore = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.86, r * 0.86, r * 0.19, 36),
-      metalAccentMat
-    );
-    tapeCore.rotation.x = Math.PI / 2;
-    reelGroup.add(tapeCore);
-
-    // Precision outer metallic reel rim
-    const rimTorus = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.1, r * 0.062, 16, 64),
-      metalAccentMat
-    );
-    reelGroup.add(rimTorus);
-
-    // Inner vellum calibration ring around spindle
-    const innerCalibRing = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 0.34, r * 0.028, 12, 36),
-      ivoryContrastMat
-    );
-    innerCalibRing.position.z = r * 0.16;
-    reelGroup.add(innerCalibRing);
-
-    // Dual-stepped center spindle hub cap
-    const hubCap = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.25, r * 0.25, r * 0.44, 24),
-      ivoryContrastMat
-    );
-    hubCap.rotation.x = Math.PI / 2;
-    reelGroup.add(hubCap);
-
-    const spindlePin = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.1, r * 0.1, r * 0.54, 16),
-      metalAccentMat
-    );
-    spindlePin.rotation.x = Math.PI / 2;
-    reelGroup.add(spindlePin);
-
-    reelGroup.rotation.x = 0.22;
-    reelGroup.rotation.y = -0.25;
-    group.add(reelGroup);
-    coreObject = reelGroup;
-    outerShell = rimTorus;
-  } else if (node.type === 'TV') {
-    // ==================== TV SERIES: 3D WIDESCREEN BROADCAST MONITOR ====================
-    const tvGroup = new THREE.Group();
-
-    // Widescreen 16:9 beveled cabinet body
-    const cabinetGeo = createRoundedRectPrismGeometry(
-      r * 1.88,
-      r * 1.24,
-      r * 0.54,
-      r * 0.22
-    );
-    const cabinetMesh = new THREE.Mesh(cabinetGeo, coreMat);
-    tvGroup.add(cabinetMesh);
-
-    // Recessed glowing vellum screen shifted slightly left to leave room for side tuner panel
-    const screenGeo = createRoundedRectPrismGeometry(
-      r * 1.28,
-      r * 0.9,
-      r * 0.63,
-      r * 0.13
-    );
-    const screenMesh = new THREE.Mesh(screenGeo, ivoryContrastMat);
-    screenMesh.position.set(-r * 0.14, 0, 0);
-    tvGroup.add(screenMesh);
-
-    // Brass rotary tuner knobs on right side of monitor bezel (front & back)
-    const dialGeo = new THREE.CylinderGeometry(
-      r * 0.095,
-      r * 0.095,
-      r * 0.66,
-      16
-    );
-    const upperDial = new THREE.Mesh(dialGeo, metalAccentMat);
-    upperDial.rotation.x = Math.PI / 2;
-    upperDial.position.set(r * 0.66, r * 0.22, 0);
-    tvGroup.add(upperDial);
-
-    const lowerDial = new THREE.Mesh(dialGeo, ivoryContrastMat);
-    lowerDial.rotation.x = Math.PI / 2;
-    lowerDial.position.set(r * 0.66, -r * 0.16, 0);
-    tvGroup.add(lowerDial);
-
-    // Top antenna dipole mount
-    const bezelTop = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.12, r * 0.15, r * 0.22, 16),
-      metalAccentMat
-    );
-    bezelTop.position.set(0, r * 0.66, 0);
-    tvGroup.add(bezelTop);
-
-    // Twin V-shaped rabbit-ear broadcast antennae on top
-    const antennaGroup = new THREE.Group();
-    const antStickGeo = new THREE.CylinderGeometry(
-      r * 0.032,
-      r * 0.032,
-      r * 0.78,
-      12
-    );
-    const antTipGeo = new THREE.SphereGeometry(r * 0.075, 12, 12);
-
-    const leftAnt = new THREE.Mesh(antStickGeo, metalAccentMat);
-    leftAnt.position.set(-r * 0.28, r * 0.94, 0);
-    leftAnt.rotation.z = 0.52;
-    antennaGroup.add(leftAnt);
-
-    const leftTip = new THREE.Mesh(antTipGeo, coreMat);
-    leftTip.position.set(-r * 0.48, r * 1.26, 0);
-    antennaGroup.add(leftTip);
-
-    const rightAnt = new THREE.Mesh(antStickGeo, metalAccentMat);
-    rightAnt.position.set(r * 0.28, r * 0.94, 0);
-    rightAnt.rotation.z = -0.52;
-    antennaGroup.add(rightAnt);
-
-    const rightTip = new THREE.Mesh(antTipGeo, coreMat);
-    rightTip.position.set(r * 0.48, r * 1.26, 0);
-    antennaGroup.add(rightTip);
-
-    tvGroup.add(antennaGroup);
-    secondaryRing = antennaGroup;
-
-    // Minimalist pedestal stand at base
-    const neckMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.1, r * 0.14, r * 0.26, 16),
-      metalAccentMat
-    );
-    neckMesh.position.set(0, -r * 0.72, 0);
-    tvGroup.add(neckMesh);
-
-    const basePlate = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.54, r * 0.6, r * 0.095, 24),
-      metalAccentMat
-    );
-    basePlate.position.set(0, -r * 0.86, 0);
-    tvGroup.add(basePlate);
-
-    group.add(tvGroup);
-    coreObject = tvGroup;
-  } else if (node.type === 'DIRECTOR') {
-    // ==================== DIRECTOR / WRITER: 3D DIRECTOR'S CLAPPERBOARD ====================
-    const clapperGroup = new THREE.Group();
-
-    const boardW = r * 1.85;
-    const boardH = r * 1.15;
-    const boardD = r * 0.26;
-
-    // Lower slate board
-    const slateGeo = createRoundedRectPrismGeometry(
-      boardW,
-      boardH,
-      boardD,
-      r * 0.14
-    );
-    const slateMesh = new THREE.Mesh(slateGeo, coreMat);
-    slateMesh.position.set(0, -r * 0.18, 0);
-    clapperGroup.add(slateMesh);
-
-    // Slate horizontal production metadata stripes (front & back)
-    const line1 = new THREE.Mesh(
-      new THREE.BoxGeometry(boardW * 0.74, r * 0.11, boardD * 1.38),
-      ivoryContrastMat
-    );
-    line1.position.set(0, -r * 0.02, 0);
-    clapperGroup.add(line1);
-
-    const line2 = new THREE.Mesh(
-      new THREE.BoxGeometry(boardW * 0.52, r * 0.1, boardD * 1.38),
-      metalAccentMat
-    );
-    line2.position.set(-boardW * 0.11, -r * 0.34, 0);
-    clapperGroup.add(line2);
-
-    // Lower fixed clap-bar with alternating chevron blocks
-    const lowerBar = new THREE.Mesh(
-      new THREE.BoxGeometry(boardW, r * 0.22, boardD * 1.15),
-      coreMat
-    );
-    lowerBar.position.set(0, r * 0.42, 0);
-    clapperGroup.add(lowerBar);
-
-    for (let s = 0; s < 3; s++) {
-      const lowerStripe = new THREE.Mesh(
-        new THREE.BoxGeometry(boardW * 0.14, r * 0.225, boardD * 1.34),
-        ivoryContrastMat
-      );
-      lowerStripe.position.set(
-        -boardW / 2 + boardW * (0.24 + s * 0.28),
-        r * 0.42,
-        0
-      );
-      lowerStripe.rotation.z = 0.25;
-      clapperGroup.add(lowerStripe);
-    }
-
-    // Hinged upper clap-stick (pivots around left hinge)
-    const upperStickPivot = new THREE.Group();
-    upperStickPivot.position.set(-boardW / 2, r * 0.54, 0);
-    upperStickPivot.rotation.z = 0.34; // Angled open ready to clap!
-
-    const stickBar = new THREE.Mesh(
-      new THREE.BoxGeometry(boardW, r * 0.24, boardD * 1.15),
-      coreMat
-    );
-    stickBar.position.set(boardW / 2, r * 0.12, 0);
-    upperStickPivot.add(stickBar);
-
-    // 3 high-contrast ivory chevron stripes along the clap-stick
-    for (let s = 0; s < 3; s++) {
-      const stripe = new THREE.Mesh(
-        new THREE.BoxGeometry(boardW * 0.14, r * 0.25, boardD * 1.36),
-        ivoryContrastMat
-      );
-      stripe.position.set(boardW * (0.24 + s * 0.28), r * 0.12, 0);
-      stripe.rotation.z = -0.25;
-      upperStickPivot.add(stripe);
-    }
-
-    // Brass hinge bolt
-    const hingeBolt = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.13, r * 0.13, boardD * 1.55, 16),
-      metalAccentMat
-    );
-    hingeBolt.rotation.x = Math.PI / 2;
-    upperStickPivot.add(hingeBolt);
-
-    clapperGroup.add(upperStickPivot);
-    outerShell = upperStickPivot;
-
-    group.add(clapperGroup);
-    coreObject = clapperGroup;
-  } else if (node.type === 'ACTOR') {
-    // ==================== ACTOR / CAST: 3D 5-POINTED CINEMA STAR TROPHY ====================
-    const actorGroup = new THREE.Group();
-
-    // Beveled 3D 5-Pointed Star
-    const starGeo = createFivePointStarGeometry(r * 1.24, r * 0.52, r * 0.32);
-    const starMesh = new THREE.Mesh(starGeo, coreMat);
-    actorGroup.add(starMesh);
-
-    // Raised metallic center emblem on both faces
-    const centerEmblem = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.27, r * 0.27, r * 0.46, 20),
-      ivoryContrastMat
-    );
-    centerEmblem.rotation.x = Math.PI / 2;
-    actorGroup.add(centerEmblem);
-
-    // Walk-of-Fame circular marquee frame ring
-    const frameRing = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.34, r * 0.058, 16, 64),
-      metalAccentMat
-    );
-    actorGroup.add(frameRing);
-    outerShell = frameRing;
-
-    group.add(actorGroup);
-    coreObject = actorGroup;
-  } else if (node.type === 'TROPE') {
-    // ==================== TROPE / THEME: 3D OPEN STORY BOOK / SCREENPLAY TOME ====================
-    const bookGroup = new THREE.Group();
-
-    const pageW = r * 1.05;
-    const pageH = r * 1.42;
-    const coverT = r * 0.12;
-    const pageT = r * 0.18;
-
-    // Central bound spine cylinder
-    const spine = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.14, r * 0.14, pageH * 1.04, 16),
-      metalAccentMat
-    );
-    bookGroup.add(spine);
-
-    // Left open wing (hardcover + cream vellum page block + engraved text rules)
-    const leftWing = new THREE.Group();
-    const leftCover = new THREE.Mesh(
-      new THREE.BoxGeometry(pageW, pageH, coverT),
-      coreMat
-    );
-    leftCover.position.set(-pageW / 2, 0, -pageT * 0.45);
-    leftWing.add(leftCover);
-
-    const leftPages = new THREE.Mesh(
-      new THREE.BoxGeometry(pageW * 0.9, pageH * 0.9, pageT),
-      ivoryContrastMat
-    );
-    leftPages.position.set(-pageW * 0.46, 0, pageT * 0.15);
-    leftWing.add(leftPages);
-
-    for (let l = -1; l <= 1; l++) {
-      const ruleLine = new THREE.Mesh(
-        new THREE.BoxGeometry(pageW * 0.56, r * 0.06, pageT * 1.18),
-        coreMat
-      );
-      ruleLine.position.set(-pageW * 0.48, l * r * 0.28, pageT * 0.15);
-      leftWing.add(ruleLine);
-    }
-
-    leftWing.rotation.y = 0.38;
-    bookGroup.add(leftWing);
-
-    // Right open wing (hardcover + cream vellum page block + engraved text rules)
-    const rightWing = new THREE.Group();
-    const rightCover = new THREE.Mesh(
-      new THREE.BoxGeometry(pageW, pageH, coverT),
-      coreMat
-    );
-    rightCover.position.set(pageW / 2, 0, -pageT * 0.45);
-    rightWing.add(rightCover);
-
-    const rightPages = new THREE.Mesh(
-      new THREE.BoxGeometry(pageW * 0.9, pageH * 0.9, pageT),
-      ivoryContrastMat
-    );
-    rightPages.position.set(pageW * 0.46, 0, pageT * 0.15);
-    rightWing.add(rightPages);
-
-    for (let l = -1; l <= 1; l++) {
-      const ruleLine = new THREE.Mesh(
-        new THREE.BoxGeometry(pageW * 0.56, r * 0.06, pageT * 1.18),
-        coreMat
-      );
-      ruleLine.position.set(pageW * 0.48, l * r * 0.28, pageT * 0.15);
-      rightWing.add(ruleLine);
-    }
-
-    rightWing.rotation.y = -0.38;
-    bookGroup.add(rightWing);
-
-    // Floating golden bookmark ribbon rising above the spine
-    const bookmark = new THREE.Mesh(
-      new THREE.BoxGeometry(r * 0.16, r * 0.65, r * 0.06),
-      metalAccentMat
-    );
-    bookmark.position.set(0, r * 0.72, r * 0.22);
-    bookmark.rotation.z = -0.15;
-    bookGroup.add(bookmark);
-    outerShell = bookmark;
-
-    bookGroup.rotation.x = 0.35;
-    group.add(bookGroup);
-    coreObject = bookGroup;
-  } else {
-    // ==================== COMPOSER / SCORE: 3D BEAMED MUSICAL EIGHTH NOTE (♫) ====================
-    const noteGroup = new THREE.Group();
-
-    const leftX = -r * 0.52;
-    const rightX = r * 0.48;
-    const bottomY = -r * 0.52;
-    const topLeftY = r * 0.62;
-    const topRightY = r * 0.86;
-
-    // Left & Right 3D tilted elliptical note heads
-    const headGeo = new THREE.SphereGeometry(r * 0.36, 24, 24);
-    headGeo.scale(1.25, 0.88, 0.78);
-
-    const leftHead = new THREE.Mesh(headGeo, coreMat);
-    leftHead.position.set(leftX, bottomY, 0);
-    leftHead.rotation.z = 0.35;
-    noteGroup.add(leftHead);
-
-    const rightHead = new THREE.Mesh(headGeo, coreMat);
-    rightHead.position.set(rightX, bottomY + r * 0.2, 0);
-    rightHead.rotation.z = 0.35;
-    noteGroup.add(rightHead);
-
-    // Left & Right vertical note stems
-    const stemLen = r * 1.18;
-    const stemGeo = new THREE.CylinderGeometry(
-      r * 0.085,
-      r * 0.085,
-      stemLen,
-      16
-    );
-
-    const leftStem = new THREE.Mesh(stemGeo, metalAccentMat);
-    leftStem.position.set(
-      leftX + r * 0.28,
-      (bottomY + topLeftY) / 2,
-      0
-    );
-    noteGroup.add(leftStem);
-
-    const rightStem = new THREE.Mesh(stemGeo, metalAccentMat);
-    rightStem.position.set(
-      rightX + r * 0.28,
-      (bottomY + r * 0.2 + topRightY) / 2,
-      0
-    );
-    noteGroup.add(rightStem);
-
-    // Top connecting musical double-beam bars
-    const beamDx = rightX - leftX;
-    const beamDy = topRightY - topLeftY;
-    const beamLen = Math.sqrt(beamDx * beamDx + beamDy * beamDy) + r * 0.16;
-    const beamAngle = Math.atan2(beamDy, beamDx);
-    const beamGeo = new THREE.BoxGeometry(beamLen, r * 0.22, r * 0.2);
-    const topBeam = new THREE.Mesh(beamGeo, coreMat);
-    topBeam.position.set(
-      (leftX + rightX) / 2 + r * 0.28,
-      (topLeftY + topRightY) / 2 - r * 0.04,
-      0
-    );
-    topBeam.rotation.z = beamAngle;
-    noteGroup.add(topBeam);
-
-    const secondBeam = new THREE.Mesh(
-      new THREE.BoxGeometry(beamLen * 0.92, r * 0.13, r * 0.22),
-      ivoryContrastMat
-    );
-    secondBeam.position.set(
-      (leftX + rightX) / 2 + r * 0.28,
-      (topLeftY + topRightY) / 2 - r * 0.32,
-      0
-    );
-    secondBeam.rotation.z = beamAngle;
-    noteGroup.add(secondBeam);
-
-    // Subtle acoustic soundwave ring around the musical note
-    const waveRing = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.32, r * 0.04, 16, 64),
-      glassShellMat
-    );
-    waveRing.rotation.x = Math.PI / 3;
-    group.add(waveRing);
-    outerShell = waveRing;
-
-    group.add(noteGroup);
-    coreObject = noteGroup;
-  }
-
-  // Primary Media Nodes (MOVIE / TV) receive an equatorial archival brass collet ring with 4 cardinal compass studs
-  if ((node.type === 'MOVIE' || node.type === 'TV') && !node.isFocal) {
-    const mediaCollet = new THREE.Group();
-    const colletRing = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.38, r * 0.028, 14, 64),
-      glassShellMat
-    );
-    mediaCollet.add(colletRing);
-
-    const studGeo = new THREE.SphereGeometry(r * 0.06, 10, 10);
-    for (let s = 0; s < 4; s++) {
-      const ang = (s * Math.PI) / 2;
-      const stud = new THREE.Mesh(studGeo, metalAccentMat);
-      stud.position.set(
-        Math.cos(ang) * r * 1.38,
-        Math.sin(ang) * r * 1.38,
-        0
-      );
-      mediaCollet.add(stud);
-    }
-    mediaCollet.rotation.x = Math.PI / 2.25;
-    group.add(mediaCollet);
-  }
-
-  // Selected Focal Title gets an additional centerpiece marquee halo ring
+  // Focal centerpiece gets an elegant thin luminous orbital ring
   if (node.isFocal) {
-    const focalGimbal = new THREE.Group();
-    const gimbalRing = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.75, r * 0.042, 20, 96),
-      metalAccentMat
+    const focalRingGeo = new THREE.TorusGeometry(
+      r * 1.55,
+      Math.max(0.22, r * 0.05),
+      12,
+      48
     );
-    focalGimbal.add(gimbalRing);
-
-    for (let b = 0; b < 4; b++) {
-      const angle = (b * Math.PI) / 2;
-      const bead = new THREE.Mesh(
-        new THREE.SphereGeometry(r * 0.09, 14, 14),
-        coreMat
-      );
-      bead.position.set(
-        Math.cos(angle) * r * 1.75,
-        Math.sin(angle) * r * 1.75,
-        0
-      );
-      focalGimbal.add(bead);
-    }
-    focalGimbal.rotation.x = Math.PI / 2.35;
-    group.add(focalGimbal);
-    secondaryRing = focalGimbal;
+    const focalRingMat = new THREE.MeshPhysicalMaterial({
+      color: glowColor,
+      emissive: glowColor,
+      emissiveIntensity: 0.5,
+      roughness: 0.2,
+      metalness: 0.8,
+      clearcoat: 1.0,
+      transparent: true,
+      opacity: 0.88,
+    });
+    accentMaterials.push(focalRingMat);
+    const focalRingMesh = new THREE.Mesh(focalRingGeo, focalRingMat);
+    focalRingMesh.rotation.x = Math.PI / 3;
+    group.add(focalRingMesh);
+    outerShell = focalRingMesh;
   }
 
   // Camera-facing selection & linked-node beacon halo rings
-  const haloRingGeo = new THREE.RingGeometry(r * 1.46, r * 1.72, 48);
+  const haloRingGeo = new THREE.RingGeometry(r * 1.4, r * 1.65, 36);
   const selectionHaloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(node.isFocal ? '#B8292F' : node.color),
+    color: new THREE.Color(node.isFocal ? '#FF3366' : node.color),
     side: THREE.DoubleSide,
     transparent: true,
     opacity: 0,
@@ -1395,9 +939,9 @@ function createCategoryNodeAssembly(
   const selectionHalo = new THREE.Mesh(haloRingGeo, selectionHaloMat);
   group.add(selectionHalo);
 
-  const outerHaloGeo = new THREE.RingGeometry(r * 1.88, r * 2.02, 48);
+  const outerHaloGeo = new THREE.RingGeometry(r * 1.8, r * 1.95, 36);
   const outerRingHaloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color('#B8292F'),
+    color: new THREE.Color(node.isFocal ? '#FF3366' : '#00D2FF'),
     side: THREE.DoubleSide,
     transparent: true,
     opacity: 0,
@@ -1406,8 +950,8 @@ function createCategoryNodeAssembly(
   const outerRingHalo = new THREE.Mesh(outerHaloGeo, outerRingHaloMat);
   group.add(outerRingHalo);
 
-  // Invisible generous raycast hit-sphere so intricate multi-part models are effortless to click & hover
-  const hitGeo = new THREE.SphereGeometry(r * 1.52, 16, 16);
+  // Generous invisible raycast hit-sphere so sleek dots are effortless to click & hover
+  const hitGeo = new THREE.SphereGeometry(Math.max(r * 1.8, 5.5), 14, 14);
   const hitMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0,
@@ -1451,110 +995,44 @@ function createCategoryNodeAssembly(
  */
 function createLabelSprite(node: GraphNode): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 680;
-  canvas.height = 188;
+  canvas.width = 480;
+  canvas.height = 96;
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+    const titleText = node.label.length > 20 ? node.label.slice(0, 18) + '…' : node.label;
     const isMedia = node.type === 'MOVIE' || node.type === 'TV';
-    const titleText =
-      node.label.length > 26 ? node.label.slice(0, 24) + '…' : node.label;
-    const badgeText = node.isFocal
-      ? 'CENTERPIECE · SELECTED'
-      : isMedia && node.matchScore !== undefined
-        ? `${node.matchScore}% Match · ${getEntityRoleLabel(node.type)}`
-        : isMedia && node.mediaItem
-          ? `${node.mediaItem.year} · IMDb ${node.mediaItem.imdbRating.toFixed(1)}`
-          : getEntityRoleLabel(node.type).toUpperCase();
+    const subText = node.isFocal
+      ? 'Focal Center'
+      : isMedia && node.mediaItem
+        ? `${node.mediaItem.year} · ★ ${node.mediaItem.imdbRating.toFixed(1)}`
+        : getEntityRoleLabel(node.type);
 
-    const pillW = Math.min(636, Math.max(276, titleText.length * 17.5 + 124));
-    const pillH = 96;
+    ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const textWidth = ctx.measureText(titleText).width;
+    const pillW = Math.min(440, Math.max(160, textWidth + 40));
+    const pillH = 68;
     const pillX = (canvas.width - pillW) / 2;
-    const pillY = 26;
-    const pointerTipY = pillY + pillH + 14;
-    const centerX = canvas.width / 2;
+    const pillY = 14;
 
-    const borderColor = node.isFocal
-      ? '#B8292F'
-      : isMedia
-        ? node.color
-        : '#B5A892';
-
-    // 1. Subtle offset elevation shadow
     ctx.save();
-    ctx.shadowColor = 'rgba(23, 20, 18, 0.18)';
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetY = 4;
-
-    // Warm archival vellum card plate with bottom pointer nib
-    ctx.fillStyle = node.isFocal
-      ? 'rgba(251, 248, 242, 0.99)'
-      : 'rgba(251, 248, 242, 0.96)';
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = node.isFocal ? 3 : 2.2;
-
+    ctx.fillStyle = 'rgba(14, 21, 36, 0.90)';
+    ctx.strokeStyle = node.isFocal ? '#FF3366' : 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = node.isFocal ? 2.5 : 1.2;
     ctx.beginPath();
-    ctx.roundRect(pillX, pillY, pillW, pillH, 10);
+    ctx.roundRect(pillX, pillY, pillW, pillH, 12);
     ctx.fill();
+    ctx.stroke();
     ctx.restore();
-    ctx.stroke();
 
-    // Inner engraved vellum inset rule
-    ctx.strokeStyle = 'rgba(213, 204, 185, 0.65)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(pillX + 4, pillY + 4, pillW - 8, pillH - 8, 7);
-    ctx.stroke();
-
-    // Downward pointer pin connecting label plate to 3D sculpture
-    ctx.fillStyle = borderColor;
-    ctx.beginPath();
-    ctx.moveTo(centerX - 8, pillY + pillH);
-    ctx.lineTo(centerX + 8, pillY + pillH);
-    ctx.lineTo(centerX, pointerTipY);
-    ctx.closePath();
-    ctx.fill();
-
-    // Left category medallion disc
-    const badgeCx = pillX + 38;
-    const badgeCy = pillY + pillH / 2;
-    ctx.beginPath();
-    ctx.arc(badgeCx, badgeCy, 20, 0, Math.PI * 2);
-    ctx.fillStyle = node.isFocal
-      ? 'rgba(184, 41, 47, 0.12)'
-      : 'rgba(239, 232, 218, 0.92)';
-    ctx.fill();
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-
-    drawCategoryGlyph2D(
-      ctx,
-      node.type,
-      badgeCx,
-      badgeCy,
-      10,
-      node.isFocal ? '#B8292F' : node.color
-    );
-
-    const textCenterX = pillX + 64 + (pillW - 78) / 2;
-
-    // Title in Spectral serif
-    ctx.font = `${node.isFocal ? '700 26px' : '700 23px'} "Spectral", Georgia, serif`;
-    ctx.fillStyle = '#171412';
+    ctx.fillStyle = '#F0F4FC';
+    ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(titleText, textCenterX, pillY + 35);
+    ctx.fillText(titleText, canvas.width / 2, pillY + 28);
 
-    // Subtitle in Source Sans 3 (tabular numerals)
-    ctx.font = '700 14.5px "Source Sans 3", -apple-system, sans-serif';
-    ctx.fillStyle = node.isFocal
-      ? '#B8292F'
-      : isMedia && (node.matchScore || 0) >= 75
-        ? '#2A6B53'
-        : node.color;
-    ctx.fillText(badgeText, textCenterX, pillY + 67);
+    ctx.fillStyle = node.isFocal ? '#FF3366' : '#94A3B8';
+    ctx.font = '500 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(subText, canvas.width / 2, pillY + 50);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -1566,16 +1044,323 @@ function createLabelSprite(node: GraphNode): THREE.Sprite {
     depthWrite: false,
   });
   const sprite = new THREE.Sprite(material);
-  const scale = node.isFocal
-    ? 46
-    : node.type === 'MOVIE' || node.type === 'TV'
-      ? 35
-      : 28;
-  sprite.scale.set(scale, scale * (188 / 680), 1);
-  sprite.position.set(0, node.radius * 1.42 + 7.8, 0);
+  const scale = node.isFocal ? 24 : 18;
+  sprite.scale.set(scale, scale * (96 / 480), 1);
+  sprite.position.set(0, node.radius + 3.8, 0);
   return sprite;
 }
 
+/**
+ * Creates a bold, high-contrast, crystal-clear 3D territory billboard for each genre.
+ * Specifically engineered for effortless legibility across the entire galaxy:
+ * - High-impact, heavy-stroke grotesque typography (font-weight 900)
+ * - Pure white high-contrast text on deep obsidian card with vibrant neon perimeter
+ * - Bold astronomical pip marker
+ * - Integrated title count badge
+ * - Large world scale (baseH: 74, baseW: up to 340) with dynamic orbital scaling up to 1.85x
+ */
+function createClusterBannerSprite(
+  cluster: SemanticCluster,
+  isDark = true
+): { sprite: THREE.Sprite; baseW: number; baseH: number } {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1280;
+  canvas.height = 280;
+  const ctx = canvas.getContext('2d');
+
+  let baseW = 260;
+  const baseH = 74;
+
+  if (ctx) {
+    const labelText = cluster.shortLabel || cluster.label;
+    const count = cluster.mediaIds ? cluster.mediaIds.length : 0;
+    const countText = count > 0 ? `${count} TITLES` : '';
+
+    // 1. High-impact bold typography engineered for distance legibility
+    ctx.font =
+      '900 86px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+    const labelMetrics = ctx.measureText(labelText);
+    const labelW = labelMetrics.width;
+
+    ctx.font =
+      '700 38px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const countMetrics = ctx.measureText(countText);
+    const countW = count > 0 ? countMetrics.width : 0;
+
+    const padX = 46;
+    const pipSpace = 72;
+    const gap = count > 0 ? 44 : 0;
+    const countBadgeW = count > 0 ? countW + 38 : 0;
+    const totalContentW = pipSpace + labelW + gap + countBadgeW;
+
+    const pillW = Math.max(460, Math.min(1210, totalContentW + padX * 2));
+    const pillH = 176;
+    const pillX = (1280 - pillW) / 2;
+    const pillY = (280 - pillH) / 2;
+    const pillRadius = 38;
+
+    // 2. High-contrast ambient shadow for depth separation against stars & lines
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+    ctx.shadowBlur = 32;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 10;
+    ctx.fillStyle = isDark
+      ? 'rgba(7, 10, 19, 0.98)'
+      : 'rgba(251, 248, 242, 0.98)';
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, pillRadius);
+    ctx.fill();
+    ctx.restore();
+
+    // 3. Opaque obsidian card stock fill with subtle contrast gradient
+    const bgGrad = ctx.createLinearGradient(pillX, pillY, pillX, pillY + pillH);
+    if (isDark) {
+      bgGrad.addColorStop(0, 'rgba(16, 23, 42, 0.98)');
+      bgGrad.addColorStop(0.5, 'rgba(10, 15, 29, 0.98)');
+      bgGrad.addColorStop(1, 'rgba(6, 9, 18, 0.99)');
+    } else {
+      bgGrad.addColorStop(0, 'rgba(255, 253, 249, 0.99)');
+      bgGrad.addColorStop(0.5, 'rgba(248, 244, 236, 0.98)');
+      bgGrad.addColorStop(1, 'rgba(239, 232, 218, 0.99)');
+    }
+    ctx.fillStyle = bgGrad;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, pillRadius);
+    ctx.fill();
+
+    // 4. Vibrant 4.5px perimeter border in semantic cluster pigment
+    ctx.lineWidth = 4.5;
+    ctx.strokeStyle = cluster.color;
+    ctx.stroke();
+
+    // Fine inner specular bevel
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = isDark
+      ? 'rgba(255, 255, 255, 0.32)'
+      : 'rgba(23, 20, 18, 0.20)';
+    ctx.beginPath();
+    ctx.roundRect(
+      pillX + 3.5,
+      pillY + 3.5,
+      pillW - 7,
+      pillH - 7,
+      pillRadius - 3.5
+    );
+    ctx.stroke();
+
+    // 5. High-visibility celestial beacon pip on the left
+    const pipX = pillX + padX + 22;
+    const pipY = pillY + pillH / 2;
+
+    // Glowing pigment aura
+    ctx.beginPath();
+    ctx.arc(pipX, pipY, 24, 0, Math.PI * 2);
+    ctx.fillStyle = `${cluster.color}45`;
+    ctx.fill();
+
+    // Solid core
+    ctx.beginPath();
+    ctx.arc(pipX, pipY, 15, 0, Math.PI * 2);
+    ctx.fillStyle = cluster.color;
+    ctx.fill();
+
+    // Pure white center star
+    ctx.beginPath();
+    ctx.arc(pipX, pipY, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+
+    // 6. Crisp bold primary genre headline
+    const textStartX = pipX + 38;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font =
+      '900 86px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+    ctx.fillStyle = isDark ? '#FFFFFF' : '#171412';
+    ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.95)' : 'rgba(255, 255, 255, 0.6)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 3;
+    ctx.fillText(labelText, textStartX, pipY);
+
+    // 7. Right-side Title Count Capsule
+    if (count > 0) {
+      const countBadgeX = pillX + pillW - padX - countBadgeW;
+      const countBadgeY = pipY - 30;
+      const countBadgeH = 60;
+
+      ctx.fillStyle = isDark
+        ? 'rgba(255, 255, 255, 0.12)'
+        : 'rgba(23, 20, 18, 0.08)';
+      ctx.beginPath();
+      ctx.roundRect(countBadgeX, countBadgeY, countBadgeW, countBadgeH, 30);
+      ctx.fill();
+
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = isDark
+        ? 'rgba(255, 255, 255, 0.28)'
+        : 'rgba(23, 20, 18, 0.22)';
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font =
+        '700 36px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = isDark ? '#F1F5F9' : '#334155';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+      ctx.shadowBlur = 6;
+      ctx.fillText(countText, countBadgeX + countBadgeW / 2, pipY);
+    }
+
+    // World scale: baseH is 74, width is proportional to content
+    baseW = Math.round((pillW / pillH) * baseH);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+  });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(baseW, baseH, 1);
+  return { sprite, baseW, baseH };
+}
+
+/**
+ * Computes tight bounding volume of all active nodes and cluster centroids
+ * to guarantee that all nodes fit inside any viewport size.
+ */
+function computeGraphBounds(nodes: GraphNode[], clusters?: SemanticCluster[]) {
+  if (!nodes || nodes.length === 0) {
+    return {
+      centerX: 0,
+      centerY: 0,
+      centerZ: 0,
+      halfWidth: 550,
+      halfHeight: 550,
+      maxRadius: 650,
+    };
+  }
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (n.x < minX) minX = n.x;
+    if (n.x > maxX) maxX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.y > maxY) maxY = n.y;
+    if (n.z < minZ) minZ = n.z;
+    if (n.z > maxZ) maxZ = n.z;
+  }
+
+  if (clusters && clusters.length > 0) {
+    for (let i = 0; i < clusters.length; i++) {
+      const c = clusters[i];
+      if (c.centroid.x < minX) minX = c.centroid.x;
+      if (c.centroid.x > maxX) maxX = c.centroid.x;
+      if (c.centroid.y < minY) minY = c.centroid.y;
+      if (c.centroid.y > maxY) maxY = c.centroid.y;
+      if (c.centroid.z < minZ) minZ = c.centroid.z;
+      if (c.centroid.z > maxZ) maxZ = c.centroid.z;
+    }
+  }
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const centerZ = (minZ + maxZ) / 2;
+
+  // Margin for node badges, territory banners, and labels
+  const margin = 80;
+  const halfWidth = Math.max(320, (maxX - minX) / 2 + margin);
+  const halfHeight = Math.max(320, (maxY - minY) / 2 + margin);
+  const maxRadius = Math.max(
+    Math.hypot(halfWidth, halfHeight),
+    Math.hypot(maxX - centerX, maxY - centerY) + margin
+  );
+
+  return {
+    centerX,
+    centerY,
+    centerZ,
+    halfWidth,
+    halfHeight,
+    maxRadius,
+  };
+}
+
+/**
+ * Calculates responsive 3D camera distance based on viewport aspect ratio and container dimensions
+ * ensuring 100% of nodes and cluster labels fit inside the screen with safety padding.
+ */
+function computeResponsive3DDistance(
+  containerWidth: number,
+  containerHeight: number,
+  bounds: ReturnType<typeof computeGraphBounds>,
+  fovDegrees = 55
+): number {
+  const w = Math.max(
+    320,
+    containerWidth ||
+      (typeof window !== 'undefined' ? window.innerWidth : 1280)
+  );
+  const h = Math.max(
+    320,
+    containerHeight ||
+      (typeof window !== 'undefined' ? window.innerHeight : 800)
+  );
+  const aspect = w / h;
+  const vFovRad = (fovDegrees * Math.PI) / 360;
+  const tanV = Math.tan(vFovRad);
+  const tanH = tanV * aspect;
+
+  const paddingFactor = 1.18;
+  const distV = (bounds.halfHeight * paddingFactor) / tanV;
+  const distH = (bounds.halfWidth * paddingFactor) / tanH;
+
+  return Math.round(Math.max(distV, distH, 850));
+}
+
+/**
+ * Calculates responsive 2D canvas zoom scale so all nodes fit inside the screen with generous margins.
+ */
+function computeResponsive2DZoom(
+  containerWidth: number,
+  containerHeight: number,
+  bounds: ReturnType<typeof computeGraphBounds>
+): number {
+  const w = Math.max(
+    320,
+    containerWidth ||
+      (typeof window !== 'undefined' ? window.innerWidth : 1280)
+  );
+  const h = Math.max(
+    320,
+    containerHeight ||
+      (typeof window !== 'undefined' ? window.innerHeight : 800)
+  );
+
+  const availW = w * 0.84;
+  const availH = h * 0.84;
+
+  const totalW = bounds.halfWidth * 2;
+  const totalH = bounds.halfHeight * 2;
+
+  const zoomW = availW / totalW;
+  const zoomH = availH / totalH;
+
+  const fittedZoom = Math.min(zoomW, zoomH, 1.05);
+  return Math.max(0.24, Math.round(fittedZoom * 100) / 100);
+}
 export function SpatialViewport({
   nodes,
   links,
@@ -1600,7 +1385,7 @@ export function SpatialViewport({
   onGraphScopeChange,
   onOpenProfileModal,
   clusters = [],
-  layoutMode = 'FORCE_CONSTELLATION',
+  layoutMode = 'SEMANTIC_GALAXY',
   onLayoutModeChange,
   colorMode = 'CATEGORY',
   onColorModeChange,
@@ -1610,6 +1395,8 @@ export function SpatialViewport({
   onLabelModeChange,
   graphFilters,
   onSelectCluster,
+  onToggleTerritories,
+  theme = 'MOVIE_MAP_DARK',
 }: SpatialViewportProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1619,15 +1406,55 @@ export function SpatialViewport({
     useState<HoveredTooltipState | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [isNodeKeyOpen, setIsNodeKeyOpen] = useState(false);
+  const [localTerritories, setLocalTerritories] = useState(true);
+  const showTerritories = graphFilters?.showTerritories ?? localTerritories;
 
   // Refs for mutable access inside animation loop
   const nodesRef = useRef<GraphNode[]>(nodes);
   const linksRef = useRef<GraphLink[]>(links);
   const forceRef = useRef<ForceSettings>(forceSettings);
   const hoveredIdRef = useRef<string | null>(null);
+  const hoveredClusterIdRef = useRef<string | null>(null);
   const selectedIdRef = useRef<string | null>(selectedNodeId);
   const autoRotateRef = useRef<boolean>(autoRotate);
   const cameraModeRef = useRef<CameraMode>(cameraMode);
+  const labelModeRef = useRef<LabelDisplayMode>(labelMode);
+  labelModeRef.current = labelMode;
+  const showTerritoriesRef = useRef<boolean>(showTerritories);
+  showTerritoriesRef.current = showTerritories;
+  const layoutModeRef = useRef<GraphLayoutMode>(layoutMode);
+  layoutModeRef.current = layoutMode;
+  const colorModeRef = useRef<NodeColorMode>(colorMode);
+  colorModeRef.current = colorMode;
+
+  // Stable structural identity keys to prevent costly WebGL canvas destructions on color/layout/label toggles
+  const nodeStructureKey = useMemo(() => {
+    return `${nodes.length}:${nodes.map((n) => n.id).join(',')}`;
+  }, [nodes]);
+
+  const linksStructureKey = useMemo(() => {
+    return `${links.length}:${links.map((l) => `${l.source}->${l.target}`).join(',')}`;
+  }, [links]);
+
+  // Context refs for zero-overhead in-place updates (60fps color shifts & smooth physics glides)
+  const threeContextRef = useRef<{
+    simNodes: GraphNode[];
+    nodeAssembliesMap: Map<string, NodeAssemblyRecord>;
+    homePositions3D: Map<string, { x: number; y: number; z: number }>;
+    linkEntries: Array<{
+      link: GraphLink;
+      line: THREE.Line;
+      material: THREE.LineBasicMaterial;
+      beamMesh: THREE.Mesh;
+      beamMaterial: THREE.MeshBasicMaterial;
+    }>;
+    territorySpritesGroup: THREE.Group;
+  } | null>(null);
+
+  const canvas2dContextRef = useRef<{
+    simNodes: GraphNode[];
+    homePositions2D: Map<string, { x: number; y: number }>;
+  } | null>(null);
 
   // Memoized linked subgraph for the currently selected node (used by the persistent Linked Nodes HUD panel)
   const selectedSubgraph = useMemo(
@@ -1643,15 +1470,20 @@ export function SpatialViewport({
     selectedIdRef.current = selectedNodeId;
     if (!selectedNodeId) {
       // Smoothly return camera to full archive center when selection is cleared
-      camSphericalRef.current.goalX = 0;
-      camSphericalRef.current.goalY = 0;
-      camSphericalRef.current.goalZ = 0;
-      camSphericalRef.current.goalRadius = 265;
+      const bounds = computeGraphBounds(nodesRef.current, clusters);
+      const w = containerRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
+      const h = containerRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 800);
+      const autoDist = computeResponsive3DDistance(w, h, bounds);
+      const autoZoom = computeResponsive2DZoom(w, h, bounds);
+      camSphericalRef.current.goalX = bounds.centerX;
+      camSphericalRef.current.goalY = bounds.centerY;
+      camSphericalRef.current.goalZ = bounds.centerZ;
+      camSphericalRef.current.goalRadius = autoDist;
       pan2dRef.current.goalPanX = 0;
       pan2dRef.current.goalPanY = 0;
-      pan2dRef.current.goalZoom = 1.05;
+      pan2dRef.current.goalZoom = autoZoom;
     }
-  }, [selectedNodeId]);
+  }, [selectedNodeId, clusters]);
 
   // Allow pressing Escape at any time to exit the isolated subgraph view / reset selection
   // Allow pressing 'L' to toggle label display mode (Auto -> All -> Off)
@@ -1684,16 +1516,16 @@ export function SpatialViewport({
 
   // Camera spherical coordinates for smooth interactive 3D control
   const camSphericalRef = useRef({
-    radius: 265,
-    theta: 0.45,
-    phi: 1.18,
+    radius: 960,
+    theta: 0.05,
+    phi: 1.44,
     targetX: 0,
     targetY: 0,
     targetZ: 0,
     goalX: 0,
     goalY: 0,
     goalZ: 0,
-    goalRadius: 265,
+    goalRadius: 960,
     flyIndex: 0,
     flyTimer: 0,
   });
@@ -1702,10 +1534,10 @@ export function SpatialViewport({
   const pan2dRef = useRef({
     panX: 0,
     panY: 0,
-    zoom: 1.05,
+    zoom: 0.68,
     goalPanX: 0,
     goalPanY: 0,
-    goalZoom: 1.05,
+    goalZoom: 0.68,
   });
 
   /**
@@ -1736,17 +1568,23 @@ export function SpatialViewport({
   // Handle Reset View trigger
   useEffect(() => {
     if (resetPitchTrigger > 0) {
-      camSphericalRef.current.phi = Math.PI / 2.25;
-      camSphericalRef.current.goalX = 0;
-      camSphericalRef.current.goalY = 0;
-      camSphericalRef.current.goalZ = 0;
-      camSphericalRef.current.goalRadius = 260;
+      const bounds = computeGraphBounds(nodesRef.current, clusters);
+      const w = containerRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
+      const h = containerRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 800);
+      const autoDist = computeResponsive3DDistance(w, h, bounds);
+      const autoZoom = computeResponsive2DZoom(w, h, bounds);
+      camSphericalRef.current.phi = 1.44;
+      camSphericalRef.current.theta = 0.05;
+      camSphericalRef.current.goalX = bounds.centerX;
+      camSphericalRef.current.goalY = bounds.centerY;
+      camSphericalRef.current.goalZ = bounds.centerZ;
+      camSphericalRef.current.goalRadius = autoDist;
       pan2dRef.current.goalPanX = 0;
       pan2dRef.current.goalPanY = 0;
-      pan2dRef.current.goalZoom = 1.05;
+      pan2dRef.current.goalZoom = autoZoom;
       onFovChange?.(55);
     }
-  }, [resetPitchTrigger, onFovChange]);
+  }, [resetPitchTrigger, onFovChange, clusters]);
 
   // Handle Focus in Map button from Right Inspector or Node Selection
   useEffect(() => {
@@ -1762,18 +1600,18 @@ export function SpatialViewport({
   const handleZoomStep = useCallback(
     (delta: number) => {
       camSphericalRef.current.goalRadius = Math.max(
-        75,
-        Math.min(520, camSphericalRef.current.goalRadius + delta)
+        90,
+        Math.min(950, camSphericalRef.current.goalRadius + delta)
       );
       pan2dRef.current.goalZoom = Math.max(
-        0.45,
-        Math.min(2.6, pan2dRef.current.goalZoom - delta * 0.004)
+        0.25,
+        Math.min(3.2, pan2dRef.current.goalZoom - delta * 0.003)
       );
       const nextFov = Math.max(
         35,
         Math.min(
           75,
-          Math.round(35 + (camSphericalRef.current.goalRadius / 520) * 35)
+          Math.round(35 + (camSphericalRef.current.goalRadius / 950) * 35)
         )
       );
       onFovChange?.(nextFov);
@@ -1794,8 +1632,24 @@ export function SpatialViewport({
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
 
+    const bounds = computeGraphBounds(simNodes, clusters);
+    const responsiveDist = computeResponsive3DDistance(width, height, bounds);
+
+    if (!selectedIdRef.current && !focalItem) {
+      camSphericalRef.current.radius = responsiveDist;
+      camSphericalRef.current.goalRadius = responsiveDist;
+      camSphericalRef.current.targetX = bounds.centerX;
+      camSphericalRef.current.targetY = bounds.centerY;
+      camSphericalRef.current.targetZ = bounds.centerZ;
+      camSphericalRef.current.goalX = bounds.centerX;
+      camSphericalRef.current.goalY = bounds.centerY;
+      camSphericalRef.current.goalZ = bounds.centerZ;
+    }
+
+    const isDark = theme === 'MOVIE_MAP_DARK';
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0xf6f1e7, 0.0014);
+    scene.background = new THREE.Color(isDark ? 0x0a0e17 : 0xf6f1e7);
+    scene.fog = new THREE.FogExp2(isDark ? 0x0a0e17 : 0xf6f1e7, 0.00035);
 
     const camera = new THREE.PerspectiveCamera(55, width / height, 1, 2200);
 
@@ -1807,7 +1661,7 @@ export function SpatialViewport({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
+    renderer.toneMappingExposure = isDark ? 1.25 : 1.12;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -1815,36 +1669,61 @@ export function SpatialViewport({
     const envTexture = createStudioEnvironment(renderer);
     scene.environment = envTexture;
 
-    // Warm Daylight Gallery Lighting
-    const ambientLight = new THREE.AmbientLight(0xfffdf9, 1.9);
+    // Gallery Lighting (Luminous Night Sky vs Daylight Parchment)
+    const ambientLight = new THREE.AmbientLight(
+      isDark ? 0x141b2d : 0xfffdf9,
+      isDark ? 2.3 : 1.9
+    );
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xfff8eb, 1.85);
+    const dirLight = new THREE.DirectionalLight(
+      isDark ? 0x38e1ff : 0xfff8eb,
+      isDark ? 1.6 : 1.85
+    );
     dirLight.position.set(140, 210, 180);
     scene.add(dirLight);
 
-    const rimLight = new THREE.DirectionalLight(0xe4effa, 1.15);
+    const rimLight = new THREE.DirectionalLight(
+      isDark ? 0xff3366 : 0xe4effa,
+      isDark ? 1.4 : 1.15
+    );
     rimLight.position.set(-160, 120, -160);
     scene.add(rimLight);
 
-    const pointLightWarm = new THREE.PointLight(0xd48324, 1.25, 750);
+    const pointLightWarm = new THREE.PointLight(
+      isDark ? 0xffaa00 : 0xd48324,
+      1.25,
+      750
+    );
     pointLightWarm.position.set(120, 140, 160);
     scene.add(pointLightWarm);
 
-    const pointLightPrussian = new THREE.PointLight(0x234b6e, 1.05, 750);
+    const pointLightPrussian = new THREE.PointLight(
+      isDark ? 0x00d2ff : 0x234b6e,
+      1.15,
+      750
+    );
     pointLightPrussian.position.set(-150, -110, -130);
     scene.add(pointLightPrussian);
 
-    // Subtle Archival Pigment Motes
+    // Subtle Luminous Celestial / Pigment Motes
     const starCount = 420;
     const starPositions = new Float32Array(starCount * 3);
     const starColors = new Float32Array(starCount * 3);
-    const palette = [
-      new THREE.Color('#B8292F'),
-      new THREE.Color('#234B6E'),
-      new THREE.Color('#B86B14'),
-      new THREE.Color('#8F816B'),
-    ];
+    const palette = isDark
+      ? [
+        new THREE.Color('#00D2FF'),
+        new THREE.Color('#FF3366'),
+        new THREE.Color('#FFAA00'),
+        new THREE.Color('#00F5D4'),
+        new THREE.Color('#9D4EDD'),
+      ]
+      : [
+        new THREE.Color('#B8292F'),
+        new THREE.Color('#234B6E'),
+        new THREE.Color('#B86B14'),
+        new THREE.Color('#8F816B'),
+      ];
     for (let i = 0; i < starCount; i++) {
       const r = 180 + Math.random() * 520;
       const theta = Math.random() * Math.PI * 2;
@@ -1972,6 +1851,182 @@ export function SpatialViewport({
       });
     });
 
+    // Index nodes for rapid spatial lookups
+    const nodeIndexMap = new Map<string, GraphNode>();
+    const homePositions3D = new Map<
+      string,
+      { x: number; y: number; z: number }
+    >();
+    simNodes.forEach((n) => {
+      nodeIndexMap.set(n.id, n);
+      homePositions3D.set(n.id, { x: n.x, y: n.y, z: n.z });
+    });
+
+    // 3D Territory Sector Banner Sprites & Luminous Foundations (visible across the constellation)
+    const territorySpritesGroup = new THREE.Group();
+    interface ClusterBannerRecord {
+      sprite: THREE.Sprite;
+      baseW: number;
+      baseH: number;
+      cluster: SemanticCluster;
+      haloRadius: number;
+      boundaryRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+    }
+    const clusterBannerRecords: ClusterBannerRecord[] = [];
+    const pickableBannerSprites: THREE.Sprite[] = [];
+
+    if (clusters && clusters.length > 0) {
+      interface BannerSlot {
+        cluster: SemanticCluster;
+        x: number;
+        y: number;
+        z: number;
+        haloRadius: number;
+        colorObj: THREE.Color;
+      }
+      const bannerSlots: BannerSlot[] = [];
+
+      for (const c of clusters) {
+        let maxDist = 80;
+        const mediaSet = new Set(c.mediaIds || []);
+        for (const mId of mediaSet) {
+          const n = nodeIndexMap.get(mId);
+          if (n) {
+            const d = Math.hypot(n.x - c.centroid.x, n.y - c.centroid.y);
+            if (d > maxDist) maxDist = d;
+          }
+        }
+
+        const haloRadius = Math.max(90, Math.min(260, maxDist + 24));
+        // Place banner cleanly above the cluster centroid based on its local radius
+        const bannerY =
+          c.centroid.y + Math.min(90, Math.max(55, haloRadius * 0.45 + 32));
+        const bannerX = c.centroid.x;
+        const bannerZ = c.centroid.z + 14;
+
+        bannerSlots.push({
+          cluster: c,
+          x: bannerX,
+          y: bannerY,
+          z: bannerZ,
+          haloRadius,
+          colorObj: new THREE.Color(c.color),
+        });
+      }
+
+      // De-collision relaxation pass: ensure no two plaques overlap in 3D projection
+      for (let iter = 0; iter < 4; iter++) {
+        for (let i = 0; i < bannerSlots.length; i++) {
+          for (let j = i + 1; j < bannerSlots.length; j++) {
+            const bA = bannerSlots[i];
+            const bB = bannerSlots[j];
+            const dx = Math.abs(bA.x - bB.x);
+            const dy = Math.abs(bA.y - bB.y);
+            if (dx < 260 && dy < 95) {
+              const pushY = (95 - dy) / 2 + 10;
+              if (bA.y >= bB.y) {
+                bA.y += pushY;
+                bB.y -= pushY;
+              } else {
+                bA.y -= pushY;
+                bB.y += pushY;
+              }
+            }
+          }
+        }
+      }
+
+      for (const slot of bannerSlots) {
+        const c = slot.cluster;
+
+        // 1. Subtle galactic territory floor wash
+        const washGeo = new THREE.RingGeometry(
+          slot.haloRadius * 0.45,
+          slot.haloRadius,
+          64
+        );
+        const washMat = new THREE.MeshBasicMaterial({
+          color: slot.colorObj,
+          transparent: true,
+          opacity: 0.08,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const washMesh = new THREE.Mesh(washGeo, washMat);
+        washMesh.position.set(c.centroid.x, c.centroid.y, c.centroid.z - 4);
+        territorySpritesGroup.add(washMesh);
+
+        // 2. Refined celestial latitude perimeter boundary ring
+        const boundaryGeo = new THREE.RingGeometry(
+          slot.haloRadius - 1.2,
+          slot.haloRadius + 1.2,
+          72
+        );
+        const boundaryMat = new THREE.MeshBasicMaterial({
+          color: slot.colorObj,
+          transparent: true,
+          opacity: 0.35,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const boundaryMesh = new THREE.Mesh(boundaryGeo, boundaryMat);
+        boundaryMesh.position.set(
+          c.centroid.x,
+          c.centroid.y,
+          c.centroid.z - 3.8
+        );
+        territorySpritesGroup.add(boundaryMesh);
+
+        // 3. Ground meridian beacon ring at the cluster centroid
+        const beaconGeo = new THREE.RingGeometry(4, 8, 32);
+        const beaconMat = new THREE.MeshBasicMaterial({
+          color: slot.colorObj,
+          transparent: true,
+          opacity: 0.48,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
+        beaconMesh.position.set(
+          c.centroid.x,
+          c.centroid.y,
+          c.centroid.z - 3.2
+        );
+        territorySpritesGroup.add(beaconMesh);
+
+        // 4. Hairline vertical anchor tether linking centroid to floating plaque
+        const tetherGeo = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(c.centroid.x, c.centroid.y, c.centroid.z - 2),
+          new THREE.Vector3(slot.x, slot.y - 28, slot.z),
+        ]);
+        const tetherMat = new THREE.LineBasicMaterial({
+          color: slot.colorObj,
+          transparent: true,
+          opacity: 0.35,
+          depthWrite: false,
+        });
+        const tetherLine = new THREE.Line(tetherGeo, tetherMat);
+        territorySpritesGroup.add(tetherLine);
+
+        // 5. Bold high-contrast 3D genre territory plaque
+        const { sprite, baseW, baseH } = createClusterBannerSprite(c, isDark);
+        sprite.position.set(slot.x, slot.y, slot.z);
+        sprite.userData = { isClusterBanner: true, clusterId: c.id };
+        territorySpritesGroup.add(sprite);
+
+        clusterBannerRecords.push({
+          sprite,
+          baseW,
+          baseH,
+          cluster: c,
+          haloRadius: slot.haloRadius,
+          boundaryRing: boundaryMesh,
+        });
+        pickableBannerSprites.push(sprite);
+      }
+    }
+    scene.add(territorySpritesGroup);
+
     // Pointer / Raycasting state
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -2031,6 +2086,7 @@ export function SpatialViewport({
         const hitId = intersects[0].object.userData?.nodeId as string;
         const hitNode = simNodes.find((n) => n.id === hitId) || null;
         renderer.domElement.style.cursor = 'pointer';
+        hoveredClusterIdRef.current = null;
         if (hitNode) {
           hoveredIdRef.current = hitNode.id;
           setHoveredNodeId(hitNode.id);
@@ -2041,7 +2097,20 @@ export function SpatialViewport({
           });
         }
       } else {
-        renderer.domElement.style.cursor = 'grab';
+        // Check if cursor hovers over a genre territory nameplate
+        const bannerIntersects = raycaster.intersectObjects(
+          pickableBannerSprites,
+          false
+        );
+        if (bannerIntersects.length > 0) {
+          const hitBanner = bannerIntersects[0].object as THREE.Sprite;
+          const hitClusterId = hitBanner.userData?.clusterId as string;
+          renderer.domElement.style.cursor = 'pointer';
+          hoveredClusterIdRef.current = hitClusterId;
+        } else {
+          hoveredClusterIdRef.current = null;
+          renderer.domElement.style.cursor = 'grab';
+        }
         if (hoveredIdRef.current !== null) {
           hoveredIdRef.current = null;
           setHoveredNodeId(null);
@@ -2076,8 +2145,37 @@ export function SpatialViewport({
           onSelectNode(hitNode);
           frameNodeAndLinkedCluster(hitNode.id);
         }
-      } else if (selectedIdRef.current) {
-        onClearSelection?.();
+      } else {
+        // Check if user clicked a 3D genre territory banner
+        const bannerIntersects = raycaster.intersectObjects(
+          pickableBannerSprites,
+          false
+        );
+        if (bannerIntersects.length > 0) {
+          const hitBanner = bannerIntersects[0].object as THREE.Sprite;
+          const hitClusterId = hitBanner.userData?.clusterId as string;
+          const hitCluster = clusters.find((c) => c.id === hitClusterId);
+          if (hitCluster) {
+            onSelectCluster?.(
+              graphFilters?.activeClusterId === hitClusterId
+                ? null
+                : hitClusterId
+            );
+            const hitRecord = clusterBannerRecords.find(
+              (r) => r.cluster.id === hitClusterId
+            );
+            const targetRadius = hitRecord
+              ? Math.max(480, hitRecord.haloRadius * 2.7)
+              : 600;
+            camSphericalRef.current.goalX = hitCluster.centroid.x;
+            camSphericalRef.current.goalY = hitCluster.centroid.y;
+            camSphericalRef.current.goalZ = hitCluster.centroid.z;
+            camSphericalRef.current.goalRadius = targetRadius;
+            return;
+          }
+        } else if (selectedIdRef.current) {
+          onClearSelection?.();
+        }
       }
     };
 
@@ -2131,21 +2229,17 @@ export function SpatialViewport({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      if (!selectedIdRef.current && !focalItem) {
+        const bounds = computeGraphBounds(nodesRef.current, clusters);
+        const nextDist = computeResponsive3DDistance(w, h, bounds);
+        camSphericalRef.current.goalRadius = nextDist;
+      }
     };
     window.addEventListener('resize', onResize);
 
     // 3D Force-Directed Layout & Render Loop
     let frameId = 0;
     let clock = 0;
-    const nodeIndexMap = new Map<string, GraphNode>();
-    const homePositions3D = new Map<
-      string,
-      { x: number; y: number; z: number }
-    >();
-    simNodes.forEach((n) => {
-      nodeIndexMap.set(n.id, n);
-      homePositions3D.set(n.id, { x: n.x, y: n.y, z: n.z });
-    });
     const upVec = new THREE.Vector3(0, 1, 0);
     const dirVec = new THREE.Vector3();
 
@@ -2189,15 +2283,12 @@ export function SpatialViewport({
             continue;
           }
 
-          // Gentle restoring pull toward initial orbital seed position so resetting after isolation restores full layout
+          // Gentle restoring pull toward initial orbital / cluster seed position
           const home = homePositions3D.get(nA.id);
-          if (home && !nA.similarity) {
-            nA.vx += (home.x - nA.x) * 0.028;
-            nA.vy += (home.y - nA.y) * 0.028;
-            nA.vz += (home.z - nA.z) * 0.028;
-          }
+          const hasFocalMovie = Boolean(focalItem);
 
-          if ((nA.type === 'MOVIE' || nA.type === 'TV') && nA.similarity) {
+          if (hasFocalMovie && (nA.type === 'MOVIE' || nA.type === 'TV') && nA.similarity) {
+            // ONLY in single-title Focal Mode: pull outward radially from (0,0,0) by similarity linkDistance
             const targetR =
               nA.similarity.linkDistance * fSettings.linkDistanceMultiplier;
             const curR =
@@ -2212,6 +2303,13 @@ export function SpatialViewport({
               nA.vy += (home.y - nA.y) * 0.015;
               nA.vz += (home.z - nA.z) * 0.015;
             }
+          } else if (home) {
+            // In Semantic Galaxy & Archive Constellation modes:
+            // Every movie and TV show MUST stay clustered around its genre territory / UMAP centroid!
+            const springK = 0.07;
+            nA.vx += (home.x - nA.x) * springK;
+            nA.vy += (home.y - nA.y) * springK;
+            nA.vz += (home.z - nA.z) * springK;
           }
 
           for (let j = i + 1; j < simNodes.length; j++) {
@@ -2424,38 +2522,32 @@ export function SpatialViewport({
             const baseS = assembly.baseLabelScale;
             const aspect = 188 / 680;
 
-            if (labelMode === 'OFF') {
+            if (labelModeRef.current === 'OFF') {
               assembly.labelSprite.material.opacity = 0;
             } else if (!isFilterMatch) {
               // Dimmed filtered nodes hide their labels so only matching nodes shine
               assembly.labelSprite.material.opacity = 0;
-            } else if (labelMode === 'ALL') {
+            } else if (labelModeRef.current === 'ALL') {
               assembly.labelSprite.material.opacity = 0.95;
               assembly.labelSprite.scale.set(baseS, baseS * aspect, 1);
             } else if (!hasActiveFocus) {
-              const isMediaNode =
-                node.type === 'MOVIE' || node.type === 'TV' || node.isFocal;
-              const zoomReveal = Math.max(
-                0,
-                Math.min(1, (255 - camState.radius) / 85)
-              );
-              const baseOpacity = node.isFocal
-                ? 1.0
-                : isMediaNode
-                  ? 0.94
-                  : 0.42 + zoomReveal * 0.52;
-              assembly.labelSprite.material.opacity = baseOpacity;
+              const shouldShowInRest =
+                node.isFocal ||
+                (camState.radius < 170 &&
+                  ((node.connectionCount ?? 0) >= 4 ||
+                    (node.mediaItem && node.mediaItem.imdbRating >= 8.5)));
+              assembly.labelSprite.material.opacity = shouldShowInRest ? 0.92 : 0;
               assembly.labelSprite.scale.set(baseS, baseS * aspect, 1);
             } else if (isNodeSelected || isNodeHovered) {
               assembly.labelSprite.material.opacity = 1.0;
               const s = baseS * 1.18;
               assembly.labelSprite.scale.set(s, s * aspect, 1);
             } else if (isNodeLinked) {
-              assembly.labelSprite.material.opacity = 1.0;
-              const s = baseS * 1.1;
+              assembly.labelSprite.material.opacity = 0.95;
+              const s = baseS * 1.05;
               assembly.labelSprite.scale.set(s, s * aspect, 1);
             } else {
-              assembly.labelSprite.material.opacity = 0.08;
+              assembly.labelSprite.material.opacity = 0;
               const s = baseS * 0.85;
               assembly.labelSprite.scale.set(s, s * aspect, 1);
             }
@@ -2597,14 +2689,46 @@ export function SpatialViewport({
         focalOuterOrbitalRing.rotation.y += 0.005;
       }
 
+      territorySpritesGroup.visible = Boolean(
+        (layoutModeRef.current === 'SEMANTIC_GALAXY' || layoutModeRef.current === 'FORCE_CONSTELLATION') && showTerritoriesRef.current && !isIsolatedMode
+      );
+      orbitRingsGroup.visible = Boolean(focalItem);
+
+      // Dynamic distance-aware scaling for prominent genre territory badges
+      const camDist = camState.radius;
+      const bannerScaleFactor = Math.max(0.85, Math.min(1.5, camDist / 920));
+      for (let i = 0; i < clusterBannerRecords.length; i++) {
+        const item = clusterBannerRecords[i];
+        const isSelected = graphFilters?.activeClusterId === item.cluster.id;
+        const isHovered = hoveredClusterIdRef.current === item.cluster.id;
+        const highlightMultiplier = isSelected ? 1.18 : isHovered ? 1.09 : 1.0;
+        item.sprite.scale.set(
+          item.baseW * bannerScaleFactor * highlightMultiplier,
+          item.baseH * bannerScaleFactor * highlightMultiplier,
+          1
+        );
+        if (item.boundaryRing) {
+          item.boundaryRing.material.opacity = isSelected ? 0.65 : isHovered ? 0.52 : 0.42;
+        }
+      }
+
       starField.rotation.y += 0.00025;
 
       renderer.render(scene, camera);
     };
 
+    threeContextRef.current = {
+      simNodes,
+      nodeAssembliesMap,
+      homePositions3D,
+      linkEntries,
+      territorySpritesGroup,
+    };
+
     animate();
 
     return () => {
+      threeContextRef.current = null;
       cancelAnimationFrame(frameId);
       domElem.removeEventListener('mousedown', onPointerDown);
       window.removeEventListener('mousemove', onPointerMove);
@@ -2637,8 +2761,9 @@ export function SpatialViewport({
     };
   }, [
     viewMode,
-    nodes,
-    links,
+    theme,
+    nodeStructureKey,
+    linksStructureKey,
     onSelectNode,
     onClearSelection,
     onMakeFocal,
@@ -2656,8 +2781,8 @@ export function SpatialViewport({
 
     const homePositions2D = new Map<string, { x: number; y: number }>();
     const simNodes: GraphNode[] = nodes.map((n) => {
-      const hx = n.x * 1.35;
-      const hy = n.y * 1.35;
+      const hx = n.x;
+      const hy = n.y;
       homePositions2D.set(n.id, { x: hx, y: hy });
       return {
         ...n,
@@ -2667,6 +2792,7 @@ export function SpatialViewport({
     });
     nodesRef.current = simNodes;
     linksRef.current = links;
+    canvas2dContextRef.current = { simNodes, homePositions2D };
 
     let cachedSelectedId2D: string | null = null;
     let cachedSelectedSub2D: LinkedSubgraphResult | null = null;
@@ -2689,9 +2815,28 @@ export function SpatialViewport({
       canvas.style.width = `${parent.clientWidth}px`;
       canvas.style.height = `${parent.clientHeight}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (!selectedIdRef.current && !focalItem) {
+        const bounds = computeGraphBounds(nodesRef.current, clusters);
+        pan2dRef.current.goalZoom = computeResponsive2DZoom(parent.clientWidth, parent.clientHeight, bounds);
+      }
     };
     resize();
     window.addEventListener('resize', resize);
+
+    const parent = canvas.parentElement;
+    const pw = parent?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
+    const ph = parent?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 800);
+    const bounds = computeGraphBounds(simNodes, clusters);
+    const responsiveZoom = computeResponsive2DZoom(pw, ph, bounds);
+
+    if (!selectedIdRef.current && !focalItem) {
+      pan2dRef.current.zoom = responsiveZoom;
+      pan2dRef.current.goalZoom = responsiveZoom;
+      pan2dRef.current.panX = 0;
+      pan2dRef.current.panY = 0;
+      pan2dRef.current.goalPanX = 0;
+      pan2dRef.current.goalPanY = 0;
+    }
 
     const screenToWorld = (sx: number, sy: number) => {
       const cw = canvas.clientWidth;
@@ -2703,21 +2848,38 @@ export function SpatialViewport({
       };
     };
 
+    // Build spatial quadtree for sub-millisecond 2D collision detection and hover
+    let quadtree = SpatialQuadtree.fromPoints(
+      simNodes.map((n) => ({ x: n.x, y: n.y, data: n }))
+    );
+
     const findNodeAt = (sx: number, sy: number): GraphNode | null => {
       const { wx, wy } = screenToWorld(sx, sy);
       const activeSel = selectedIdRef.current;
       const activeSub = activeSel
         ? computeLinkedSubgraph(activeSel, simNodes, linksRef.current)
         : null;
-      for (let i = simNodes.length - 1; i >= 0; i--) {
-        const n = simNodes[i];
+
+      const maxHitRadius = 40 / Math.max(0.2, pan2dRef.current.zoom);
+      const closest = quadtree.findClosest(wx, wy, maxHitRadius);
+      if (closest) {
+        const n = closest.point.data;
         if (activeSub?.focusNode && !activeSub.linkedNodeIds.has(n.id)) {
-          continue;
+          // If filtered out by active isolated subgraph, search within radius
+          const inRadius = quadtree.findInRadius(wx, wy, maxHitRadius);
+          for (const cand of inRadius) {
+            if (!activeSub.linkedNodeIds.has(cand.data.id)) continue;
+            const dx = wx - cand.x;
+            const dy = wy - cand.y;
+            const hitR = cand.data.radius * 1.6 + 6;
+            if (dx * dx + dy * dy <= hitR * hitR) return cand.data;
+          }
+          return null;
         }
-        const dx = wx - n.x;
-        const dy = wy - n.y;
         const hitR = n.radius * 1.6 + 6;
-        if (dx * dx + dy * dy <= hitR * hitR) return n;
+        if (closest.distance <= hitR) {
+          return n;
+        }
       }
       return null;
     };
@@ -2820,10 +2982,12 @@ export function SpatialViewport({
           (pan2dRef.current.goalZoom - pan2dRef.current.zoom) * 0.1;
       }
 
+      const isDark = theme === 'MOVIE_MAP_DARK';
       const { panX, panY, zoom } = pan2dRef.current;
       const cw = canvas.clientWidth;
       const ch = canvas.clientHeight;
-      ctx.clearRect(0, 0, cw, ch);
+      ctx.fillStyle = isDark ? '#0A0E17' : '#F6F1E7';
+      ctx.fillRect(0, 0, cw, ch);
 
       ctx.save();
       ctx.translate(cw / 2 + panX, ch / 2 + panY);
@@ -2847,17 +3011,115 @@ export function SpatialViewport({
           color: 'rgba(90, 82, 75, 0.22)',
         },
       ];
-      for (const ring of rings) {
-        ctx.beginPath();
-        ctx.arc(0, 0, ring.r, 0, Math.PI * 2);
-        ctx.strokeStyle = ring.color;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 6]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.font = '600 10px "Source Sans 3", sans-serif';
-        ctx.fillStyle = '#6B5E50';
-        ctx.fillText(ring.label, 8, -ring.r + 13);
+
+      // Archival Territory Watercolor Density Halos in 2D Galaxy Mode
+      if (
+        (layoutModeRef.current === 'SEMANTIC_GALAXY' ||
+          layoutModeRef.current === 'FORCE_CONSTELLATION') &&
+        showTerritoriesRef.current
+      ) {
+        ctx.save();
+        const clusterPoints = new Map<string, Array<{ x: number; y: number }>>();
+        for (const n of simNodes) {
+          if (n.clusterId) {
+            const list = clusterPoints.get(n.clusterId) || [];
+            list.push({ x: n.x, y: n.y });
+            clusterPoints.set(n.clusterId, list);
+          }
+        }
+
+        const activeClusterList =
+          clusters && clusters.length > 0
+            ? clusters
+            : Array.from(clusterPoints.keys()).map((id) => ({
+              id,
+              label: id,
+              shortLabel: id,
+              color: '#234B6E',
+              glowColor: '#3D78A8',
+              centroid: { x: 0, y: 0, z: 0 },
+              keywords: [],
+              genres: [],
+              mediaIds: [],
+            }));
+
+        for (const c of activeClusterList) {
+          const pts = clusterPoints.get(c.id);
+          if (!pts || pts.length === 0) continue;
+
+          let avgX = 0;
+          let avgY = 0;
+          for (const p of pts) {
+            avgX += p.x;
+            avgY += p.y;
+          }
+          avgX /= pts.length;
+          avgY /= pts.length;
+
+          let maxDist = 0;
+          for (const p of pts) {
+            const d = Math.hypot(p.x - avgX, p.y - avgY);
+            if (d > maxDist) maxDist = d;
+          }
+          const haloRadius = Math.max(75, Math.min(240, maxDist + 45));
+
+          // Soft watercolor gradient
+          const grad = ctx.createRadialGradient(
+            avgX,
+            avgY,
+            12,
+            avgX,
+            avgY,
+            haloRadius
+          );
+          grad.addColorStop(0, `${c.color}24`);
+          grad.addColorStop(0.5, `${c.color}10`);
+          grad.addColorStop(0.85, `${c.color}04`);
+          grad.addColorStop(1, 'transparent');
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(avgX, avgY, haloRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Delicate dashed territory frontier boundary
+          ctx.beginPath();
+          ctx.arc(avgX, avgY, haloRadius * 0.85, 0, Math.PI * 2);
+          ctx.strokeStyle = `${c.color}38`;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 6]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Movie Map Territory Nameplate (Obsidian / Mikey Guinness style)
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          const labelText = c.shortLabel || c.label;
+          const labelY = avgY - haloRadius * 0.84 - 10;
+
+          // Crisp bold typography with deep contrast shadow
+          ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+          ctx.shadowBlur = 10;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 2;
+
+          ctx.fillStyle = isDark ? '#FFFFFF' : '#171412';
+          ctx.fillText(labelText, avgX, labelY);
+
+          // Glowing accent pip
+          ctx.beginPath();
+          ctx.arc(avgX, labelY + 11, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = c.color;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = c.color;
+          ctx.fill();
+
+          ctx.restore();
+        }
+        ctx.restore();
       }
 
       const activeHover = hoveredIdRef.current;
@@ -2878,22 +3140,34 @@ export function SpatialViewport({
       const isIsolatedMode = Boolean(selSub && selSub.focusNode);
 
       // Smoothly transition node positions between isolated subgraph radial layout and full graph home positions
+      let movedCount = 0;
       for (const node of simNodes) {
         if (isIsolatedMode) {
           if (selSub?.linkedNodeIds.has(node.id)) {
             const iso = cachedIsolatedTargets2D.get(node.id);
             if (iso) {
-              node.x += (iso.x - node.x) * 0.14;
-              node.y += (iso.y - node.y) * 0.14;
+              const diffX = iso.x - node.x;
+              const diffY = iso.y - node.y;
+              if (Math.abs(diffX) > 0.4 || Math.abs(diffY) > 0.4) movedCount++;
+              node.x += diffX * 0.14;
+              node.y += diffY * 0.14;
             }
           }
         } else {
           const home = homePositions2D.get(node.id);
           if (home) {
-            node.x += (home.x - node.x) * 0.14;
-            node.y += (home.y - node.y) * 0.14;
+            const diffX = home.x - node.x;
+            const diffY = home.y - node.y;
+            if (Math.abs(diffX) > 0.4 || Math.abs(diffY) > 0.4) movedCount++;
+            node.x += diffX * 0.14;
+            node.y += diffY * 0.14;
           }
         }
+      }
+      if (movedCount > 0) {
+        quadtree = SpatialQuadtree.fromPoints(
+          simNodes.map((n) => ({ x: n.x, y: n.y, data: n }))
+        );
       }
 
       const hovSub =
@@ -2933,14 +3207,12 @@ export function SpatialViewport({
         ctx.lineTo(t.x, t.y);
         ctx.strokeStyle = link.color;
         ctx.globalAlpha = !hasActiveFocus
-          ? link.kind === 'SIMILARITY_DIRECT'
-            ? 0.45
-            : 0.26
+          ? (isDark ? 0.16 : 0.14)
           : lit
-            ? 0.96
-            : 0.05;
+            ? 0.85
+            : 0.03;
         ctx.lineWidth =
-          lit && hasActiveFocus ? (isDirect ? 2.8 : 2.1) : 1.15;
+          lit && hasActiveFocus ? (isDirect ? 1.6 : 1.2) : 0.75;
         if (lit && hasActiveFocus) {
           ctx.shadowColor = link.color;
           ctx.shadowBlur = 6;
@@ -3019,122 +3291,113 @@ export function SpatialViewport({
           ctx.stroke();
         }
 
-        // Stamped Multi-Ring Archival Medallion Plate
-        const nodeAccentColor = node.isFocal ? '#B8292F' : node.color;
-        const isPrimaryMedia =
-          node.type === 'MOVIE' || node.type === 'TV' || node.isFocal;
-
-        // 1. Directional offset paper shadow + outer pigment bezel ring
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, rScaled * 1.24, 0, Math.PI * 2);
-        ctx.fillStyle = nodeAccentColor;
-        ctx.shadowColor = 'rgba(23, 20, 18, 0.22)';
-        ctx.shadowBlur =
-          isHovered || isSelected || (hasActiveFocus && isNodeLinked) ? 14 : 6;
-        ctx.shadowOffsetY = 2.5;
-        ctx.fill();
-        ctx.restore();
-
-        // 2. Warm museum vellum inner medallion disc
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, rScaled * 1.04, 0, Math.PI * 2);
-        ctx.fillStyle = '#FBF8F2';
-        ctx.fill();
-
-        // 3. Subtle inner engraved hairline & cardinal bezel ticks for primary titles
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, rScaled * 0.9, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(23, 20, 18, 0.12)';
-        ctx.lineWidth = 0.9;
-        ctx.stroke();
-
-        if (isPrimaryMedia) {
+        // Luminous Bloom Halo in Movie Map Dark Mode
+        if (isDark && (isHovered || isSelected || (hasActiveFocus && isNodeLinked))) {
           ctx.save();
-          ctx.translate(node.x, node.y);
-          ctx.strokeStyle = '#FBF8F2';
-          ctx.lineWidth = 1.4;
-          for (let t = 0; t < 4; t++) {
-            const ang = (t * Math.PI) / 2;
-            ctx.beginPath();
-            ctx.moveTo(
-              Math.cos(ang) * rScaled * 1.06,
-              Math.sin(ang) * rScaled * 1.06
-            );
-            ctx.lineTo(
-              Math.cos(ang) * rScaled * 1.22,
-              Math.sin(ang) * rScaled * 1.22
-            );
-            ctx.stroke();
-          }
+          const haloR = rScaled * (isHovered ? 2.6 : isSelected ? 2.2 : 1.7);
+          const glowGrad = ctx.createRadialGradient(
+            node.x,
+            node.y,
+            node.radius * 0.4,
+            node.x,
+            node.y,
+            haloR
+          );
+          glowGrad.addColorStop(0, `${node.glowColor || node.color}55`);
+          glowGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = glowGrad;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, haloR, 0, Math.PI * 2);
+          ctx.fill();
           ctx.restore();
         }
 
-        // 4. Crisp category glyph centered inside the vellum medallion
-        drawCategoryGlyph2D(
-          ctx,
-          node.type,
-          node.x,
-          node.y,
-          rScaled * 0.66,
-          nodeAccentColor
-        );
+        // Stamped Multi-Ring Archival / Luminous Medallion Plate
+        const nodeAccentColor = node.isFocal
+          ? isDark
+            ? '#FF3366'
+            : '#B8292F'
+          : node.color;
+        const isPrimaryMedia =
+          node.type === 'MOVIE' || node.type === 'TV' || node.isFocal;
 
-        // 5. Engraved Vellum Caption Plate below node so links never slice through text
-        if (labelMode === 'OFF' || !isFilterMatch) {
-          continue;
+        // 1. Crisp, Elegant Circular Node Dot (Obsidian Style)
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, rScaled, 0, Math.PI * 2);
+        ctx.fillStyle = nodeAccentColor;
+        ctx.fill();
+
+        // 2. Subtle Luminous Halo on Hover, Selection, or Focal
+        if (isHovered || isSelected || node.isFocal) {
+          ctx.save();
+          const haloR = rScaled * (node.isFocal ? 2.8 : isHovered ? 2.4 : 1.9);
+          const glowGrad = ctx.createRadialGradient(
+            node.x,
+            node.y,
+            rScaled * 0.3,
+            node.x,
+            node.y,
+            haloR
+          );
+          glowGrad.addColorStop(0, `${nodeAccentColor}77`);
+          glowGrad.addColorStop(0.5, `${nodeAccentColor}22`);
+          glowGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = glowGrad;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, haloR, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         }
 
-        const showMatchSub =
-          (node.type === 'MOVIE' || node.type === 'TV') &&
-          node.matchScore !== undefined &&
-          !node.isFocal;
-        const labelTitle =
-          node.label.length > 26 ? node.label.slice(0, 24) + '…' : node.label;
+        // 3. Crisp Border Ring on Focus / Hover / Selection
+        if (node.isFocal) {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, rScaled + 3.2, 0, Math.PI * 2);
+          ctx.strokeStyle = isDark ? '#FF3366' : '#B8292F';
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+        } else if (isHovered || isSelected) {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, rScaled + 2.4, 0, Math.PI * 2);
+          ctx.strokeStyle = isDark ? '#FFFFFF' : '#171412';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
 
-        ctx.font = `${
-          node.isFocal || isSelected || (hasActiveFocus && isNodeLinked)
-            ? '700 12px'
-            : '600 11px'
-        } "Spectral", Georgia, serif`;
-        const textWidth = ctx.measureText(labelTitle).width;
-        const pillPadX = 7;
-        const pillW = Math.max(54, textWidth + pillPadX * 2);
-        const pillH = showMatchSub ? 26 : 16;
-        const pillX = node.x - pillW / 2;
-        const pillY = node.y + rScaled * 1.28 + 3;
+        // 4. Subtle center core pip for focal or high rating
+        if (node.isFocal || (node.mediaItem && node.mediaItem.imdbRating >= 8.5)) {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, Math.max(1.0, rScaled * 0.35), 0, Math.PI * 2);
+          ctx.fillStyle = isDark ? '#FFFFFF' : '#FBF8F2';
+          ctx.fill();
+        }
 
-        ctx.save();
-        ctx.fillStyle =
-          isSelected || isHovered
-            ? 'rgba(251, 248, 242, 0.98)'
-            : 'rgba(251, 248, 242, 0.92)';
-        ctx.strokeStyle =
-          isSelected || isHovered || node.isFocal
-            ? '#B8292F'
-            : isPrimaryMedia
-              ? 'rgba(181, 168, 146, 0.9)'
-              : 'rgba(213, 204, 185, 0.85)';
-        ctx.lineWidth = isSelected || isHovered || node.isFocal ? 1.4 : 1;
-        ctx.beginPath();
-        ctx.roundRect(pillX, pillY, pillW, pillH, 4);
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
+        // 5. Clean, Minimal Obsidian-Style Label (No heavy rectangular boxes)
+        if (labelModeRef.current !== 'OFF' && isFilterMatch) {
+          const shouldShowLabel =
+            node.isFocal ||
+            isSelected ||
+            isHovered ||
+            labelModeRef.current === 'ALL' ||
+            (zoom > 0.82 && ((node.connectionCount ?? 0) >= 4 || (node.mediaItem && node.mediaItem.imdbRating >= 8.4)));
 
-        ctx.fillStyle = '#171412';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelTitle, node.x, pillY + 8.5);
+          if (shouldShowLabel) {
+            const labelText =
+              node.label.length > 22 ? node.label.slice(0, 20) + '…' : node.label;
+            ctx.font = `${node.isFocal || isSelected || isHovered ? '600' : '400'
+              } 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
 
-        if (showMatchSub) {
-          ctx.font = '700 11px "Source Sans 3", sans-serif';
-          ctx.fillStyle = (node.matchScore ?? 0) >= 75 ? '#2A6B53' : '#234B6E';
-          ctx.fillText(
-            `${node.matchScore}% Match`,
-            node.x,
-            pillY + 20.5
-          );
+            ctx.fillStyle = isDark
+              ? isHovered || isSelected || node.isFocal
+                ? '#FFFFFF'
+                : '#94A3B8'
+              : isHovered || isSelected || node.isFocal
+                ? '#171412'
+                : '#52483E';
+            ctx.fillText(labelText, node.x, node.y + rScaled + 4);
+          }
         }
         ctx.textBaseline = 'alphabetic';
       }
@@ -3145,6 +3408,7 @@ export function SpatialViewport({
     render2D();
 
     return () => {
+      canvas2dContextRef.current = null;
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', resize);
       canvas.removeEventListener('mousedown', onMouseDown);
@@ -3155,14 +3419,86 @@ export function SpatialViewport({
     };
   }, [
     viewMode,
-    nodes,
-    links,
+    theme,
+    nodeStructureKey,
+    linksStructureKey,
     onSelectNode,
     onClearSelection,
     onMakeFocal,
     frameNodeAndLinkedCluster,
-    labelMode,
   ]);
+
+  // Ultra-fast in-place updates for colors, layout positions, and links without tearing down the 3D or 2D canvas
+  useEffect(() => {
+    // 1. Fast in-place updates for 3D Three.js WebGL Scene
+    const ctx = threeContextRef.current;
+    if (ctx && viewMode === '3D') {
+      for (const node of nodes) {
+        const assembly = ctx.nodeAssembliesMap.get(node.id);
+        if (assembly) {
+          for (const mat of assembly.primaryMaterials) {
+            mat.color.set(node.color);
+          }
+          for (const mat of assembly.accentMaterials) {
+            if ('color' in mat) (mat as any).color.set(node.glowColor);
+          }
+          if (assembly.selectionHaloMat) {
+            assembly.selectionHaloMat.color.set(node.color);
+          }
+          if (assembly.outerRingHaloMat) {
+            assembly.outerRingHaloMat.color.set(node.glowColor);
+          }
+        }
+
+        // Smoothly transition node home position (physics spring glides them into place)
+        const home = ctx.homePositions3D.get(node.id);
+        if (home) {
+          home.x = node.x;
+          home.y = node.y;
+          home.z = node.z;
+        }
+
+        // Update simNode properties
+        const sNode = ctx.simNodes.find((sn) => sn.id === node.id);
+        if (sNode) {
+          sNode.color = node.color;
+          sNode.glowColor = node.glowColor;
+          sNode.isFilterMatch = node.isFilterMatch;
+        }
+      }
+
+      // Update link line colors
+      for (const entry of ctx.linkEntries) {
+        const liveLink = links.find(
+          (l) => l.source === entry.link.source && l.target === entry.link.target
+        );
+        if (liveLink) {
+          entry.material.color.set(liveLink.color);
+          entry.beamMaterial.color.set(liveLink.color);
+        }
+      }
+    }
+
+    // 2. Fast in-place updates for 2D Canvas Scene
+    const c2d = canvas2dContextRef.current;
+    if (c2d && viewMode === '2D') {
+      for (const node of nodes) {
+        const home = c2d.homePositions2D.get(node.id);
+        if (home) {
+          home.x = node.x;
+          home.y = node.y;
+        }
+        const sNode = c2d.simNodes.find((sn) => sn.id === node.id);
+        if (sNode) {
+          sNode.color = node.color;
+          sNode.glowColor = node.glowColor;
+          sNode.isFilterMatch = node.isFilterMatch;
+        }
+      }
+    }
+  }, [nodes, links, colorMode, layoutMode, viewMode]);
+
+  const isDark = theme === 'MOVIE_MAP_DARK';
 
   return (
     <div
@@ -3190,11 +3526,15 @@ export function SpatialViewport({
       {/* Top-Left Curatorial Context Pill */}
       <div className="pointer-events-none absolute top-4 left-4 flex flex-col gap-1.5 z-10">
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-[#FBF8F2]/95 border border-[#C8BEAA] shadow-archival-sm text-xs text-[#171412]">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                focalItem ? 'bg-[#B8292F]' : 'bg-[#2A6B53]'
+          <div
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs backdrop-blur-md shadow-lg ${theme === 'MOVIE_MAP_DARK'
+                ? 'bg-[#101624]/90 border border-white/10 text-[#F0F4FC]'
+                : 'bg-[#FBF8F2]/95 border border-[#C8BEAA] shadow-archival-sm text-[#171412]'
               }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${focalItem ? 'bg-[#B8292F]' : 'bg-[#2A6B53]'
+                }`}
             />
             <span className="text-[#52483E]">
               {focalItem
@@ -3223,44 +3563,40 @@ export function SpatialViewport({
               <button
                 type="button"
                 onClick={() => onGraphScopeChange('WATCHED_ONLY')}
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  graphScope === 'WATCHED_ONLY'
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${graphScope === 'WATCHED_ONLY'
                     ? 'bg-[#2A6B53] text-[#FBF8F2]'
                     : 'text-[#52483E] hover:text-[#171412]'
-                }`}
+                  }`}
               >
                 Watched
               </button>
               <button
                 type="button"
                 onClick={() => onGraphScopeChange('INTERESTED_ONLY')}
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  graphScope === 'INTERESTED_ONLY'
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${graphScope === 'INTERESTED_ONLY'
                     ? 'bg-[#234B6E] text-[#FBF8F2]'
                     : 'text-[#52483E] hover:text-[#171412]'
-                }`}
+                  }`}
               >
                 Interested
               </button>
               <button
                 type="button"
                 onClick={() => onGraphScopeChange('WATCHED_AND_INTERESTED')}
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  graphScope === 'WATCHED_AND_INTERESTED'
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${graphScope === 'WATCHED_AND_INTERESTED'
                     ? 'bg-[#B8292F] text-[#FBF8F2]'
                     : 'text-[#52483E] hover:text-[#171412]'
-                }`}
+                  }`}
               >
                 Both
               </button>
               <button
                 type="button"
                 onClick={() => onGraphScopeChange('WATCHED_PLUS_SUGGESTIONS')}
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  graphScope === 'WATCHED_PLUS_SUGGESTIONS'
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${graphScope === 'WATCHED_PLUS_SUGGESTIONS'
                     ? 'bg-[#2A6B53] text-[#FBF8F2]'
                     : 'text-[#52483E] hover:text-[#171412]'
-                }`}
+                  }`}
               >
                 + Suggestions
               </button>
@@ -3287,23 +3623,23 @@ export function SpatialViewport({
             (selectedSubgraph.focusNode.type === 'MOVIE' ||
               selectedSubgraph.focusNode.type === 'TV')) ||
             (focalItem && !selectedSubgraph.focusNode)) && (
-            <button
-              type="button"
-              onClick={() => {
-                if (onResetEverything) {
-                  onResetEverything();
-                } else {
-                  onClearSelection?.();
-                  onClearFocal?.();
-                }
-              }}
-              className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm text-xs font-semibold transition-colors cursor-pointer"
-              title="Reset view and show full graph (Esc)"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset (Esc)</span>
-            </button>
-          )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onResetEverything) {
+                    onResetEverything();
+                  } else {
+                    onClearSelection?.();
+                    onClearFocal?.();
+                  }
+                }}
+                className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] border border-[#8C1D22] shadow-archival-sm text-xs font-semibold transition-colors cursor-pointer"
+                title="Reset view and show full graph (Esc)"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset (Esc)</span>
+              </button>
+            )}
         </div>
         {!selectedSubgraph.focusNode && (
           <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[#EFE8DA]/90 border border-[#D5CCB9] text-[11px] text-[#52483E]">
@@ -3320,207 +3656,207 @@ export function SpatialViewport({
       {selectedSubgraph.focusNode &&
         selectedSubgraph.focusNode.type !== 'MOVIE' &&
         selectedSubgraph.focusNode.type !== 'TV' && (
-        <div
-          aria-label="Selected Node Linked Connections"
-          className="pointer-events-auto absolute top-14 left-4 z-30 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-9.5rem)] rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex flex-col overflow-hidden"
-        >
-          {/* Header: Selected Node (Heading First — no kicker above h3) & Single Canonical Reset Action */}
-          <div className="px-3.5 py-2.5 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-start justify-between gap-2">
-            <div className="flex items-start gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded flex items-center justify-center shrink-0 border border-[#C8BEAA] bg-[#FBF8F2] mt-0.5">
-                {selectedSubgraph.focusNode.type === 'DIRECTOR' && (
-                  <Award className="w-4 h-4 text-[#B8292F]" />
-                )}
-                {selectedSubgraph.focusNode.type === 'ACTOR' && (
-                  <UserCheck className="w-4 h-4 text-[#B86B14]" />
-                )}
-                {selectedSubgraph.focusNode.type === 'TROPE' && (
-                  <Hash className="w-4 h-4 text-[#2A6B53]" />
-                )}
-                {selectedSubgraph.focusNode.type === 'COMPOSER' && (
-                  <Music className="w-4 h-4 text-[#A63A2B]" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-heading text-sm font-bold text-[#171412] truncate">
-                  {selectedSubgraph.focusNode.label}
-                </h3>
-                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#B8292F]">
-                    <Link2 className="w-3 h-3" />
-                    <span>Isolated Subgraph</span>
-                  </span>
-                  <span className="text-[11px] text-[#52483E]">
-                    · {getEntityRoleLabel(selectedSubgraph.focusNode.type)}
-                  </span>
+          <div
+            aria-label="Selected Node Linked Connections"
+            className="pointer-events-auto absolute top-14 left-4 z-30 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-9.5rem)] rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival flex flex-col overflow-hidden"
+          >
+            {/* Header: Selected Node (Heading First — no kicker above h3) & Single Canonical Reset Action */}
+            <div className="px-3.5 py-2.5 bg-[#EFE8DA] border-b border-[#D5CCB9] flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded flex items-center justify-center shrink-0 border border-[#C8BEAA] bg-[#FBF8F2] mt-0.5">
+                  {selectedSubgraph.focusNode.type === 'DIRECTOR' && (
+                    <Award className="w-4 h-4 text-[#B8292F]" />
+                  )}
+                  {selectedSubgraph.focusNode.type === 'ACTOR' && (
+                    <UserCheck className="w-4 h-4 text-[#B86B14]" />
+                  )}
+                  {selectedSubgraph.focusNode.type === 'TROPE' && (
+                    <Hash className="w-4 h-4 text-[#2A6B53]" />
+                  )}
+                  {selectedSubgraph.focusNode.type === 'COMPOSER' && (
+                    <Music className="w-4 h-4 text-[#A63A2B]" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-heading text-sm font-bold text-[#171412] truncate">
+                    {selectedSubgraph.focusNode.label}
+                  </h3>
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#B8292F]">
+                      <Link2 className="w-3 h-3" />
+                      <span>Isolated Subgraph</span>
+                    </span>
+                    <span className="text-[11px] text-[#52483E]">
+                      · {getEntityRoleLabel(selectedSubgraph.focusNode.type)}
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (onResetEverything) {
+                    onResetEverything();
+                  } else {
+                    onClearSelection?.();
+                    onClearFocal?.();
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] text-[11px] font-semibold shadow-archival-sm transition-colors shrink-0 cursor-pointer"
+                title="Exit isolated view and restore full graph (Esc)"
+                aria-label="Reset isolated view (Escape)"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Reset (Esc)</span>
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                if (onResetEverything) {
-                  onResetEverything();
-                } else {
-                  onClearSelection?.();
-                  onClearFocal?.();
-                }
-              }}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] text-[11px] font-semibold shadow-archival-sm transition-colors shrink-0 cursor-pointer"
-              title="Exit isolated view and restore full graph (Esc)"
-              aria-label="Reset isolated view (Escape)"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Reset (Esc)</span>
-            </button>
-          </div>
-
-          {/* Summary Count Strip */}
-          <div className="px-3.5 py-2 bg-[#F6F1E7] border-b border-[#D5CCB9] flex items-center justify-between text-[11px]">
-            <span className="font-medium text-[#52483E]">
-              {selectedSubgraph.linkedNodeIds.size} nodes shown:
-            </span>
-            <div className="flex items-center gap-1.5 font-tabular font-semibold">
-              <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]">
-                {selectedSubgraph.linkedMedia.length}{' '}
-                {selectedSubgraph.linkedMedia.length === 1 ? 'Title' : 'Titles'}
+            {/* Summary Count Strip */}
+            <div className="px-3.5 py-2 bg-[#F6F1E7] border-b border-[#D5CCB9] flex items-center justify-between text-[11px]">
+              <span className="font-medium text-[#52483E]">
+                {selectedSubgraph.linkedNodeIds.size} nodes shown:
               </span>
-              {selectedSubgraph.linkedEntities.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA]">
-                  {selectedSubgraph.linkedEntities.length} Shared{' '}
-                  {selectedSubgraph.linkedEntities.length === 1
-                    ? 'Credit'
-                    : 'Credits'}
+              <div className="flex items-center gap-1.5 font-tabular font-semibold">
+                <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]">
+                  {selectedSubgraph.linkedMedia.length}{' '}
+                  {selectedSubgraph.linkedMedia.length === 1 ? 'Title' : 'Titles'}
                 </span>
-              )}
-            </div>
-          </div>
-
-          {/* Scrollable Linked Nodes List */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {/* Section 1: Linked Movies & TV Series */}
-            <div>
-              <h4 className="font-heading text-xs font-bold text-[#171412] mb-1.5">
-                Connected Films &amp; Series ({selectedSubgraph.linkedMedia.length})
-              </h4>
-              {selectedSubgraph.linkedMedia.length > 0 ? (
-                <div className="space-y-1.5">
-                  {selectedSubgraph.linkedMedia.map(
-                    ({ node: mNode, sharedReasons, directScore }) => (
-                      <button
-                        key={mNode.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectNode(mNode);
-                          frameNodeAndLinkedCluster(mNode.id);
-                        }}
-                        onMouseEnter={() => {
-                          hoveredIdRef.current = mNode.id;
-                          setHoveredNodeId(mNode.id);
-                        }}
-                        onMouseLeave={() => {
-                          hoveredIdRef.current = null;
-                          setHoveredNodeId(null);
-                        }}
-                        className="w-full text-left p-2 rounded bg-[#FBF8F2] hover:bg-[#EFE8DA] border border-[#D5CCB9] hover:border-[#B8292F] transition-colors cursor-pointer group"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {mNode.type === 'MOVIE' ? (
-                              <Film className="w-3.5 h-3.5 text-[#234B6E] shrink-0" />
-                            ) : (
-                              <Tv className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" />
-                            )}
-                            <span className="font-heading text-xs font-bold text-[#171412] group-hover:text-[#B8292F] truncate">
-                              {mNode.label}
-                            </span>
-                            {mNode.mediaItem && (
-                              <span className="text-[11px] font-tabular text-[#6B5E50] shrink-0">
-                                ({mNode.mediaItem.year})
-                              </span>
-                            )}
-                          </div>
-                          {directScore !== undefined && directScore > 0 && (
-                            <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[11px] font-tabular font-bold shrink-0">
-                              {directScore}%
-                            </span>
-                          )}
-                        </div>
-                        {sharedReasons.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {sharedReasons.slice(0, 3).map((reason) => (
-                              <span
-                                key={reason}
-                                className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#52483E] text-[11px] font-medium truncate max-w-full"
-                              >
-                                {reason}
-                              </span>
-                            ))}
-                            {sharedReasons.length > 3 && (
-                              <span className="text-[11px] text-[#6B5E50]">
-                                +{sharedReasons.length - 3} more
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </button>
-                    )
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs text-[#6B5E50] italic">
-                  No directly linked titles above the current threshold.
-                </p>
-              )}
-            </div>
-
-            {/* Section 2: Linked Collaborator & Theme Nodes */}
-            {selectedSubgraph.linkedEntities.length > 0 && (
-              <div className="pt-2 border-t border-[#D5CCB9]">
-                <h4 className="font-heading text-xs font-bold text-[#171412] mb-1.5">
-                  Shared Collaborators &amp; Themes (
-                  {selectedSubgraph.linkedEntities.length})
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedSubgraph.linkedEntities.map(
-                    ({ node: eNode, roleLabel, connectedCount }) => (
-                      <button
-                        key={eNode.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectNode(eNode);
-                          frameNodeAndLinkedCluster(eNode.id);
-                        }}
-                        onMouseEnter={() => {
-                          hoveredIdRef.current = eNode.id;
-                          setHoveredNodeId(eNode.id);
-                        }}
-                        onMouseLeave={() => {
-                          hoveredIdRef.current = null;
-                          setHoveredNodeId(null);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-[#EFE8DA] hover:bg-[#E5DEC9] border border-[#C8BEAA] hover:border-[#B8292F] transition-colors cursor-pointer"
-                      >
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: eNode.color }}
-                        />
-                        <span className="font-semibold text-[#171412]">
-                          {eNode.label}
-                        </span>
-                        <span className="text-[11px] text-[#52483E]">
-                          · {roleLabel} ({connectedCount})
-                        </span>
-                      </button>
-                    )
-                  )}
-                </div>
+                {selectedSubgraph.linkedEntities.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#171412] border border-[#C8BEAA]">
+                    {selectedSubgraph.linkedEntities.length} Shared{' '}
+                    {selectedSubgraph.linkedEntities.length === 1
+                      ? 'Credit'
+                      : 'Credits'}
+                  </span>
+                )}
               </div>
-            )}
+            </div>
+
+            {/* Scrollable Linked Nodes List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              {/* Section 1: Linked Movies & TV Series */}
+              <div>
+                <h4 className="font-heading text-xs font-bold text-[#171412] mb-1.5">
+                  Connected Films &amp; Series ({selectedSubgraph.linkedMedia.length})
+                </h4>
+                {selectedSubgraph.linkedMedia.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {selectedSubgraph.linkedMedia.map(
+                      ({ node: mNode, sharedReasons, directScore }) => (
+                        <button
+                          key={mNode.id}
+                          type="button"
+                          onClick={() => {
+                            onSelectNode(mNode);
+                            frameNodeAndLinkedCluster(mNode.id);
+                          }}
+                          onMouseEnter={() => {
+                            hoveredIdRef.current = mNode.id;
+                            setHoveredNodeId(mNode.id);
+                          }}
+                          onMouseLeave={() => {
+                            hoveredIdRef.current = null;
+                            setHoveredNodeId(null);
+                          }}
+                          className="w-full text-left p-2 rounded bg-[#FBF8F2] hover:bg-[#EFE8DA] border border-[#D5CCB9] hover:border-[#B8292F] transition-colors cursor-pointer group"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {mNode.type === 'MOVIE' ? (
+                                <Film className="w-3.5 h-3.5 text-[#234B6E] shrink-0" />
+                              ) : (
+                                <Tv className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" />
+                              )}
+                              <span className="font-heading text-xs font-bold text-[#171412] group-hover:text-[#B8292F] truncate">
+                                {mNode.label}
+                              </span>
+                              {mNode.mediaItem && (
+                                <span className="text-[11px] font-tabular text-[#6B5E50] shrink-0">
+                                  ({mNode.mediaItem.year})
+                                </span>
+                              )}
+                            </div>
+                            {directScore !== undefined && directScore > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[11px] font-tabular font-bold shrink-0">
+                                {directScore}%
+                              </span>
+                            )}
+                          </div>
+                          {sharedReasons.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {sharedReasons.slice(0, 3).map((reason) => (
+                                <span
+                                  key={reason}
+                                  className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#52483E] text-[11px] font-medium truncate max-w-full"
+                                >
+                                  {reason}
+                                </span>
+                              ))}
+                              {sharedReasons.length > 3 && (
+                                <span className="text-[11px] text-[#6B5E50]">
+                                  +{sharedReasons.length - 3} more
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </button>
+                      )
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-[#6B5E50] italic">
+                    No directly linked titles above the current threshold.
+                  </p>
+                )}
+              </div>
+
+              {/* Section 2: Linked Collaborator & Theme Nodes */}
+              {selectedSubgraph.linkedEntities.length > 0 && (
+                <div className="pt-2 border-t border-[#D5CCB9]">
+                  <h4 className="font-heading text-xs font-bold text-[#171412] mb-1.5">
+                    Shared Collaborators &amp; Themes (
+                    {selectedSubgraph.linkedEntities.length})
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedSubgraph.linkedEntities.map(
+                      ({ node: eNode, roleLabel, connectedCount }) => (
+                        <button
+                          key={eNode.id}
+                          type="button"
+                          onClick={() => {
+                            onSelectNode(eNode);
+                            frameNodeAndLinkedCluster(eNode.id);
+                          }}
+                          onMouseEnter={() => {
+                            hoveredIdRef.current = eNode.id;
+                            setHoveredNodeId(eNode.id);
+                          }}
+                          onMouseLeave={() => {
+                            hoveredIdRef.current = null;
+                            setHoveredNodeId(null);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-[#EFE8DA] hover:bg-[#E5DEC9] border border-[#C8BEAA] hover:border-[#B8292F] transition-colors cursor-pointer"
+                        >
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: eNode.color }}
+                          />
+                          <span className="font-semibold text-[#171412]">
+                            {eNode.label}
+                          </span>
+                          <span className="text-[11px] text-[#52483E]">
+                            · {roleLabel} ({connectedCount})
+                          </span>
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Top-Center Hover Preview Pill (Strictly for Hover Previews when no node is selected) */}
       {hoveredNodeId && hoveredTooltip && !selectedSubgraph.focusNode ? (
@@ -3539,7 +3875,7 @@ export function SpatialViewport({
         </div>
       ) : null}
 
-      {/* Floating Archival Vellum Cursor Hover Tooltip */}
+      {/* Sleek Obsidian-Style Floating Glass Hover Tooltip */}
       {hoveredTooltip && (() => {
         const viewportWidth =
           rootRef.current?.clientWidth ||
@@ -3556,370 +3892,182 @@ export function SpatialViewport({
 
         return (
           <div
-            className="pointer-events-none absolute z-30 w-80 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival p-3.5 transition-opacity duration-150"
+            className={`pointer-events-none absolute z-30 rounded-lg p-2 shadow-2xl transition-opacity duration-150 flex items-center gap-2.5 max-w-[240px] ${isDark
+                ? 'bg-[#0E1524]/94 backdrop-blur-md border border-[#1C273C] text-[#F0F4FC]'
+                : 'bg-[#FBF8F2]/95 backdrop-blur-md border border-[#D5CCB9] text-[#171412]'
+              }`}
             style={{
               left: Math.min(
-                viewportWidth - 340,
-                Math.max(16, hoveredTooltip.x + 18)
+                viewportWidth - 260,
+                Math.max(16, hoveredTooltip.x + 14)
               ),
               top: Math.min(
-                viewportHeight - 220,
-                Math.max(16, hoveredTooltip.y - 24)
+                viewportHeight - 120,
+                Math.max(16, hoveredTooltip.y - 18)
               ),
             }}
           >
             {hoveredTooltip.node.mediaItem ? (
-            <div className="flex gap-3">
-              {/* Poster Thumbnail */}
-              <div className="w-16 h-24 rounded-sm overflow-hidden shrink-0 border border-[#C8BEAA] bg-[#EFE8DA] relative">
-                <img
-                  src={hoveredTooltip.node.mediaItem.posterUrl}
-                  alt={hoveredTooltip.node.mediaItem.title}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    if (hoveredTooltip.node.mediaItem) {
-                      target.src = getPosterFallbackDataUri(
-                        hoveredTooltip.node.mediaItem
-                      );
-                    }
-                  }}
-                />
-              </div>
+              <>
+                {/* Mini Poster Thumbnail */}
+                <div className="w-9 h-12 rounded overflow-hidden shrink-0 bg-black/20 border border-white/10 relative">
+                  <img
+                    src={hoveredTooltip.node.mediaItem.posterUrl}
+                    alt={hoveredTooltip.node.mediaItem.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (hoveredTooltip.node.mediaItem) {
+                        target.src = getPosterFallbackDataUri(
+                          hoveredTooltip.node.mediaItem
+                        );
+                      }
+                    }}
+                  />
+                </div>
 
-              <div className="flex-1 min-w-0">
-                {/* Title Heading First (no kicker above h4) */}
-                <div className="flex items-start justify-between gap-1.5">
-                  <h4 className="font-heading text-base font-bold text-[#171412] truncate">
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-xs font-heading truncate leading-tight">
                     {hoveredTooltip.node.mediaItem.title}
-                  </h4>
-
-                  {hoveredTooltip.node.isFocal ? (
-                    <span className="px-1.5 py-0.5 rounded bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6] text-[11px] font-semibold shrink-0">
-                      Selected
+                  </div>
+                  <div className={`text-[10px] mt-0.5 truncate ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
+                    {hoveredTooltip.node.mediaItem.year} · {hoveredTooltip.node.mediaItem.directors?.[0]}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 text-[10px]">
+                    <span className={`px-1.5 py-0.2 rounded font-semibold font-tabular ${isDark ? 'bg-[#00D2FF]/20 text-[#00D2FF]' : 'bg-[#234B6E]/15 text-[#234B6E]'
+                      }`}>
+                      ★ {hoveredTooltip.node.mediaItem.imdbRating.toFixed(1)}
                     </span>
-                  ) : hoveredTooltip.node.matchScore !== undefined ? (
-                    <span className="px-1.5 py-0.5 rounded bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7] text-[11px] font-tabular font-bold shrink-0">
-                      {hoveredTooltip.node.matchScore}%
-                    </span>
-                  ) : (
-                    <span className="px-1.5 py-0.5 rounded bg-[#EFE8DA] text-[#52483E] border border-[#C8BEAA] text-[11px] font-semibold shrink-0">
+                    <span className={`px-1.5 py-0.2 rounded truncate ${isDark ? 'bg-white/10 text-[#94A3B8]' : 'bg-black/5 text-[#52483E]'
+                      }`}>
                       {hoveredTooltip.node.mediaItem.primaryGenre}
                     </span>
-                  )}
+                  </div>
                 </div>
-
-                <p className="text-xs text-[#52483E] mt-0.5 truncate">
-                  {hoveredTooltip.node.mediaItem.mediaType === 'MOVIE' ? (
-                    <Film className="w-3 h-3 inline mr-1 text-[#234B6E]" />
-                  ) : (
-                    <Tv className="w-3 h-3 inline mr-1 text-[#6B3A6E]" />
-                  )}
-                  {hoveredTooltip.node.mediaItem.year} ·{' '}
-                  {hoveredTooltip.node.mediaItem.directors[0]}
-                </p>
-
-                {/* IMDb & Rotten Tomatoes Scores (no emoji) */}
-                <div className="flex items-center gap-2.5 mt-2 text-xs font-tabular text-[#52483E]">
-                  <span>
-                    IMDb{' '}
-                    <strong className="text-[#171412] font-bold">
-                      {hoveredTooltip.node.mediaItem.imdbRating.toFixed(1)}
-                    </strong>
-                  </span>
-                  <span>·</span>
-                  <span>
-                    Critics{' '}
-                    <strong className="text-[#8C1D22] font-bold">
-                      {hoveredTooltip.node.mediaItem.rottenTomatoes}%
-                    </strong>
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Collaborator / Theme Node Tooltip (Heading first — no kicker above h4) */
-            <div className="flex items-start gap-3">
-              <div
-                className="w-10 h-10 rounded flex items-center justify-center shrink-0 border border-[#C8BEAA] bg-[#EFE8DA]"
-              >
-                {hoveredTooltip.node.type === 'DIRECTOR' && (
-                  <Award
-                    className="w-5 h-5"
-                    style={{ color: hoveredTooltip.node.color }}
-                  />
-                )}
-                {hoveredTooltip.node.type === 'ACTOR' && (
-                  <UserCheck
-                    className="w-5 h-5"
-                    style={{ color: hoveredTooltip.node.color }}
-                  />
-                )}
-                {hoveredTooltip.node.type === 'TROPE' && (
-                  <Hash
-                    className="w-5 h-5"
-                    style={{ color: hoveredTooltip.node.color }}
-                  />
-                )}
-                {hoveredTooltip.node.type === 'COMPOSER' && (
-                  <Music
-                    className="w-5 h-5"
-                    style={{ color: hoveredTooltip.node.color }}
-                  />
-                )}
-              </div>
-              <div>
-                <h4 className="font-heading text-base font-bold text-[#171412]">
+              </>
+            ) : (
+              <div className="min-w-0 p-1">
+                <div className="font-semibold text-xs truncate">
                   {hoveredTooltip.node.label}
-                </h4>
-                <p className="text-xs text-[#52483E] mt-0.5">
-                  {hoveredTooltip.node.subLabel}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Shared Connection Badges */}
-          {hoveredTooltip.node.similarity &&
-            hoveredTooltip.node.similarity.sharedConnections.length > 0 && (
-              <div className="mt-2.5 pt-2 border-t border-[#D5CCB9]">
-                <div className="text-[11px] font-medium text-[#52483E] mb-1">
-                  {focalItem
-                    ? `Shared with ${focalItem.title}:`
-                    : 'Shared craft credits:'}
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {hoveredTooltip.node.similarity.sharedConnections
-                    .slice(0, 4)
-                    .map((conn) => (
-                      <span
-                        key={conn.id}
-                        className="px-1.5 py-0.5 rounded text-[11px] bg-[#EFE8DA] border border-[#D5CCB9] text-[#171412]"
-                      >
-                        <strong style={{ color: conn.color }}>
-                          {conn.prefix}:
-                        </strong>{' '}
-                        {conn.value} (+{conn.points})
-                      </span>
-                    ))}
+                <div className={`text-[10px] mt-0.5 ${isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'}`}>
+                  {hoveredTooltip.node.subLabel}
                 </div>
               </div>
             )}
-        </div>
-      );
+          </div>
+        );
       })()}
 
-      {/* Bottom-Left Sleek Category Models Key (Collapsible on md/lg, expanded on xl) */}
-      <div className="absolute bottom-5 left-4 z-20 flex flex-col items-start gap-1.5">
-        {/* Expanded Panel for sub-xl screens when toggled */}
-        {isNodeKeyOpen && (
-          <div className="xl:hidden flex flex-col gap-2 p-3 rounded-lg bg-[#FBF8F2] border border-[#B5A892] shadow-archival text-[11px] text-[#52483E] animate-in fade-in slide-in-from-bottom-2 duration-150">
-            <div className="flex items-center justify-between gap-4 pb-1.5 border-b border-[#D5CCB9]">
-              <span className="font-heading font-bold text-[#171412]">
-                Constellation Key
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsNodeKeyOpen(false)}
-                className="text-[#6B5E50] hover:text-[#171412] text-[10px] font-semibold cursor-pointer"
-                aria-label="Close constellation key"
-              >
-                Close
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-              <span className="inline-flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 text-[#234B6E] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <circle cx="8" cy="8" r="6.5" fill="currentColor" />
-                  <circle cx="8" cy="3.8" r="1.25" fill="#FBF8F2" />
-                  <circle cx="12" cy="6.7" r="1.25" fill="#FBF8F2" />
-                  <circle cx="10.5" cy="11.4" r="1.25" fill="#FBF8F2" />
-                  <circle cx="5.5" cy="11.4" r="1.25" fill="#FBF8F2" />
-                  <circle cx="4" cy="6.7" r="1.25" fill="#FBF8F2" />
-                  <circle cx="8" cy="8" r="1" fill="#FBF8F2" />
-                </svg>
-                <span>Film Reel (Movie)</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 text-[#6B3A6E] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M5.2 1.8L7.3 4.2M10.8 1.8L8.7 4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                  <rect x="2" y="4" width="12" height="8.5" rx="2" fill="currentColor" />
-                  <rect x="3.6" y="5.4" width="8.8" height="5.7" rx="1" fill="#FBF8F2" />
-                  <path d="M5.5 14.2H10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                </svg>
-                <span>TV Set (Series)</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 text-[#B8292F] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <rect x="2" y="6.2" width="12" height="8" rx="1.5" fill="currentColor" />
-                  <path d="M2.2 5.4L13.5 2.4L14.1 4.6L2.8 7.6Z" fill="currentColor" />
-                  <path d="M4.5 9.5H11.5M4.5 11.8H9" stroke="#FBF8F2" strokeWidth="1.2" strokeLinecap="round" />
-                </svg>
-                <span>Clapperboard (Director)</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 text-[#B86B14] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <polygon points="8,1.3 9.9,5.6 14.6,6.1 11.1,9.3 12.1,13.9 8,11.5 3.9,13.9 4.9,9.3 1.4,6.1 6.1,5.6" fill="currentColor" />
-                </svg>
-                <span>Star (Cast)</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 text-[#2A6B53] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M8 3.6C6.2 2.4 3.5 2.6 1.8 3.6V12.6C3.5 11.6 6.2 11.4 8 12.6C9.8 11.4 12.5 11.6 14.2 12.6V3.6C12.5 2.6 9.8 2.4 8 3.6Z" fill="currentColor" />
-                  <path d="M8 3.8V12.4" stroke="#FBF8F2" strokeWidth="1.3" strokeLinecap="round" />
-                </svg>
-                <span>Book (Theme)</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 text-[#A63A2B] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <circle cx="4.8" cy="12" r="2.2" fill="currentColor" />
-                  <circle cx="11.5" cy="10.6" r="2.2" fill="currentColor" />
-                  <path d="M6.6 12V3.8L13.3 2.4V10.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <span>Note (Music)</span>
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Compact Toggle Pill below xl / Full Legend on xl */}
-        <div className="flex items-center">
-          {/* Sub-xl interactive toggle pill */}
-          <button
-            type="button"
-            onClick={() => setIsNodeKeyOpen((prev) => !prev)}
-            className="xl:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FBF8F2] hover:bg-[#EFE8DA] border border-[#B5A892] shadow-archival-sm text-[11px] font-semibold text-[#171412] transition-colors cursor-pointer"
-            aria-expanded={isNodeKeyOpen}
-            aria-label="Toggle node key legend"
-          >
-            <span className="w-2 h-2 rounded-full bg-[#B8292F]" />
-            <span>Node Key</span>
-            <span className="text-[10px] text-[#52483E]">{isNodeKeyOpen ? '▲' : '▼'}</span>
-          </button>
-
-          {/* Full static strip on xl+ displays */}
-          <div className="hidden xl:flex pointer-events-none items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival-sm text-[11px] text-[#52483E]">
-            <span className="font-heading font-bold text-[#171412] pr-1.5 border-r border-[#D5CCB9]">
-              Node Key
-            </span>
-            {/* Film Reel */}
-            <span className="inline-flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5 text-[#234B6E]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <circle cx="8" cy="8" r="6.5" fill="currentColor" />
-                <circle cx="8" cy="3.8" r="1.25" fill="#FBF8F2" />
-                <circle cx="12" cy="6.7" r="1.25" fill="#FBF8F2" />
-                <circle cx="10.5" cy="11.4" r="1.25" fill="#FBF8F2" />
-                <circle cx="5.5" cy="11.4" r="1.25" fill="#FBF8F2" />
-                <circle cx="4" cy="6.7" r="1.25" fill="#FBF8F2" />
-                <circle cx="8" cy="8" r="1" fill="#FBF8F2" />
-              </svg>
-              <span>Film Reel</span>
-            </span>
-            {/* TV Set */}
-            <span className="inline-flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5 text-[#6B3A6E]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M5.2 1.8L7.3 4.2M10.8 1.8L8.7 4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <rect x="2" y="4" width="12" height="8.5" rx="2" fill="currentColor" />
-                <rect x="3.6" y="5.4" width="8.8" height="5.7" rx="1" fill="#FBF8F2" />
-                <path d="M5.5 14.2H10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-              <span>TV Set</span>
-            </span>
-            {/* Director Clapperboard */}
-            <span className="inline-flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5 text-[#B8292F]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <rect x="2" y="6.2" width="12" height="8" rx="1.5" fill="currentColor" />
-                <path d="M2.2 5.4L13.5 2.4L14.1 4.6L2.8 7.6Z" fill="currentColor" />
-                <path d="M4.5 9.5H11.5M4.5 11.8H9" stroke="#FBF8F2" strokeWidth="1.2" strokeLinecap="round" />
-              </svg>
-              <span>Clapperboard</span>
-            </span>
-            {/* Cast 5-Point Star */}
-            <span className="inline-flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5 text-[#B86B14]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <polygon points="8,1.3 9.9,5.6 14.6,6.1 11.1,9.3 12.1,13.9 8,11.5 3.9,13.9 4.9,9.3 1.4,6.1 6.1,5.6" fill="currentColor" />
-              </svg>
-              <span>Cast Star</span>
-            </span>
-            {/* Story Book */}
-            <span className="inline-flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5 text-[#2A6B53]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M8 3.6C6.2 2.4 3.5 2.6 1.8 3.6V12.6C3.5 11.6 6.2 11.4 8 12.6C9.8 11.4 12.5 11.6 14.2 12.6V3.6C12.5 2.6 9.8 2.4 8 3.6Z" fill="currentColor" />
-                <path d="M8 3.8V12.4" stroke="#FBF8F2" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
-              <span>Story Book</span>
-            </span>
-            {/* Score Musical Note */}
-            <span className="inline-flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5 text-[#A63A2B]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <circle cx="4.8" cy="12" r="2.2" fill="currentColor" />
-                <circle cx="11.5" cy="10.6" r="2.2" fill="currentColor" />
-                <path d="M6.6 12V3.8L13.3 2.4V10.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span>Music Note</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* MOVIE MAP REA: TOP-RIGHT DISPLAY & PROJECTION CONTROLS HUD */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 p-1 rounded-full bg-[#FBF8F2]/95 border border-[#B5A892] shadow-archival text-xs font-semibold text-[#171412]">
-        {/* Layout Toggle: Constellation vs Galaxy */}
+      {/* HUD: Graph Projection, Color Coding, and Label Density Controls */}
+      <div
+        className={`absolute top-4 right-4 z-20 flex items-center gap-2 p-1.5 rounded-full text-xs font-medium backdrop-blur-md shadow-lg transition-colors ${isDark
+            ? 'bg-[#0E1524]/90 border border-white/10 text-white/90 shadow-black/40'
+            : 'bg-[#FBF8F2]/95 border border-[#B5A892] shadow-archival text-[#171412]'
+          }`}
+      >
+        {/* 1. Spatial Layout Projection */}
         {onLayoutModeChange && (
-          <div className="flex items-center gap-0.5 pr-1 border-r border-[#D5CCB9]">
-            <button
-              type="button"
-              onClick={() => onLayoutModeChange('FORCE_CONSTELLATION')}
-              className={`px-2 py-1 rounded-full text-[11px] transition-colors cursor-pointer ${
-                layoutMode === 'FORCE_CONSTELLATION'
-                  ? 'bg-[#234B6E] text-[#FBF8F2]'
-                  : 'text-[#52483E] hover:text-[#171412]'
-              }`}
-            >
-              Constellation
-            </button>
-            <button
-              type="button"
-              onClick={() => onLayoutModeChange('SEMANTIC_GALAXY')}
-              className={`px-2 py-1 rounded-full text-[11px] transition-colors cursor-pointer ${
-                layoutMode === 'SEMANTIC_GALAXY'
-                  ? 'bg-[#B8292F] text-[#FBF8F2]'
-                  : 'text-[#52483E] hover:text-[#171412]'
-              }`}
-            >
-              Galaxy
-            </button>
-          </div>
-        )}
-
-        {/* Color Mode Switcher */}
-        {onColorModeChange && (
-          <div className="flex items-center gap-0.5 pr-1 border-r border-[#D5CCB9]">
-            {(
-              [
-                { id: 'CLUSTER', label: 'Cluster' },
-                { id: 'GENRE', label: 'Genre' },
-                { id: 'DECADE', label: 'Decade' },
-                { id: 'CATEGORY', label: 'Type' },
-              ] as const
-            ).map((c) => (
+          <div className={`flex items-center gap-1 pr-1.5 border-r ${isDark ? 'border-white/10' : 'border-[#D5CCB9]'}`}>
+            <div className={`flex items-center p-0.5 rounded-full ${isDark ? 'bg-white/5' : 'bg-[#EFE8DA]'}`}>
               <button
-                key={c.id}
                 type="button"
-                onClick={() => onColorModeChange(c.id)}
-                className={`px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
-                  colorMode === c.id
-                    ? 'bg-[#EFE8DA] text-[#171412] font-bold border border-[#C8BEAA]'
-                    : 'text-[#6B5E50] hover:text-[#171412]'
-                }`}
+                onClick={() => onLayoutModeChange('FORCE_CONSTELLATION')}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none ${layoutMode === 'FORCE_CONSTELLATION'
+                    ? 'bg-[#234B6E] text-white shadow-xs'
+                    : isDark
+                      ? 'text-white/60 hover:text-white'
+                      : 'text-[#52483E] hover:text-[#171412]'
+                  }`}
+                title="Cast & Crew: Lines link movies that share directors, screenwriters, or actors"
               >
-                {c.label}
+                Constellation
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => onLayoutModeChange('SEMANTIC_GALAXY')}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none ${layoutMode === 'SEMANTIC_GALAXY'
+                    ? 'bg-[#B8292F] text-white shadow-xs'
+                    : isDark
+                      ? 'text-white/60 hover:text-white'
+                      : 'text-[#52483E] hover:text-[#171412]'
+                  }`}
+                title="Themes & Vibe: Groups movies by shared plot, mood, and storytelling worlds"
+              >
+                Galaxy
+              </button>
+            </div>
+
+            {layoutMode === 'SEMANTIC_GALAXY' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onToggleTerritories) {
+                    onToggleTerritories();
+                  } else {
+                    setLocalTerritories((prev) => !prev);
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none flex items-center gap-1.5 ${showTerritories
+                    ? isDark
+                      ? 'bg-[#2A6B53]/40 text-[#8CE8C3] border border-[#2A6B53]/60'
+                      : 'bg-[#E3EFEA] text-[#1E563F] border border-[#B4D4C7]'
+                    : isDark
+                      ? 'text-white/50 hover:text-white bg-white/5'
+                      : 'text-[#6B5E50] hover:text-[#171412] bg-[#EFE8DA]'
+                  }`}
+                title="Theme Zones: Draw boundary outlines and labels around themed movie neighborhoods"
+              >
+                <MapIcon className="w-2.5 h-2.5 opacity-80" />
+                <span>Theme Zones</span>
+              </button>
+            )}
           </div>
         )}
 
-        {/* Label Mode Toggle (Auto / All / Off) */}
+        {/* 2. Node Color Coding Scheme */}
+        {onColorModeChange && (
+          <div className={`flex items-center gap-1.5 pr-1.5 border-r ${isDark ? 'border-white/10' : 'border-[#D5CCB9]'}`}>
+            <span
+              className={`hidden sm:flex items-center gap-1 pl-1 text-[10px] font-bold tracking-wide uppercase select-none ${isDark ? 'text-white/40' : 'text-[#8C7E6D]'
+                }`}
+              title="Color movies by attribute"
+            >
+              <Palette className="w-3 h-3 opacity-70" />
+              <span>Color</span>
+            </span>
+
+            <div className={`flex items-center p-0.5 rounded-full ${isDark ? 'bg-white/5' : 'bg-[#EFE8DA]'}`}>
+              {(
+                [
+                  { id: 'CLUSTER', label: 'Theme', desc: 'Color movies by shared story world & theme' },
+                  { id: 'GENRE', label: 'Genre', desc: 'Color by primary genre (Action, Sci-Fi, Drama…)' },
+                  { id: 'DECADE', label: 'Era', desc: 'Color chronologically by release era (Decade)' },
+                  { id: 'CATEGORY', label: 'Format', desc: 'Color by format (Films vs TV Series vs Cast/Crew)' },
+                ] as const
+              ).map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => onColorModeChange(c.id)}
+                  title={c.desc}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none ${colorMode === c.id
+                      ? isDark
+                        ? 'bg-white/20 text-white shadow-xs font-bold'
+                        : 'bg-[#171412] text-[#FBF8F2] shadow-xs font-bold'
+                      : isDark
+                        ? 'text-white/60 hover:text-white'
+                        : 'text-[#6B5E50] hover:text-[#171412]'
+                    }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 3. Title Display Density */}
         {onLabelModeChange && (
           <button
             type="button"
@@ -3932,32 +4080,50 @@ export function SpatialViewport({
                     : 'AUTO';
               onLabelModeChange(next);
             }}
-            title="Toggle Labels (or press 'L')"
-            className={`px-2 py-1 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer ${
-              labelMode === 'OFF'
-                ? 'bg-[#EFE8DA] text-[#6B5E50] border-[#D5CCB9]'
+            title="Toggle movie title density (Auto · All · Off). Shortcut: Press 'L'"
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-150 active:scale-[0.94] cursor-pointer select-none flex items-center gap-1.5 border ${labelMode === 'OFF'
+                ? isDark
+                  ? 'bg-white/5 text-white/40 border-white/10 hover:text-white/70'
+                  : 'bg-[#EFE8DA] text-[#6B5E50] border-[#D5CCB9] hover:text-[#171412]'
                 : labelMode === 'ALL'
-                  ? 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
-                  : 'bg-[#FBF8F2] text-[#171412] border-[#C8BEAA]'
-            }`}
+                  ? isDark
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-[#E4F0EA] text-[#1E563F] border-[#B3D4C5]'
+                  : isDark
+                    ? 'bg-white/10 text-white/90 border-white/20'
+                    : 'bg-[#FBF8F2] text-[#171412] border-[#C8BEAA]'
+              }`}
           >
-            L: {labelMode === 'AUTO' ? 'Auto' : labelMode === 'ALL' ? 'All' : 'Off'}
+            <Tag className="w-3 h-3 opacity-70" />
+            <span>Titles: {labelMode === 'AUTO' ? 'Auto' : labelMode === 'ALL' ? 'All' : 'Off'}</span>
           </button>
         )}
       </div>
 
       {/* MOVIE MAP REA: INTERACTIVE CLUSTER TERRITORY LEGEND (Bottom-Left) */}
       {clusters && clusters.length > 0 && (
-        <div className="hidden lg:flex absolute bottom-5 left-4 z-20 flex-col gap-1 p-2.5 rounded-lg bg-[#FBF8F2]/95 border border-[#B5A892] shadow-archival max-w-xs text-xs">
-          <div className="flex items-center justify-between gap-3 pb-1 border-b border-[#D5CCB9]">
-            <span className="font-heading font-bold text-[#171412]">
+        <div
+          className={`hidden lg:flex absolute bottom-5 left-4 z-20 flex-col gap-1 p-2.5 rounded-xl border max-w-xs text-xs backdrop-blur-md transition-colors ${isDark
+              ? 'bg-[#0B101D]/90 border-cyan-500/20 text-slate-200 shadow-[0_8px_32px_rgba(0,0,0,0.6)]'
+              : 'bg-[#FBF8F2]/95 border-[#B5A892] text-[#171412] shadow-archival'
+            }`}
+        >
+          <div
+            className={`flex items-center justify-between gap-3 pb-1 border-b ${isDark ? 'border-white/10' : 'border-[#D5CCB9]'
+              }`}
+          >
+            <span
+              className={`font-heading font-bold ${isDark ? 'text-white' : 'text-[#171412]'
+                }`}
+            >
               Semantic Galaxy Clusters
             </span>
             {graphFilters?.activeClusterId && onSelectCluster && (
               <button
                 type="button"
                 onClick={() => onSelectCluster(null)}
-                className="text-[10px] text-[#B8292F] font-semibold hover:underline cursor-pointer"
+                className={`text-[10px] font-semibold hover:underline cursor-pointer ${isDark ? 'text-cyan-400' : 'text-[#B8292F]'
+                  }`}
               >
                 Reset
               </button>
@@ -3971,18 +4137,24 @@ export function SpatialViewport({
                   key={c.id}
                   type="button"
                   onClick={() => onSelectCluster?.(isSelected ? null : c.id)}
-                  className={`text-left flex items-center gap-1.5 py-0.5 px-1 rounded transition-colors cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#EFE8DA] font-bold text-[#171412]'
-                      : 'hover:bg-[#EFE8DA]/60 text-[#52483E]'
-                  }`}
+                  className={`text-left flex items-center gap-1.5 py-0.5 px-1.5 rounded transition-all cursor-pointer ${isSelected
+                      ? isDark
+                        ? 'bg-cyan-500/20 font-bold text-cyan-300 ring-1 ring-cyan-500/40 shadow-[0_0_10px_rgba(0,210,255,0.2)]'
+                        : 'bg-[#EFE8DA] font-bold text-[#171412]'
+                      : isDark
+                        ? 'hover:bg-white/10 text-slate-300'
+                        : 'hover:bg-[#EFE8DA]/60 text-[#52483E]'
+                    }`}
                 >
                   <span
                     className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
                     style={{ backgroundColor: c.color }}
                   />
                   <span className="truncate text-[10px]">{c.shortLabel}</span>
-                  <span className="text-[9px] font-tabular text-[#8C8070] ml-auto">
+                  <span
+                    className={`text-[10px] font-tabular ml-auto ${isDark ? 'text-slate-400' : 'text-[#8C8070]'
+                      }`}
+                  >
                     {c.mediaIds.length}
                   </span>
                 </button>
@@ -3993,15 +4165,23 @@ export function SpatialViewport({
       )}
 
       {/* Bottom Center Camera Dock */}
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#FBF8F2] border border-[#B5A892] shadow-archival">
+      <div
+        className={`absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2.5 py-1.5 rounded-full backdrop-blur-md transition-colors ${isDark
+            ? 'bg-[#0B101D]/90 border border-white/15 text-slate-200 shadow-[0_8px_32px_rgba(0,0,0,0.6)]'
+            : 'bg-[#FBF8F2] border border-[#B5A892] text-[#52483E] shadow-archival'
+          }`}
+      >
         <button
           type="button"
           onClick={() => onCameraModeChange('ORBIT')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-            cameraMode === 'ORBIT'
-              ? 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${cameraMode === 'ORBIT'
+              ? isDark
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(0,210,255,0.25)]'
+                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
+              : isDark
+                ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
+            }`}
         >
           <Compass className="w-3.5 h-3.5" />
           <span>Orbit</span>
@@ -4010,11 +4190,14 @@ export function SpatialViewport({
         <button
           type="button"
           onClick={() => onCameraModeChange('FREE_LOOK')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-            cameraMode === 'FREE_LOOK'
-              ? 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${cameraMode === 'FREE_LOOK'
+              ? isDark
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(0,210,255,0.25)]'
+                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
+              : isDark
+                ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
+            }`}
         >
           <Eye className="w-3.5 h-3.5" />
           <span>Pan</span>
@@ -4023,23 +4206,32 @@ export function SpatialViewport({
         <button
           type="button"
           onClick={() => onCameraModeChange('FLY_THROUGH')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-            cameraMode === 'FLY_THROUGH'
-              ? 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
-              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${cameraMode === 'FLY_THROUGH'
+              ? isDark
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(0,210,255,0.25)]'
+                : 'bg-[#F5E4E4] text-[#8C1D22] border border-[#D8B4B6]'
+              : isDark
+                ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
+            }`}
         >
           <Navigation className="w-3.5 h-3.5" />
           <span>Guided Tour</span>
         </button>
 
-        <div className="h-4 w-px bg-[#D5CCB9] mx-1" />
+        <div
+          className={`h-4 w-px mx-1 ${isDark ? 'bg-white/15' : 'bg-[#D5CCB9]'
+            }`}
+        />
 
         <button
           type="button"
           onClick={() => handleZoomStep(-35)}
           title="Zoom In (+)"
-          className="p-1.5 rounded-full text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA] transition-colors"
+          className={`p-1.5 rounded-full transition-colors cursor-pointer ${isDark
+              ? 'text-slate-400 hover:text-white hover:bg-white/10'
+              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
+            }`}
           aria-label="Zoom In"
         >
           <ZoomIn className="w-3.5 h-3.5" />
@@ -4048,26 +4240,40 @@ export function SpatialViewport({
           type="button"
           onClick={() => handleZoomStep(35)}
           title="Zoom Out (-)"
-          className="p-1.5 rounded-full text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA] transition-colors"
+          className={`p-1.5 rounded-full transition-colors cursor-pointer ${isDark
+              ? 'text-slate-400 hover:text-white hover:bg-white/10'
+              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
+            }`}
           aria-label="Zoom Out"
         >
           <ZoomOut className="w-3.5 h-3.5" />
         </button>
 
-        <div className="h-4 w-px bg-[#D5CCB9] mx-1" />
+        <div
+          className={`h-4 w-px mx-1 ${isDark ? 'bg-white/15' : 'bg-[#D5CCB9]'
+            }`}
+        />
 
         <button
           type="button"
           onClick={() => {
-            camSphericalRef.current.phi = Math.PI / 2.25;
-            camSphericalRef.current.theta = 0.45;
-            camSphericalRef.current.goalX = 0;
-            camSphericalRef.current.goalY = 0;
-            camSphericalRef.current.goalZ = 0;
-            camSphericalRef.current.goalRadius = 265;
+            const bounds = computeGraphBounds(nodesRef.current, clusters);
+            const w =
+              containerRef.current?.clientWidth ||
+              (typeof window !== 'undefined' ? window.innerWidth : 1280);
+            const h =
+              containerRef.current?.clientHeight ||
+              (typeof window !== 'undefined' ? window.innerHeight : 800);
+            const autoDist = computeResponsive3DDistance(w, h, bounds);
+            const autoZoom = computeResponsive2DZoom(w, h, bounds);
+            camSphericalRef.current.phi = 1.44;
+            camSphericalRef.current.theta = 0.05;
+            camSphericalRef.current.goalX = bounds.centerX;
+            camSphericalRef.current.goalY = bounds.centerY;
+            camSphericalRef.current.goalRadius = autoDist;
             pan2dRef.current.goalPanX = 0;
             pan2dRef.current.goalPanY = 0;
-            pan2dRef.current.goalZoom = 1.05;
+            pan2dRef.current.goalZoom = autoZoom;
             onCameraModeChange('ORBIT');
             if (onResetEverything) {
               onResetEverything();
@@ -4076,19 +4282,25 @@ export function SpatialViewport({
               onClearFocal?.();
             }
           }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
-            selectedSubgraph.focusNode || focalItem
-              ? 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] shadow-archival-sm'
-              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${selectedSubgraph.focusNode || focalItem
+              ? isDark
+                ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.35)]'
+                : 'bg-[#B8292F] hover:bg-[#8C1D22] text-[#FBF8F2] shadow-archival-sm'
+              : isDark
+                ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
+            }`}
           title="Reset selection, filters, and camera to show the full graph"
         >
           <RotateCcw
-            className={`w-3.5 h-3.5 ${
-              selectedSubgraph.focusNode || focalItem
-                ? 'text-[#FBF8F2]'
-                : 'text-[#8C1D22]'
-            }`}
+            className={`w-3.5 h-3.5 ${selectedSubgraph.focusNode || focalItem
+                ? isDark
+                  ? 'text-white'
+                  : 'text-[#FBF8F2]'
+                : isDark
+                  ? 'text-cyan-400'
+                  : 'text-[#8C1D22]'
+              }`}
           />
           <span>
             {selectedSubgraph.focusNode || focalItem
@@ -4100,11 +4312,14 @@ export function SpatialViewport({
         <button
           type="button"
           onClick={() => onAutoRotateChange(!autoRotate)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-            autoRotate
-              ? 'bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]'
-              : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${autoRotate
+              ? isDark
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
+                : 'bg-[#E3EFEA] text-[#2A6B53] border border-[#B4D4C7]'
+              : isDark
+                ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                : 'text-[#52483E] hover:text-[#171412] hover:bg-[#EFE8DA]'
+            }`}
         >
           <RefreshCw
             className={`w-3.5 h-3.5 ${autoRotate ? 'animate-spin' : ''}`}

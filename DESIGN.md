@@ -104,6 +104,12 @@ components:
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "8px 12px"
+  hud-pill:
+    backgroundColor: "{colors.archival-vellum}"
+    textColor: "{colors.carbon-ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.full}"
+    padding: "6px 10px"
 ---
 
 # Design System: SixDegrees
@@ -229,6 +235,11 @@ Corners are tailored to the physical metaphor of printed stock and archival stam
 
 ### Proportional 6-Part Craft Lineage Bar
 - **Description:** A signature horizontal `8px`-tall segmented bar (`bg-[#E5DEC9]`, `border-[#C8BEAA]`) that breaks down any title's 100-point similarity score into six proportional pigment segments: Themes (`#2A6B53`), Director/Writer (`#B8292F`), Genre (`#234B6E`), Cast (`#B86B14`), Score/Camera (`#A63A2B`), and Paired Viewers (`#6B3A6E`), followed by an inline tabular legend.
+
+### Viewport Projection & Color HUD Pill
+- **Shape:** Pill silhouette (`9999px` / `rounded-full`).
+- **Style:** Semi-translucent warm vellum (`#FBF8F2`/`95%`) with `1px solid #B5A892` border and directional ink shadow in light mode; obsidian glass (`#0E1524`/`90%`) with `1px solid white/10` in dark mode.
+- **Organization:** Three distinct segmented zones separated by hairline dividers: Spatial Projection (`Constellation` / `Galaxy` + `Territories`), Node Color Scheme (`Cluster` / `Genre` / `Decade` / `Type`), and Label Density (`Labels: Auto / All / Off`).
 
 ## Do's and Don'ts
 

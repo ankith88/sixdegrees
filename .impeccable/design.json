@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-09T10:17:30+11:00",
+  "generatedAt": "2026-11-12T10:04:10+11:00",
   "title": "Design System: SixDegrees",
   "extensions": {
     "colorMeta": {
@@ -9,6 +9,18 @@
         "displayName": "Criterion Spine Crimson",
         "canonical": "#B8292F",
         "tonalRamp": ["#3B0A0D", "#5E1115", "#8C1D22", "#B8292F", "#CD4E53", "#DF7E82", "#EFC0C2", "#F5E4E4"]
+      },
+      "crimson-deep": {
+        "role": "primary",
+        "displayName": "Deep Oxblood Ink",
+        "canonical": "#8C1D22",
+        "tonalRamp": ["#2B0709", "#4A0E12", "#6B151A", "#8C1D22", "#AA393E", "#C66266", "#DE9699", "#F2D2D4"]
+      },
+      "crimson-tint": {
+        "role": "primary",
+        "displayName": "Crimson Stamp Wash",
+        "canonical": "#F5E4E4",
+        "tonalRamp": ["#5A1C20", "#872A30", "#B23B43", "#D16068", "#E28E94", "#EFAFB4", "#F7D1D4", "#F5E4E4"]
       },
       "prussian-blue": {
         "role": "secondary",
@@ -22,17 +34,23 @@
         "canonical": "#6B3A6E",
         "tonalRamp": ["#28132A", "#462349", "#6B3A6E", "#88528C", "#A673AA", "#C49EC7", "#DFC8E1", "#F3EAF4"]
       },
+      "nitrate-ochre": {
+        "role": "tertiary",
+        "displayName": "Nitrate Ochre",
+        "canonical": "#B86B14",
+        "tonalRamp": ["#3D2104", "#663909", "#8F510E", "#B86B14", "#D48832", "#E3A864", "#F0CCA0", "#FAF0E1"]
+      },
       "verdigris-teal": {
         "role": "tertiary",
         "displayName": "Verdigris Match Teal",
         "canonical": "#2A6B53",
         "tonalRamp": ["#0E291F", "#1B4837", "#2A6B53", "#3D8A6E", "#5CA98D", "#89C5AF", "#B4D4C7", "#E3EFEA"]
       },
-      "nitrate-ochre": {
+      "verdigris-tint": {
         "role": "tertiary",
-        "displayName": "Nitrate Ochre",
-        "canonical": "#B86B14",
-        "tonalRamp": ["#3D2104", "#663909", "#8F510E", "#B86B14", "#D48832", "#E3A864", "#F0CCA0", "#FAF0E1"]
+        "displayName": "Verdigris Wash",
+        "canonical": "#E3EFEA",
+        "tonalRamp": ["#14382B", "#215441", "#33765D", "#4C9A7B", "#73BCA0", "#A2DAC3", "#C8EFE0", "#E3EFEA"]
       },
       "terracotta-rust": {
         "role": "tertiary",
@@ -58,11 +76,41 @@
         "canonical": "#FBF8F2",
         "tonalRamp": ["#24201C", "#474038", "#6B5E50", "#948777", "#B5A892", "#D5CCB9", "#EFE8DA", "#FBF8F2"]
       },
+      "archival-well": {
+        "role": "neutral",
+        "displayName": "Recessed Paper Well",
+        "canonical": "#E5DEC9",
+        "tonalRamp": ["#1E1C16", "#383329", "#574F3F", "#7A6F5A", "#9E9077", "#BFB298", "#D9CEB6", "#E5DEC9"]
+      },
       "carbon-ink": {
         "role": "neutral",
         "displayName": "Carbon-Sepia Ink",
         "canonical": "#171412",
         "tonalRamp": ["#171412", "#2B2622", "#423A34", "#594F47", "#75695E", "#998C7E", "#C4B9AA", "#EBE5DC"]
+      },
+      "warm-umber": {
+        "role": "neutral",
+        "displayName": "Warm Umber",
+        "canonical": "#52483E",
+        "tonalRamp": ["#1A1714", "#302B25", "#52483E", "#726557", "#948473", "#B5A593", "#D4C8B8", "#EFE9DF"]
+      },
+      "stone-muted": {
+        "role": "neutral",
+        "displayName": "Muted Stone",
+        "canonical": "#6B5E50",
+        "tonalRamp": ["#1F1B17", "#3B342C", "#554B40", "#6B5E50", "#877868", "#A79785", "#C8BBAA", "#E8DFD3"]
+      },
+      "rule-hairline": {
+        "role": "neutral",
+        "displayName": "Engraved Hairline",
+        "canonical": "#D5CCB9",
+        "tonalRamp": ["#28241D", "#4B4437", "#6F6553", "#948871", "#B5A992", "#C8BEAA", "#D5CCB9", "#F4F0E6"]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Pressed Card Border",
+        "canonical": "#B5A892",
+        "tonalRamp": ["#221E17", "#423A2E", "#635846", "#877860", "#A8977C", "#B5A892", "#D3C8B4", "#EFE9DE"]
       }
     },
     "typographyMeta": {
@@ -82,9 +130,21 @@
         "displayName": "Editorial Body",
         "purpose": "Synopses, curatorial descriptions, and search input text."
       },
+      "subhead": {
+        "displayName": "Subhead Semi-bold",
+        "purpose": "Category headers and intermediate structural labels."
+      },
       "label": {
         "displayName": "Tabular Label",
         "purpose": "Tabular ratings, match percentages, credit pills, and filter buttons."
+      },
+      "caption": {
+        "displayName": "Metadata Caption",
+        "purpose": "Secondary annotations, dates, and subtle contextual notes."
+      },
+      "micro": {
+        "displayName": "Micro Tabular Tag",
+        "purpose": "Compact badges and pill tags in high-density tables."
       }
     },
     "shadows": [
@@ -152,6 +212,14 @@
       "description": "Horizontal segmented bar showing the relative contribution of Themes, Director/Writer, Genre, Cast, Score/Camera, and Paired Viewers.",
       "html": "<div class=\"ds-craft-bar\"><div style=\"width:36%;background:#2A6B53\"></div><div style=\"width:28%;background:#B8292F\"></div><div style=\"width:16%;background:#234B6E\"></div><div style=\"width:12%;background:#B86B14\"></div><div style=\"width:8%;background:#A63A2B\"></div></div>",
       "css": ".ds-craft-bar { display: flex; width: 100%; height: 8px; border-radius: 2px; overflow: hidden; background: #E5DEC9; border: 1px solid #C8BEAA; }"
+    },
+    {
+      "name": "Viewport Projection & Color HUD Pill",
+      "kind": "custom",
+      "refersTo": "card-monograph",
+      "description": "Floating top-right viewport control pill coordinating spatial projection (Constellation / Galaxy), node color coding (Cluster / Genre / Decade / Type), and label density.",
+      "html": "<div class=\"ds-hud-pill\"><div class=\"ds-hud-group\"><button class=\"ds-hud-btn-active\">Constellation</button><button class=\"ds-hud-btn\">Galaxy</button></div><div class=\"ds-hud-divider\"></div><div class=\"ds-hud-group\"><span class=\"ds-hud-label\">Color:</span><button class=\"ds-hud-btn-active\">Cluster</button><button class=\"ds-hud-btn\">Genre</button></div><div class=\"ds-hud-divider\"></div><button class=\"ds-hud-btn\">Labels: Auto</button></div>",
+      "css": ".ds-hud-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(251, 248, 242, 0.95); border: 1px solid #B5A892; border-radius: 9999px; box-shadow: 0 4px 16px rgba(23, 20, 18, 0.08); font-family: 'Source Sans 3', sans-serif; font-size: 11px; } .ds-hud-group { display: flex; align-items: center; gap: 2px; } .ds-hud-divider { width: 1px; height: 16px; background: #D5CCB9; } .ds-hud-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #6B5E50; margin-right: 4px; } .ds-hud-btn { padding: 3px 8px; border-radius: 9999px; border: none; background: transparent; color: #52483E; font-weight: 600; cursor: pointer; transition: all 0.15s ease; } .ds-hud-btn:hover { color: #171412; background: #EFE8DA; } .ds-hud-btn-active { padding: 3px 8px; border-radius: 9999px; border: none; background: #234B6E; color: #FBF8F2; font-weight: 600; cursor: pointer; }"
     }
   ],
   "narrative": {
