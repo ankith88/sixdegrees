@@ -44,7 +44,7 @@ import {
   syncUserProfileToServer,
   updateSavedUserLists,
 } from '@/lib/user-profile';
-import { SEED_MEDIA_ITEMS } from '@/lib/seed-data';
+import { INITIAL_BOOTSTRAP_SEEDS } from '@/lib/seed-data';
 import {
   buildSpatialGraph,
   calculateSimilarity,
@@ -129,7 +129,18 @@ export function SixDegreesApp() {
   );
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('3D');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile =
+        window.innerWidth < 768 ||
+        ('ontouchstart' in window && window.innerWidth < 1024);
+      if (isMobile) return '2D';
+    }
+    return '3D';
+  });
+  const [isCatalogHydrating, setIsCatalogHydrating] = useState<boolean>(
+    () => mediaLibrary.length === 0
+  );
   const [region, setRegion] = useState<RegionCode>('AU');
   const [mediaFilter, setMediaFilter] = useState<'ALL' | 'MOVIE' | 'TV'>('ALL');
   const [preset, setPreset] = useState<GravityPreset>('VIBE_TROPES');
@@ -314,39 +325,48 @@ export function SixDegreesApp() {
       if (status.firestore) setFirestoreTelemetry(status.firestore);
     });
 
-    fetchServerCachedCatalog().then(({ items, quota, firestore }) => {
-      if (cancelled) return;
-      if (quota) setQuotaTelemetry(quota);
-      if (firestore) setFirestoreTelemetry(firestore);
-      if (items.length > 0) {
-        setMediaLibrary((prev) => {
-          const map = new Map<string, MediaItem>();
-          for (const item of prev) map.set(item.id, item);
-          for (const candidate of items) {
-            const exists = Array.from(map.values()).find(
-              (m) =>
-                (candidate.imdbId && m.imdbId === candidate.imdbId) ||
-                (candidate.tmdbId > 0 &&
-                  m.tmdbId === candidate.tmdbId &&
-                  m.mediaType === candidate.mediaType) ||
-                (m.title.toLowerCase() === candidate.title.toLowerCase() &&
-                  Math.abs(m.year - candidate.year) <= 1)
-            );
-            if (!exists) {
-              const connects = Array.from(map.values()).some((existing) =>
-                hasConcreteSharedConnection(
-                  calculateSimilarity(existing, candidate)
-                )
+    fetchServerCachedCatalog()
+      .then(({ items, quota, firestore }) => {
+        if (cancelled) return;
+        if (quota) setQuotaTelemetry(quota);
+        if (firestore) setFirestoreTelemetry(firestore);
+        if (items.length > 0) {
+          setMediaLibrary((prev) => {
+            if (prev.length === 0) {
+              return items;
+            }
+            const map = new Map<string, MediaItem>();
+            for (const item of prev) map.set(item.id, item);
+            for (const candidate of items) {
+              const exists = Array.from(map.values()).find(
+                (m) =>
+                  (candidate.imdbId && m.imdbId === candidate.imdbId) ||
+                  (candidate.tmdbId > 0 &&
+                    m.tmdbId === candidate.tmdbId &&
+                    m.mediaType === candidate.mediaType) ||
+                  (m.title.toLowerCase() === candidate.title.toLowerCase() &&
+                    Math.abs(m.year - candidate.year) <= 1)
               );
-              if (connects) {
-                map.set(candidate.id, candidate);
+              if (!exists) {
+                const connects = Array.from(map.values()).some((existing) =>
+                  hasConcreteSharedConnection(
+                    calculateSimilarity(existing, candidate)
+                  )
+                );
+                if (connects) {
+                  map.set(candidate.id, candidate);
+                }
               }
             }
-          }
-          return Array.from(map.values());
-        });
-      }
-    });
+            return Array.from(map.values());
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsCatalogHydrating(false);
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -507,13 +527,13 @@ export function SixDegreesApp() {
     setFocalId(null);
     setInspectedMediaId(null);
     setLastCollaboratorCrawled(null);
-    setLiveStatusToast('Reset catalog to base seed titles.');
+    setLiveStatusToast('Reset catalog to base archive.');
     setTimeout(() => setLiveStatusToast(null), 3500);
   }, []);
 
   const expandedCount = Math.max(
     0,
-    mediaLibrary.length - SEED_MEDIA_ITEMS.length
+    mediaLibrary.length - INITIAL_BOOTSTRAP_SEEDS.length
   );
 
   const liveDataSourceLabel = useMemo(() => {
@@ -1630,6 +1650,8 @@ export function SixDegreesApp() {
           onLabelModeChange={setLabelMode}
           clusters={clusters}
           matchingMediaCount={matchingMediaCount}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
 
         {/* C. Central 3D/2D Constellation, Critical Ledger, or Watch Next Suggestion Studio */}
@@ -1652,7 +1674,24 @@ export function SixDegreesApp() {
             </div>
           )}
 
-          {viewMode === 'SUGGEST' ? (
+          {isCatalogHydrating && mediaLibrary.length === 0 ? (
+            <div className={`w-full h-full flex flex-col items-center justify-center gap-4 ${
+              theme === 'MOVIE_MAP_DARK' ? 'bg-[#0A0E17] text-[#F0F4FC]' : 'bg-[#F6F1E7] text-[#171412]'
+            }`}>
+              <div className="relative flex items-center justify-center">
+                <div className="w-16 h-16 rounded-full border-2 border-dashed border-[#00D2FF]/40 animate-spin" />
+                <div className="absolute w-8 h-8 rounded-full border-2 border-[#FF3366]/60 animate-ping" />
+              </div>
+              <div className="flex flex-col items-center gap-1.5 text-center px-4">
+                <span className="text-sm font-semibold tracking-wide">
+                  Hydrating Cosmic Archive from Database…
+                </span>
+                <span className={`text-xs ${theme === 'MOVIE_MAP_DARK' ? 'text-white/60' : 'text-[#6B5E50]'}`}>
+                  Assembling craft connections and cinematic constellation in 1 go
+                </span>
+              </div>
+            </div>
+          ) : viewMode === 'SUGGEST' ? (
             <WatchSuggestionsView
               allMediaItems={mediaLibrary}
               watchedIds={watchedIds}

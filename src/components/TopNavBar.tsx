@@ -765,6 +765,30 @@ export function TopNavBar({
           <Search className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
 
+        {/* Mobile View Mode Switcher Pill (2D Map vs 3D Constellation) */}
+        <button
+          type="button"
+          onClick={() => onViewModeChange(viewMode === '2D' ? '3D' : '2D')}
+          className={`md:hidden inline-flex items-center gap-1 h-8 px-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer shrink-0 ${theme === 'MOVIE_MAP_DARK'
+              ? 'bg-[#101624] hover:bg-[#162035] text-[#00D2FF] border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.15)]'
+              : 'bg-[#FBF8F2] hover:bg-[#E5DEC9] text-[#171412] border-[#B5A892] shadow-archival-sm'
+            }`}
+          aria-label={`Switch to ${viewMode === '2D' ? '3D Constellation' : '2D Map'} View`}
+          title={`Switch to ${viewMode === '2D' ? '3D Constellation' : '2D Map'} View`}
+        >
+          {viewMode === '2D' ? (
+            <>
+              <Network className="w-3.5 h-3.5 text-[#00D2FF]" aria-hidden="true" />
+              <span>2D</span>
+            </>
+          ) : (
+            <>
+              <Orbit className="w-3.5 h-3.5 text-[#00D2FF]" aria-hidden="true" />
+              <span>3D</span>
+            </>
+          )}
+        </button>
+
         {/* 1. Context & Discovery Group: Focal Pill + Reset */}
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Active Focal Filter Pill */}

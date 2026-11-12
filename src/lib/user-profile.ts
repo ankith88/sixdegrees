@@ -1,4 +1,3 @@
-import { SEED_MEDIA_ITEMS } from './seed-data';
 import {
   getActiveApiKeys,
   getInitialInterestedIds,
@@ -36,11 +35,9 @@ export function normalizeUserHandle(input: string): string {
     .slice(0, 32);
 }
 
-const SEED_ID_SET = new Set(SEED_MEDIA_ITEMS.map((m) => m.id));
-
 /**
- * Extracts snapshots of any custom (non-seed) MediaItems that the user has in a list
- * (Watched or Interested), so their personal graph always retains full metadata for live-imported titles.
+ * Extracts snapshots of any MediaItems that the user has in a list
+ * (Watched or Interested), so their personal graph always retains full metadata for titles.
  */
 export function extractCustomMediaItems(
   itemIds: string[],
@@ -49,7 +46,7 @@ export function extractCustomMediaItems(
   const idSet = new Set(itemIds);
   const custom: MediaItem[] = [];
   for (const item of allMediaItems) {
-    if (idSet.has(item.id) && !SEED_ID_SET.has(item.id)) {
+    if (idSet.has(item.id)) {
       custom.push(item);
     }
   }

@@ -3048,7 +3048,7 @@ export function SpatialViewport({
     const resize = () => {
       const parent = canvas.parentElement;
       if (!parent) return;
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = parent.clientWidth * dpr;
       canvas.height = parent.clientHeight * dpr;
       canvas.style.width = `${parent.clientWidth}px`;
@@ -3220,11 +3220,80 @@ export function SpatialViewport({
       pan2dRef.current.goalZoom = nextZ;
     };
 
+    // Mobile Touch Gesture Support (Single-Finger Pan & Tap, Two-Finger Pinch-to-Zoom)
+    let initialPinchDist = 0;
+    let initialZoom = 1;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        isDragging = true;
+        dragMoved = false;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        initialPinchDist = Math.hypot(dx, dy);
+        initialZoom = pan2dRef.current.zoom;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1 && isDragging) {
+        const dx = e.touches[0].clientX - lastX;
+        const dy = e.touches[0].clientY - lastY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
+        pan2dRef.current.panX += dx;
+        pan2dRef.current.panY += dy;
+        pan2dRef.current.goalPanX = pan2dRef.current.panX;
+        pan2dRef.current.goalPanY = pan2dRef.current.panY;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        if (initialPinchDist > 0) {
+          const factor = dist / initialPinchDist;
+          const nextZoom = Math.max(0.2, Math.min(3.0, initialZoom * factor));
+          pan2dRef.current.zoom = nextZoom;
+          pan2dRef.current.goalZoom = nextZoom;
+        }
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        isDragging = false;
+        if (!dragMoved && e.changedTouches.length > 0) {
+          const rect = canvas.getBoundingClientRect();
+          const sx = e.changedTouches[0].clientX - rect.left;
+          const sy = e.changedTouches[0].clientY - rect.top;
+          const hit = findNodeAt(sx, sy);
+          if (hit) {
+            onSelectNode(hit);
+            frameNodeAndLinkedCluster(hit.id);
+          } else {
+            if (selectedIdRef.current) {
+              onClearSelection?.();
+            }
+            if (graphFiltersRef.current?.activeClusterId) {
+              onSelectClusterRef.current?.(null);
+            }
+          }
+        }
+      }
+    };
+
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('dblclick', onDblClick);
     canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('touchstart', onTouchStart, { passive: true });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: true });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: true });
 
     const nodeMap = new Map<string, GraphNode>();
     simNodes.forEach((n) => nodeMap.set(n.id, n));
@@ -3775,6 +3844,9 @@ export function SpatialViewport({
       window.removeEventListener('mouseup', onMouseUp);
       canvas.removeEventListener('dblclick', onDblClick);
       canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
     };
   }, [
     viewMode,

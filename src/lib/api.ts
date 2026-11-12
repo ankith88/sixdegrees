@@ -1,4 +1,4 @@
-import { SEED_MEDIA_ITEMS } from './seed-data';
+import { INITIAL_BOOTSTRAP_SEEDS } from './seed-data';
 import {
   MediaItem,
   MediaType,
@@ -143,54 +143,35 @@ export async function fetchServerApiKeyStatus(): Promise<{
 }
 
 /**
- * Returns the pre-loaded rich seed dataset centered on Inception (2010)
- * merged with any previously auto-expanded or user-added titles in localStorage.
+ * Returns any previously cached titles in localStorage.
+ * If empty on initial visit, returns an empty array and triggers hydration from
+ * Cloud Firestore / server cache in 1 fast response.
  */
 export function getInitialMediaLibrary(): MediaItem[] {
   if (typeof window === 'undefined') {
-    return SEED_MEDIA_ITEMS;
+    return [];
   }
   try {
     const raw = localStorage.getItem(STORAGE_EXPANDED_CATALOG_KEY);
-    if (!raw) return SEED_MEDIA_ITEMS;
-    const extra = JSON.parse(raw) as MediaItem[];
-    if (!Array.isArray(extra) || extra.length === 0) return SEED_MEDIA_ITEMS;
-
-    const map = new Map<string, MediaItem>();
-    for (const item of SEED_MEDIA_ITEMS) {
-      map.set(item.id, item);
-    }
-    for (const item of extra) {
-      if (!item?.id || !item?.title) continue;
-      const duplicate = Array.from(map.values()).find(
-        (m) =>
-          (item.imdbId && m.imdbId === item.imdbId) ||
-          (item.tmdbId > 0 &&
-            m.tmdbId === item.tmdbId &&
-            m.mediaType === item.mediaType) ||
-          (m.title.toLowerCase() === item.title.toLowerCase() &&
-            Math.abs(m.year - item.year) <= 1)
-      );
-      if (!duplicate) {
-        map.set(item.id, item);
-      }
-    }
-    return Array.from(map.values());
+    if (!raw) return [];
+    const items = JSON.parse(raw) as MediaItem[];
+    if (!Array.isArray(items) || items.length === 0) return [];
+    return items.filter((item) => Boolean(item?.id && item?.title));
   } catch {
-    return SEED_MEDIA_ITEMS;
+    return [];
   }
 }
 
 /**
- * Saves non-seed expanded MediaItems to localStorage so the grown catalog persists across reloads
+ * Saves cached MediaItems to localStorage so the catalog persists across reloads
  * without re-spending any API quota.
  */
 export function saveExpandedCatalogToStorage(allItems: MediaItem[]): void {
   if (typeof window === 'undefined') return;
   try {
-    const seedIds = new Set(SEED_MEDIA_ITEMS.map((m) => m.id));
-    const extra = allItems.filter((m) => !seedIds.has(m.id));
-    localStorage.setItem(STORAGE_EXPANDED_CATALOG_KEY, JSON.stringify(extra));
+    if (allItems.length > 0) {
+      localStorage.setItem(STORAGE_EXPANDED_CATALOG_KEY, JSON.stringify(allItems));
+    }
   } catch {
     // Ignore storage quota errors
   }
@@ -201,7 +182,7 @@ export function clearExpandedCatalogStorage(): MediaItem[] {
     localStorage.removeItem(STORAGE_EXPANDED_CATALOG_KEY);
     localStorage.removeItem(STORAGE_QUERIED_COLLABORATORS_KEY);
   }
-  return SEED_MEDIA_ITEMS;
+  return [];
 }
 
 export function getQueriedCollaborators(): Set<string> {

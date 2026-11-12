@@ -48,6 +48,13 @@
     - [x] `08-01-PLAN.md` — Full Archive Scope Fix for Auth & Users, WATCH_STATUS Color Mode, and Emerald/Amber Palette Tokens (`src/lib/types.ts`, `src/lib/user-profile.ts`, `src/lib/similarity.ts`, `src/components/SixDegreesApp.tsx`).
     - [x] `08-02-PLAN.md` — Concentric Status Rings in 2D & 3D, Floating Glassmorphic Curation Filter HUD, and Drawer Curation Controls (`src/components/SpatialViewport.tsx`, `src/components/LeftSidebar.tsx`, `src/components/TopNavBar.tsx`).
 
+- [x] **Phase 9: Dynamic API Database Ingestion, Pre-bundled Catalog & Mobile 2D Performance Engine** — Completed
+  - **Goal:** Remove all hardcoded seed titles from the client bundle, refetch canonical starting titles dynamically from the TMDB & OMDb APIs on boot and store them into Cloud Firestore / server cache (delivering the full catalog in 1 go), and make the high-performance 2D Canvas Map the default view on mobile devices for instant startup with accessible 2D/3D controls.
+  - **Plans:**
+    - [x] `09-01-PLAN.md` — Dynamic API Ingestion, Seed Hardcoding Removal & 1-Go Database Hydration (`src/lib/seed-data.ts`, `src/app/api/live-media/route.ts`, `src/lib/api.ts`, `src/lib/user-profile.ts`, `src/components/SixDegreesApp.tsx`).
+    - [x] `09-02-PLAN.md` — Mobile 2D Default, Strict WebGL Guarding & Mobile View Projection Controls (`src/components/SixDegreesApp.tsx`, `src/components/TopNavBar.tsx`, `src/components/LeftSidebar.tsx`, `src/components/SpatialViewport.tsx`).
+
+
 
 
 

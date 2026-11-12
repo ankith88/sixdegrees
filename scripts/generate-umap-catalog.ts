@@ -9,7 +9,6 @@
 
 import fs from 'fs';
 import path from 'path';
-import { SEED_MEDIA_ITEMS } from '../src/lib/seed-data';
 import {
   SEMANTIC_CLUSTER_DEFINITIONS,
   assignItemSemanticCluster,
@@ -69,12 +68,7 @@ export interface CatalogUmapPayload {
 function loadCombinedItems(): MediaItem[] {
   const itemsMap = new Map<string, MediaItem>();
 
-  // 1. Ingest base seed items
-  for (const item of SEED_MEDIA_ITEMS) {
-    itemsMap.set(item.id, item);
-  }
-
-  // 2. Ingest auto-expanded cache if present
+  // Ingest auto-expanded database cache if present
   if (fs.existsSync(CACHE_FILE)) {
     try {
       const raw = fs.readFileSync(CACHE_FILE, 'utf-8');

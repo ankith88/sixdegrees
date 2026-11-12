@@ -20,7 +20,7 @@ import {
   loadCatalogFromFirestore,
   saveCatalogToFirestore,
 } from '@/lib/firestore-cache';
-import { SEED_MEDIA_ITEMS } from '@/lib/seed-data';
+import { INITIAL_BOOTSTRAP_SEEDS } from '@/lib/seed-data';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const OMDB_BASE = 'https://www.omdbapi.com/';
@@ -724,6 +724,42 @@ async function fetchFullTmdbMediaItem(
 }
 
 /**
+ * Dynamic bootstrap: when the database or server cache is empty on cold start,
+ * fetches canonical starting titles from TMDB + OMDb APIs, saves them into
+ * Cloud Firestore bundled documents and .next/cache, and returns the assembled catalog.
+ */
+async function bootstrapInitialCatalog(
+  tmdbKey: string,
+  omdbKey: string,
+  tmdbReadToken: string,
+  firebaseProjectId?: string,
+  firebaseApiKey?: string
+): Promise<void> {
+  const cache = getServerCache();
+  for (const seed of INITIAL_BOOTSTRAP_SEEDS) {
+    try {
+      const fetched = await fetchFullTmdbMediaItem(
+        seed.tmdbId,
+        seed.mediaType,
+        tmdbKey,
+        omdbKey,
+        tmdbReadToken,
+        false
+      );
+      if (fetched?.item) {
+        cacheMediaItem(fetched.item);
+      }
+    } catch {
+      // Continue fetching next seed item
+    }
+  }
+  saveServerCache();
+  if (Object.keys(cache.items).length > 0) {
+    await saveCatalogToFirestore(cache, firebaseProjectId, firebaseApiKey);
+  }
+}
+
+/**
  * Zero-Key Public Live Discovery Fallback using IMDb Suggestion API + Wikidata SPARQL
  * Works out-of-the-box even when the user hasn't set TMDB/OMDb API keys yet!
  */
@@ -1278,10 +1314,13 @@ function getUncrawledServerCollaborators(preferred?: string): string[] {
     pushCandidate(preferred);
   }
 
-  const allItems: MediaItem[] = [
-    ...SEED_MEDIA_ITEMS,
-    ...Object.values(cache.items),
-  ];
+  const allItems: MediaItem[] = Object.values(cache.items);
+  if (allItems.length === 0) {
+    pushCandidate('Christopher Nolan');
+    pushCandidate('Denis Villeneuve');
+    pushCandidate('David Fincher');
+    pushCandidate('The Wachowskis');
+  }
 
   // Priority 1: Directors & Creators
   for (const item of allItems) {
@@ -1541,10 +1580,22 @@ export async function GET(req: NextRequest) {
 
   // ==================== ACTION 0A: HYDRATE PERSISTENT SERVER & FIRESTORE CACHE ====================
   if (action === 'cached-catalog') {
+    // If the cache currently has 0 items (e.g. cold start / new database deployment),
+    // automatically bootstrap from TMDB/OMDb using INITIAL_BOOTSTRAP_SEEDS and persist to Firestore
+    if (Object.keys(serverCache.items).length === 0 && hasTmdbAuth) {
+      await bootstrapInitialCatalog(
+        tmdbKey,
+        omdbKey,
+        tmdbReadToken,
+        firebaseProjectId,
+        firebaseApiKey
+      );
+    }
+
     return NextResponse.json({
       items: Object.values(serverCache.items),
       crawledCollaborators: serverCache.crawledCollaborators,
-      firestore: firestoreState,
+      firestore: getFirestoreTelemetry(firebaseProjectId, firebaseApiKey),
       quota: {
         omdbCallsToday: serverCache.omdbCallsToday,
         omdbDailySafeLimit: OMDB_DAILY_SAFE_LIMIT,
@@ -1570,8 +1621,8 @@ export async function GET(req: NextRequest) {
         .filter(Boolean)
     );
 
-    // Always exclude all titles already in SEED_MEDIA_ITEMS + serverCache.items
-    for (const m of [...SEED_MEDIA_ITEMS, ...Object.values(serverCache.items)]) {
+    // Always exclude all titles already in serverCache.items
+    for (const m of Object.values(serverCache.items)) {
       if (m.tmdbId > 0) excludeKeys.add(`tmdb:${m.mediaType}:${m.tmdbId}`);
       if (m.imdbId?.startsWith('tt')) excludeKeys.add(`imdb:${m.imdbId}`);
       if (m.title) excludeKeys.add(`title:${m.title.toLowerCase()}`);

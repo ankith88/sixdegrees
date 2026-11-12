@@ -16,6 +16,8 @@ import {
   ChevronDown,
   ChevronUp,
   SlidersHorizontal,
+  Orbit,
+  Network,
 } from 'lucide-react';
 import {
   AppTheme,
@@ -33,6 +35,7 @@ import {
   NodeSizeMode,
   SemanticCluster,
   UserProfile,
+  ViewMode,
 } from '@/lib/types';
 import {
   SEMANTIC_CLUSTER_DEFINITIONS,
@@ -96,6 +99,8 @@ interface LeftSidebarProps {
   clusters?: SemanticCluster[];
   matchingMediaCount?: number;
   theme?: AppTheme;
+  viewMode?: ViewMode;
+  onViewModeChange?: (mode: ViewMode) => void;
 }
 
 export function LeftSidebar({
@@ -115,6 +120,8 @@ export function LeftSidebar({
   onResetAllVisibility,
   mobileOpen = false,
   onCloseMobile,
+  viewMode,
+  onViewModeChange,
   watchedCount = 0,
   interestedCount = 0,
   isSuggestMode = false,
@@ -687,6 +694,72 @@ export function LeftSidebar({
           )}
         </div>
       </div>
+
+      {/* Map Projection Selector (Mobile & Desktop View Control) */}
+      {onViewModeChange && viewMode && (
+        <div
+          className={`p-3 border-b flex flex-col gap-1.5 ${
+            isDark ? 'bg-[#0E1524]/60 border-[#1C273C]' : 'bg-[#FBF8F2] border-[#D5CCB9]'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span
+              className={`text-[11px] font-bold uppercase tracking-wider ${
+                isDark ? 'text-[#94A3B8]' : 'text-[#6B5E50]'
+              }`}
+            >
+              Map Projection
+            </span>
+            <span
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                viewMode === '2D'
+                  ? isDark
+                    ? 'bg-[#00D2FF]/20 text-[#00D2FF]'
+                    : 'bg-[#2A6B53]/15 text-[#2A6B53]'
+                  : isDark
+                    ? 'bg-[#FF3366]/20 text-[#FF3366]'
+                    : 'bg-[#B8292F]/15 text-[#B8292F]'
+              }`}
+            >
+              {viewMode === '2D' ? 'Fast · Battery Safe' : '3D Spatial'}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => onViewModeChange('2D')}
+              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                viewMode === '2D'
+                  ? isDark
+                    ? 'bg-[#162035] text-[#00D2FF] border-[#00D2FF]/50 shadow-[0_0_8px_rgba(0,210,255,0.25)]'
+                    : 'bg-[#FBF8F2] text-[#171412] border-[#B5A892] shadow-sm'
+                  : isDark
+                    ? 'bg-[#121A2B] text-[#94A3B8] border-white/5 hover:text-white'
+                    : 'bg-[#E5DEC9] text-[#52483E] border-transparent hover:text-[#171412]'
+              }`}
+            >
+              <Network className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>2D Flat Map</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewModeChange('3D')}
+              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                viewMode === '3D'
+                  ? isDark
+                    ? 'bg-[#162035] text-[#00D2FF] border-[#00D2FF]/50 shadow-[0_0_8px_rgba(0,210,255,0.25)]'
+                    : 'bg-[#FBF8F2] text-[#171412] border-[#B5A892] shadow-sm'
+                  : isDark
+                    ? 'bg-[#121A2B] text-[#94A3B8] border-white/5 hover:text-white'
+                    : 'bg-[#E5DEC9] text-[#52483E] border-transparent hover:text-[#171412]'
+              }`}
+            >
+              <Orbit className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>3D Galaxy</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Scrollable Curatorial Sections */}
       <div className={`divide-y overflow-y-auto flex-1 ${
