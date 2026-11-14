@@ -719,7 +719,7 @@ export function TopNavBar({
               type="button"
               aria-pressed={active}
               onClick={() => onViewModeChange(mode.id)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B8292F] ${active
+              className={`btn-press flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B8292F] ${active
                   ? theme === 'MOVIE_MAP_DARK'
                     ? 'bg-[#162035] text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
                     : 'bg-[#FBF8F2] text-[#171412] border border-[#B5A892] shadow-archival-sm'
@@ -819,7 +819,7 @@ export function TopNavBar({
                 onResetPitch();
               }
             }}
-            className={`group inline-flex items-center justify-center sm:gap-1.5 h-8 w-8 sm:w-auto px-0 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] ${hasActiveSelection ||
+            className={`btn-press group inline-flex items-center justify-center sm:gap-1.5 h-8 w-8 sm:w-auto px-0 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] ${hasActiveSelection ||
                 focalItem ||
                 activeFilterCount > 0 ||
                 graphScope !== 'FULL_ARCHIVE'
@@ -972,7 +972,7 @@ export function TopNavBar({
           <button
             type="button"
             onClick={onOpenProfileModal}
-            className={`inline-flex items-center justify-center sm:gap-1.5 h-8 px-2 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${theme === 'MOVIE_MAP_DARK'
+            className={`btn-press inline-flex items-center justify-center sm:gap-1.5 h-8 px-2 sm:px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#101624] hover:bg-[#162035] text-[#94A3B8] hover:text-[#F0F4FC] border-white/10'
                 : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#52483E] hover:text-[#171412] border-[#C8BEAA]'
               }`}
@@ -1000,7 +1000,7 @@ export function TopNavBar({
                   theme === 'MOVIE_MAP_DARK' ? 'ARCHIVAL_FOLIO' : 'MOVIE_MAP_DARK'
                 )
               }
-              className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-semibold border transition-all cursor-pointer shrink-0 ${theme === 'MOVIE_MAP_DARK'
+              className={`btn-press inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-semibold border transition-all cursor-pointer shrink-0 ${theme === 'MOVIE_MAP_DARK'
                   ? 'bg-[#141C2C] hover:bg-[#1C263A] text-[#00D2FF] border-[#00D2FF]/30 shadow-sm'
                   : 'bg-[#FBF8F2] hover:bg-[#EFE8DA] text-[#B8292F] border-[#C8BEAA]'
                 }`}

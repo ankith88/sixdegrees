@@ -38,6 +38,7 @@ import {
   getInitialActiveUserProfile,
   getSavedUserProfiles,
   importUserProfileJson,
+  saveUserProfilesToStorage,
   setActiveUserIdInStorage,
   signInWithCredentials,
   signInWithGoogleIdToken,
@@ -1096,9 +1097,16 @@ export function SixDegreesApp() {
       preferredRegion: RegionCode;
       defaultPreset: GravityPreset;
       defaultGraphScope: GraphScopeMode;
-    }) => {
+    }): Promise<{
+      ok: boolean;
+      error?: string;
+      syncedFirestore?: boolean;
+    }> => {
       setIsSyncingProfile(true);
-      const { profile, allProfiles } = createOrUpdateUserProfile({
+      const prevProfiles = getSavedUserProfiles();
+      const prevActiveUser = activeUser;
+
+      const { profile } = createOrUpdateUserProfile({
         ...input,
         hasPinOrPassword: input.clearPin
           ? false
@@ -1107,11 +1115,6 @@ export function SixDegreesApp() {
         interestedIds,
         allMediaItems: mediaLibrary,
       });
-      setSavedProfiles(allProfiles);
-      setActiveUser(profile);
-      setRegion(profile.preferredRegion);
-      setPreset(profile.defaultPreset);
-      setGraphScope(profile.defaultGraphScope);
 
       const syncRes = await syncUserProfileToServer(profile, {
         pinOrPassword: input.pinOrPassword,
@@ -1119,22 +1122,42 @@ export function SixDegreesApp() {
         action: input.pinOrPassword ? 'auth-signup' : 'save',
       });
       setIsSyncingProfile(false);
-      if (syncRes?.profile) {
-        setActiveUser(syncRes.profile);
-        setSavedProfiles(getSavedUserProfiles());
+
+      if (!syncRes?.ok || !syncRes.profile) {
+        // Revert localStorage & state if server/Firebase validation rejected the signup
+        saveUserProfilesToStorage(prevProfiles);
+        setActiveUserIdInStorage(prevActiveUser?.id || null);
+        setSavedProfiles(prevProfiles);
+        setActiveUser(prevActiveUser);
+        return {
+          ok: false,
+          error: syncRes?.error || 'Failed to save profile.',
+        };
       }
-      if (syncRes?.firestore) {
+
+      const finalProfile = syncRes.profile;
+      setActiveUser(finalProfile);
+      setSavedProfiles(getSavedUserProfiles());
+      setRegion(finalProfile.preferredRegion);
+      setPreset(finalProfile.defaultPreset);
+      setGraphScope(finalProfile.defaultGraphScope);
+
+      if (syncRes.firestore) {
         setFirestoreTelemetry(syncRes.firestore);
       }
 
       setLiveStatusToast(
-        syncRes?.syncedFirestore
-          ? `Saved @${profile.handle} (${profile.watchedIds.length} watched · ${profile.interestedIds.length} interested) & synced to Cloud Firestore`
-          : `Saved personal profile @${profile.handle} (${profile.watchedIds.length} watched · ${profile.interestedIds.length} interested)`
+        syncRes.syncedFirestore
+          ? `Saved @${finalProfile.handle} (${finalProfile.watchedIds.length} watched · ${finalProfile.interestedIds.length} interested) & synced to Cloud Firestore`
+          : `Saved personal profile @${finalProfile.handle} (${finalProfile.watchedIds.length} watched · ${finalProfile.interestedIds.length} interested)`
       );
       setTimeout(() => setLiveStatusToast(null), 4000);
+      return {
+        ok: true,
+        syncedFirestore: syncRes.syncedFirestore,
+      };
     },
-    [watchedIds, interestedIds, mediaLibrary, activeUser?.hasPinOrPassword]
+    [watchedIds, interestedIds, mediaLibrary, activeUser]
   );
 
   const handleSignInCredentials = useCallback(
@@ -1660,7 +1683,7 @@ export function SixDegreesApp() {
           {(isBuildingCluster ||
             isFetchingLiveSuggestions ||
             liveStatusToast) && (
-            <div className={`absolute top-4 sm:top-16 right-4 sm:right-[424px] z-30 flex items-center gap-2 px-3.5 py-2 rounded-lg border text-xs font-medium max-w-[calc(100vw-2rem)] truncate ${
+            <div className={`motion-toast absolute top-4 sm:top-16 right-4 sm:right-[424px] z-30 flex items-center gap-2 px-3.5 py-2 rounded-lg border text-xs font-medium max-w-[calc(100vw-2rem)] truncate ${
               theme === 'MOVIE_MAP_DARK'
                 ? 'bg-[#121A2B] border-[#1C273C] text-[#F0F4FC] shadow-2xl backdrop-blur-md'
                 : 'bg-[#FBF8F2] border-[#B5A892] shadow-archival text-[#171412]'

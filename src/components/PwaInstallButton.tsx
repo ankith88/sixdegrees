@@ -237,12 +237,12 @@ export function PwaInstallButton({
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
         >
           <div
-            className="fixed inset-0 bg-[#171412]/45"
+            className="motion-backdrop fixed inset-0 bg-[#171412]/45"
             onClick={() => setShowModal(false)}
             aria-hidden="true"
           />
 
-          <div className="relative w-full max-w-md rounded-xl bg-[#FBF8F2] border border-[#B5A892] shadow-archival p-5 z-10 text-[#171412] space-y-4">
+          <div className="motion-modal relative w-full max-w-md rounded-xl bg-[#FBF8F2] border border-[#B5A892] shadow-archival p-5 z-10 text-[#171412] space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <img

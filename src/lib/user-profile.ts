@@ -330,7 +330,8 @@ export async function syncUserProfileToServer(
     action?: 'save' | 'auth-signup';
   }
 ): Promise<{
-  profile: UserProfile;
+  ok: boolean;
+  profile?: UserProfile;
   syncedFirestore: boolean;
   firestore?: FirestoreSyncTelemetry;
   error?: string;
@@ -355,7 +356,11 @@ export async function syncUserProfileToServer(
     });
     const data = await res.json();
     if (!res.ok || !data?.profile) {
-      return null;
+      return {
+        ok: false,
+        syncedFirestore: false,
+        error: data?.error || 'Failed to save profile on server',
+      };
     }
     const savedProfile = data.profile as UserProfile;
     if (data.authToken) {
@@ -373,12 +378,17 @@ export async function syncUserProfileToServer(
     saveUserProfilesToStorage(merged);
 
     return {
+      ok: true,
       profile: savedProfile,
       syncedFirestore: Boolean(data.syncedFirestore),
       firestore: data.firestore,
     };
   } catch {
-    return null;
+    return {
+      ok: false,
+      syncedFirestore: false,
+      error: 'Network error while saving profile',
+    };
   }
 }
 

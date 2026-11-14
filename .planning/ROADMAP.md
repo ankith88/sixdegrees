@@ -54,6 +54,12 @@
     - [x] `09-01-PLAN.md` — Dynamic API Ingestion, Seed Hardcoding Removal & 1-Go Database Hydration (`src/lib/seed-data.ts`, `src/app/api/live-media/route.ts`, `src/lib/api.ts`, `src/lib/user-profile.ts`, `src/components/SixDegreesApp.tsx`).
     - [x] `09-02-PLAN.md` — Mobile 2D Default, Strict WebGL Guarding & Mobile View Projection Controls (`src/components/SixDegreesApp.tsx`, `src/components/TopNavBar.tsx`, `src/components/LeftSidebar.tsx`, `src/components/SpatialViewport.tsx`).
 
+- [x] **Phase 10: Restrained UI Motion & Interaction Polish** — Completed
+  - **Goal:** Introduce shared CSS easing tokens (`--ease-out`, `--ease-in-out`, `--ease-drawer`) with `prefers-reduced-motion` support and resolve the six high-leverage motion gaps (status toast entrance, modal entrances, mobile drawer slide-in, hold-to-confirm profile deletion, "Refine Catalog" accordion reveal, and `:active` press feedback) while keeping high-frequency navigation and data views instantaneous.
+  - **Plans:**
+    - [x] `10-01-PLAN.md` — Shared Motion Tokens, Reduced-Motion Fallbacks & Overlay Transitions (`src/app/globals.css`, `src/components/SixDegreesApp.tsx`, `src/components/UserProfileModal.tsx`, `src/components/PwaInstallButton.tsx`, `src/components/LeftSidebar.tsx`).
+    - [x] `10-02-PLAN.md` — Hold-to-Confirm Profile Deletion, Accordion Reveal & Tactile Button Press Feedback (`src/components/UserProfileModal.tsx`, `src/components/LeftSidebar.tsx`, `src/components/TopNavBar.tsx`, `src/components/RightInspectorCard.tsx`, `src/components/WatchSuggestionsView.tsx`).
+
 
 
 

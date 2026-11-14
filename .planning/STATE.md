@@ -1,9 +1,9 @@
 # Project State
 
 ## Current Position
-- **Current Phase:** `09-dynamic-api-database-and-mobile-performance` (Dynamic API Database Ingestion, Pre-bundled Catalog & Mobile 2D Performance Engine)
-- **Status:** Phase 9 Completed & Verified (`09-01-PLAN.md` [x], `09-02-PLAN.md` [x])
-- **Last Action:** Successfully removed 1,500 lines of hardcoded static seed titles from `src/lib/seed-data.ts`, replaced with a lightweight `INITIAL_BOOTSTRAP_SEEDS` descriptor manifest, implemented automatic dynamic TMDB & OMDb API bootstrap into Cloud Firestore and server cache in `/api/live-media`, updated `getInitialMediaLibrary()` to hydrate the database catalog in 1 single request, set the 2D Canvas Map as the responsive default on mobile devices (`< 768px`) to eliminate startup lag and thermal throttling, added mobile touch gestures (single-finger pan, two-finger pinch-to-zoom) and capped retina DPR at 2 in `SpatialViewport.tsx`, exposed mobile 2D/3D toggle pills in `TopNavBar.tsx` and `LeftSidebar.tsx`, and verified clean compilation with `npm run build` and `npm run build:umap`.
+- **Current Phase:** `10-ui-motion-and-interaction-polish` (Restrained UI Motion & Interaction Polish)
+- **Status:** Phase 10 Completed & Built (`10-01-PLAN.md` [x], `10-02-PLAN.md` [x])
+- **Last Action:** Implemented shared motion tokens (`--ease-out`, `--ease-in-out`, `--ease-drawer`) and `prefers-reduced-motion` fallbacks in `src/app/globals.css`, `@starting-style` entrances for the status toast (`SixDegreesApp.tsx`), modals (`UserProfileModal.tsx`, `PwaInstallButton.tsx`), and mobile drawer (`LeftSidebar.tsx`), a 2000ms hold-to-confirm `HoldToDeleteButton` in `UserProfileModal.tsx`, `grid-template-rows` accordion reveal for "Refine Catalog" in `LeftSidebar.tsx`, and `.btn-press` `:active` feedback across primary buttons; verified with `npm run build`.
 
 ## Key Decisions
 - **User-Level Profile, Dual Auth & Watched/Interested Persistence (`src/lib/user-profile.ts`, `src/app/api/user-profile/route.ts`, `src/lib/firestore-cache.ts`)**:

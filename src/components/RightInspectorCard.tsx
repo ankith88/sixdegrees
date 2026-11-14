@@ -735,7 +735,7 @@ export function RightInspectorCard({
         <button
           type="button"
           onClick={() => setInspectorTab('OVERVIEW')}
-          className={`flex-1 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
+          className={`btn-press flex-1 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
             inspectorTab === 'OVERVIEW'
               ? isDark
                 ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'
@@ -748,7 +748,7 @@ export function RightInspectorCard({
         <button
           type="button"
           onClick={() => setInspectorTab('SIMILAR')}
-          className={`flex-1 py-1 rounded text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+          className={`btn-press flex-1 py-1 rounded text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1 ${
             inspectorTab === 'SIMILAR'
               ? isDark
                 ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-[0_0_8px_rgba(0,210,255,0.2)]'

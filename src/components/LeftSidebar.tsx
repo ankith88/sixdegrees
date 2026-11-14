@@ -1094,7 +1094,7 @@ export function LeftSidebar({
             <button
               type="button"
               onClick={() => setFiltersExpanded((prev) => !prev)}
-              className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition-colors cursor-pointer ${
+              className={`btn-press w-full flex items-center justify-between p-2.5 rounded-lg border transition-colors cursor-pointer ${
                 hasMovieMapFilters
                   ? isDark
                     ? 'bg-[#00D2FF]/10 border-[#00D2FF]/30 text-[#00D2FF]'
@@ -1116,15 +1116,19 @@ export function LeftSidebar({
                 )}
               </div>
               <div className="flex items-center gap-1 text-xs">
-                {filtersExpanded ? (
-                  <ChevronUp className="w-3.5 h-3.5 opacity-70" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5 opacity-70" />
-                )}
+                <ChevronDown
+                  className={`w-3.5 h-3.5 opacity-70 transition-transform duration-200 ease-[var(--ease-out)] ${
+                    filtersExpanded ? 'rotate-180' : ''
+                  }`}
+                />
               </div>
             </button>
 
-            {filtersExpanded && (
+            <div
+              className="motion-accordion"
+              data-open={filtersExpanded ? 'true' : 'false'}
+              aria-hidden={!filtersExpanded}
+            >
               <div className={`space-y-3 pt-2 pb-1 border-t ${isDark ? 'border-[#1C273C]' : 'border-[#D5CCB9]'}`}>
                 {/* 1. Filter Match Mode & Canvas Behavior Controls */}
                 <div className="grid grid-cols-2 gap-2">
@@ -1573,7 +1577,7 @@ export function LeftSidebar({
                   />
                 </div>
               </div>
-            )}
+            </div>
           </section>
         )}
       </div>
@@ -1601,11 +1605,11 @@ export function LeftSidebar({
           className="lg:hidden fixed inset-0 z-50 flex"
         >
           <div
-            className="fixed inset-0 bg-[#0A0E17]/70 backdrop-blur-sm"
+            className="motion-backdrop fixed inset-0 bg-[#0A0E17]/70 backdrop-blur-sm"
             onClick={onCloseMobile}
             aria-hidden="true"
           />
-          <aside className={`relative w-[280px] max-w-[85vw] h-full shadow-2xl flex flex-col z-10 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] ${
+          <aside className={`motion-drawer-left relative w-[280px] max-w-[85vw] h-full shadow-2xl flex flex-col z-10 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] ${
             isDark
               ? 'bg-[#0E1524] border-r border-[#1C273C] text-[#F0F4FC]'
               : 'bg-[#EFE8DA] border-r border-[#B5A892] shadow-archival text-[#171412]'

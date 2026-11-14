@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   User,
   UserPlus,
@@ -70,7 +70,11 @@ interface UserProfileModalProps {
     preferredRegion: RegionCode;
     defaultPreset: GravityPreset;
     defaultGraphScope: GraphScopeMode;
-  }) => Promise<void>;
+  }) => Promise<{
+    ok: boolean;
+    error?: string;
+    syncedFirestore?: boolean;
+  }>;
   onSignInCredentials: (params: {
     identifier: string;
     password?: string;
@@ -109,6 +113,69 @@ export type ModalTab =
   | 'WATCHED_GRAPH'
   | 'INTERESTED_GRAPH'
   | 'SWITCH_SYNC';
+
+function HoldToDeleteButton({
+  profileName,
+  onConfirm,
+}: {
+  profileName: string;
+  onConfirm: () => void;
+}) {
+  const [holding, setHolding] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelHold = () => {
+    setHolding(false);
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const startHold = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setHolding(true);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      setHolding(false);
+      onConfirm();
+    }, 2000);
+  };
+
+  useEffect(() => () => cancelHold(), []);
+
+  return (
+    <button
+      type="button"
+      onPointerDown={(e) => {
+        if (e.button === 0) startHold();
+      }}
+      onPointerUp={cancelHold}
+      onPointerLeave={cancelHold}
+      onPointerCancel={cancelHold}
+      onKeyDown={(e) => {
+        if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+          e.preventDefault();
+          startHold();
+        }
+      }}
+      onKeyUp={(e) => {
+        if (e.key === ' ' || e.key === 'Enter') cancelHold();
+      }}
+      onBlur={cancelHold}
+      className="btn-press relative overflow-hidden p-1.5 rounded text-[#6B5E50] hover:text-[#8C1D22] hover:bg-[#F5E4E4] transition-colors cursor-pointer select-none"
+      title="Hold 2 seconds to delete profile"
+      aria-label={`Hold 2 seconds to delete profile ${profileName}`}
+    >
+      <span
+        aria-hidden="true"
+        data-holding={holding ? 'true' : 'false'}
+        className="hold-confirm-fill pointer-events-none absolute inset-0 bg-[#B8292F]/25"
+      />
+      <Trash2 className="relative z-10 w-3.5 h-3.5" />
+    </button>
+  );
+}
 
 export function UserProfileModal({
   open,
@@ -346,6 +413,14 @@ export function UserProfileModal({
       return;
     }
 
+    if (email.trim() && pinOrPassword.trim() && !clearPin && pinOrPassword.trim().length < 6) {
+      setAuthFeedback({
+        type: 'error',
+        message: 'Password must be at least 6 characters for Firebase Authentication.',
+      });
+      return;
+    }
+
     const resolvedAuthMode: UserAuthMode =
       email.trim() && pinOrPassword.trim()
         ? 'FIREBASE_EMAIL'
@@ -353,7 +428,7 @@ export function UserProfileModal({
           ? 'PIN_PROTECTED'
           : 'HANDLE_ONLY';
 
-    await onSaveProfile({
+    const res = await onSaveProfile({
       handle: resolvedHandle,
       displayName: resolvedName,
       email: email.trim() || undefined,
@@ -366,12 +441,21 @@ export function UserProfileModal({
       defaultPreset,
       defaultGraphScope,
     });
+    if (!res.ok) {
+      setAuthFeedback({
+        type: 'error',
+        message: res.error || 'Failed to save profile.',
+      });
+      return;
+    }
     setPinOrPassword('');
     setClearPin(false);
     setIsCreatingNew(false);
     setAuthFeedback({
       type: 'success',
-      message: `Profile @${resolvedHandle} saved successfully!`,
+      message: res.syncedFirestore
+        ? `Profile @${resolvedHandle} saved & synced to Firebase!`
+        : `Profile @${resolvedHandle} saved successfully!`,
     });
   };
 
@@ -451,13 +535,13 @@ export function UserProfileModal({
       role="dialog"
       aria-modal="true"
       aria-label="User Profile, Authentication & Personal Graphs Studio"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#171412]/55 backdrop-blur-xs p-3 sm:p-6"
+      className="motion-backdrop fixed inset-0 z-50 flex items-center justify-center bg-[#171412]/55 backdrop-blur-xs p-3 sm:p-6"
       onClick={onClose}
     >
       <div
-        className={`w-full ${
+        className={`motion-modal w-full ${
           activeTab === 'PROFILE' ? 'max-w-xl' : 'max-w-4xl'
-        } max-h-[92vh] rounded-2xl bg-[#F6F1E7] border border-[#B5A892] shadow-archival flex flex-col overflow-hidden text-[#171412] transition-all duration-200`}
+        } max-h-[92vh] rounded-2xl bg-[#F6F1E7] border border-[#B5A892] shadow-archival flex flex-col overflow-hidden text-[#171412]`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Modal Header */}
@@ -1878,14 +1962,10 @@ export function UserProfileModal({
                               Switch
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => onDeleteProfile(prof.id)}
-                            className="p-1.5 rounded text-[#6B5E50] hover:text-[#8C1D22] hover:bg-[#F5E4E4] transition-colors cursor-pointer"
-                            title="Delete Profile"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <HoldToDeleteButton
+                            profileName={prof.displayName}
+                            onConfirm={() => onDeleteProfile(prof.id)}
+                          />
                         </div>
                       </div>
                     );

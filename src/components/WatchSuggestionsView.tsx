@@ -291,7 +291,7 @@ export function WatchSuggestionsView({
                 <button
                   type="button"
                   onClick={() => onOpenMyWatchedGraph('WATCHED_ONLY')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#2A6B53] hover:bg-[#1E563F] text-[#FBF8F2] border border-[#1E563F] shadow-archival-sm transition-colors cursor-pointer"
+                  className="btn-press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#2A6B53] hover:bg-[#1E563F] text-[#FBF8F2] border border-[#1E563F] shadow-archival-sm transition-colors cursor-pointer"
                   title="Generate a 3D constellation built exclusively from your Watched movies and TV shows"
                 >
                   <Orbit className="w-3.5 h-3.5" aria-hidden="true" />
@@ -300,7 +300,7 @@ export function WatchSuggestionsView({
                 <button
                   type="button"
                   onClick={() => onOpenMyWatchedGraph('INTERESTED_ONLY')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#234B6E] hover:bg-[#193854] text-[#FBF8F2] border border-[#193854] shadow-archival-sm transition-colors cursor-pointer"
+                  className="btn-press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#234B6E] hover:bg-[#193854] text-[#FBF8F2] border border-[#193854] shadow-archival-sm transition-colors cursor-pointer"
                   title="Generate a 3D constellation built exclusively from your Interested / Want to Watch list"
                 >
                   <Bookmark className="w-3.5 h-3.5" aria-hidden="true" />

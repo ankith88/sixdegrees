@@ -200,6 +200,29 @@ function sanitizeUserProfile(
 }
 
 /**
+ * Maps Firebase Identity Toolkit error codes into user-friendly messages.
+ */
+function formatFirebaseAuthError(errorCode?: string): string {
+  if (!errorCode) return 'Firebase Authentication failed.';
+  if (errorCode.includes('WEAK_PASSWORD')) {
+    return 'Password must be at least 6 characters for Firebase Authentication.';
+  }
+  if (errorCode.includes('EMAIL_EXISTS')) {
+    return 'An account with this email already exists. Please sign in instead.';
+  }
+  if (errorCode.includes('INVALID_EMAIL')) {
+    return 'Please enter a valid email address.';
+  }
+  if (errorCode.includes('OPERATION_NOT_ALLOWED')) {
+    return 'Email/Password sign-in is not enabled in Firebase Authentication.';
+  }
+  if (errorCode.includes('NO_FIREBASE_API_KEY')) {
+    return 'Firebase Web API Key is not configured.';
+  }
+  return `Firebase Authentication error: ${errorCode}`;
+}
+
+/**
  * Calls Firebase Authentication Identity Toolkit REST API when a Firebase Web API Key is available.
  */
 async function callFirebaseIdentityToolkit(
@@ -245,6 +268,56 @@ async function callFirebaseIdentityToolkit(
       ok: true,
       localId: data.localId,
       idToken: data.idToken,
+    };
+  } catch {
+    return { ok: false, errorCode: 'NETWORK_ERROR' };
+  }
+}
+
+/**
+ * Exchanges a Google ID token with Firebase Authentication (`accounts:signInWithIdp`)
+ * so Google Sign-In users are also created/linked in Firebase Authentication.
+ */
+async function callFirebaseGoogleSignInWithIdp(
+  googleIdToken: string,
+  overrideProjectId?: string,
+  overrideApiKey?: string
+): Promise<{
+  ok: boolean;
+  localId?: string;
+  errorCode?: string;
+}> {
+  const cfg = getFirestoreConfig(overrideProjectId, overrideApiKey);
+  if (!cfg.apiKey) {
+    return { ok: false, errorCode: 'NO_FIREBASE_API_KEY' };
+  }
+
+  try {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${encodeURIComponent(
+        cfg.apiKey
+      )}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postBody: `id_token=${encodeURIComponent(googleIdToken)}&providerId=google.com`,
+          requestUri: 'http://localhost',
+          returnIdpCredential: true,
+          returnSecureToken: true,
+        }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      return {
+        ok: false,
+        errorCode: data?.error?.message || 'FIREBASE_IDP_FAILED',
+      };
+    }
+    return {
+      ok: true,
+      localId: data.localId,
     };
   } catch {
     return { ok: false, errorCode: 'NETWORK_ERROR' };
@@ -571,6 +644,13 @@ export async function POST(req: NextRequest) {
       const name = String(tokenInfo.name || email.split('@')[0] || 'Google User');
       const sub = String(tokenInfo.sub || '');
 
+      const fbIdp = await callFirebaseGoogleSignInWithIdp(
+        idToken,
+        firebaseProjectId,
+        firebaseApiKey
+      );
+      const firebaseUid = fbIdp.ok && fbIdp.localId ? fbIdp.localId : sub;
+
       const handle = normalizeHandle(body?.handle || handleFromEmail(email));
       const existing = await resolveRecordByHandleOrEmail(
         handle,
@@ -585,7 +665,7 @@ export async function POST(req: NextRequest) {
           displayName: existing.profile?.displayName || name,
           email,
           authMode: 'FIREBASE_GOOGLE',
-          firebaseUid: sub,
+          firebaseUid,
         },
         existing.profile || undefined,
         Boolean(existing.passwordHash)
@@ -671,35 +751,53 @@ export async function POST(req: NextRequest) {
       delete store.passwordHashesByHandle[handle];
       resolvedAuthMode = 'HANDLE_ONLY';
     } else if (pinOrPassword) {
-      activePasswordHash = hashSecret(pinOrPassword);
-      store.passwordHashesByHandle[handle] = activePasswordHash;
-
       if (incoming.email && incoming.email.includes('@')) {
         resolvedAuthMode = 'FIREBASE_EMAIL';
+        const normalizedEmail = incoming.email.trim().toLowerCase();
         const fbSignup = await callFirebaseIdentityToolkit(
           'accounts:signUp',
-          incoming.email.trim().toLowerCase(),
+          normalizedEmail,
           pinOrPassword,
           firebaseProjectId,
           firebaseApiKey
         );
         if (fbSignup.ok && fbSignup.localId) {
           firebaseUid = fbSignup.localId;
-        } else {
+        } else if (fbSignup.errorCode === 'EMAIL_EXISTS') {
           const fbSignin = await callFirebaseIdentityToolkit(
             'accounts:signInWithPassword',
-            incoming.email.trim().toLowerCase(),
+            normalizedEmail,
             pinOrPassword,
             firebaseProjectId,
             firebaseApiKey
           );
           if (fbSignin.ok && fbSignin.localId) {
             firebaseUid = fbSignin.localId;
+          } else {
+            return NextResponse.json(
+              {
+                error:
+                  'An account with this email already exists. Please sign in with your password.',
+                errorCode: fbSignin.errorCode || fbSignup.errorCode,
+              },
+              { status: 401 }
+            );
           }
+        } else {
+          return NextResponse.json(
+            {
+              error: formatFirebaseAuthError(fbSignup.errorCode),
+              errorCode: fbSignup.errorCode,
+            },
+            { status: 400 }
+          );
         }
       } else {
         resolvedAuthMode = 'PIN_PROTECTED';
       }
+
+      activePasswordHash = hashSecret(pinOrPassword);
+      store.passwordHashesByHandle[handle] = activePasswordHash;
     }
 
     const sanitizedProfile = sanitizeUserProfile(
@@ -714,15 +812,26 @@ export async function POST(req: NextRequest) {
       Boolean(activePasswordHash)
     );
 
-    store.profilesByHandle[handle] = sanitizedProfile;
-    saveServerUsersStore();
-
     const syncedFirestore = await saveUserToFirestore(
       sanitizedProfile,
       firebaseProjectId,
       firebaseApiKey,
       activePasswordHash
     );
+
+    const firestoreCfg = getFirestoreConfig(firebaseProjectId, firebaseApiKey);
+    if (action === 'auth-signup' && firestoreCfg.enabled && !syncedFirestore) {
+      return NextResponse.json(
+        {
+          error:
+            'Failed to save user profile to Cloud Firestore. Check your Firebase credentials and Firestore rules.',
+        },
+        { status: 502 }
+      );
+    }
+
+    store.profilesByHandle[handle] = sanitizedProfile;
+    saveServerUsersStore();
 
     return NextResponse.json({
       profile: sanitizedProfile,
